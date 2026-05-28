@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SpAnalyzer.Cli/SpAnalyzer.Cli.csproj" />
+    <Project Path="src/SpAnalyzer.Core/SpAnalyzer.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SpAnalyzer.Core.Tests/SpAnalyzer.Core.Tests.csproj" />
+  </Folder>
+</Solution>
