@@ -791,7 +791,7 @@ git commit -m "feat: setup appsettings.json and implement TUI database login pro
 **Files:**
 - Modify: `src/SpAnalyzer.Cli/Program.cs`
 
-- [ ] **Step 1: Program.cs에 메인 루프 (SP 조회, 자동완성 선택, 로딩 바, AI 처리) 연동 코드를 추가**
+- [x] **Step 1: Program.cs에 메인 루프 (SP 조회, 자동완성 선택, 로딩 바, AI 처리) 연동 코드를 추가**
 
 파일 수정: `src/SpAnalyzer.Cli/Program.cs` 내의 `Main` 함수 뒷부분("데이터베이스 연결 성공!" 문구 아래)을 다음과 같이 수정합니다.
 ```csharp
@@ -913,22 +913,22 @@ git commit -m "feat: setup appsettings.json and implement TUI database login pro
             }
 ```
 
-- [ ] **Step 2: 전체 코드 빌드 및 무결성 테스트 실행**
+- [x] **Step 2: 전체 코드 빌드 및 무결성 테스트 실행**
 
 실행: `dotnet test`
 Expected: 모든 단위 테스트 통과 (PASS)
 
-- [ ] **Step 3: CLI 어플리케이션 컴파일 빌드**
+- [x] **Step 3: CLI 어플리케이션 컴파일 빌드**
 
 실행: `dotnet build`
 Expected: Build Success
 
-- [ ] **Step 4: 로컬 실행 및 시나리오 수동 테스트 확인**
+- [x] **Step 4: 로컬 실행 및 시나리오 수동 테스트 확인**
 
 실행: `dotnet run --project src/SpAnalyzer.Cli`
 Expected: DB 계정/암호 입력 후 정상적으로 연결 성공 시 SP 자동완성 선택창 제공, 드롭다운 필터링, 로딩 스피너 및 마크다운 파일 생성이 정상 루프를 도는지 확인.
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
