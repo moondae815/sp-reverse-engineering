@@ -20,7 +20,7 @@ namespace SpAnalyzer.Cli
 
             // 1. 설정 로드
             var configuration = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
+                .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddEnvironmentVariables()
                 .Build();
@@ -97,7 +97,16 @@ namespace SpAnalyzer.Cli
             IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
 
             var outputDir = configuration["OutputSettings:Directory"] ?? "./output";
-            var instructionsFile = configuration["OutputSettings:InstructionsFile"] ?? "./instructions.txt";
+            if (!Path.IsPathRooted(outputDir))
+            {
+                outputDir = Path.Combine(AppContext.BaseDirectory, outputDir);
+            }
+
+            var instructionsFile = configuration["OutputSettings:InstructionsFile"] ?? "instructions.txt";
+            if (!Path.IsPathRooted(instructionsFile))
+            {
+                instructionsFile = Path.Combine(AppContext.BaseDirectory, instructionsFile);
+            }
 
             // 4. Stored Procedure 목록 로드
             List<string> spNames = new();
