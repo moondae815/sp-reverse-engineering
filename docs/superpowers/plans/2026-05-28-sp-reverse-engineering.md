@@ -522,7 +522,7 @@ git commit -m "feat: add IAiService and implement OpenAI-compatible AiService cl
 - Create: `src/SpAnalyzer.Cli/SessionManager.cs`
 - Create: `tests/SpAnalyzer.Core.Tests/SessionManagerTests.cs`
 
-- [ ] **Step 1: 마지막 로그인 아이디를 저장하고 가져오는 기능의 실패/성공 테스트 작성**
+- [x] **Step 1: 마지막 로그인 아이디를 저장하고 가져오는 기능의 실패/성공 테스트 작성**
 
 파일 생성: `tests/SpAnalyzer.Core.Tests/SessionManagerTests.cs`
 ```csharp
@@ -555,12 +555,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트 빌드하여 실패 확인**
+- [x] **Step 2: 테스트 빌드하여 실패 확인**
 
 실행: `dotnet test`
 Expected: `SessionManager` 클래스가 존재하지 않아 빌드 실패.
 
-- [ ] **Step 3: SessionManager 구현체 파일 생성**
+- [x] **Step 3: SessionManager 구현체 파일 생성**
 
 파일 생성: `src/SpAnalyzer.Cli/SessionManager.cs`
 ```csharp
@@ -614,12 +614,12 @@ namespace SpAnalyzer.Cli
 }
 ```
 
-- [ ] **Step 4: 테스트 재실행 및 세션 입출력 검증**
+- [x] **Step 4: 테스트 재실행 및 세션 입출력 검증**
 
 실행: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
@@ -636,7 +636,7 @@ git commit -m "feat: add SessionManager to remember last used DB username"
 - Create: `src/SpAnalyzer.Cli/instructions.txt`
 - Modify: `src/SpAnalyzer.Cli/Program.cs`
 
-- [ ] **Step 1: 설정 파일 및 지침 파일 생성**
+- [x] **Step 1: 설정 파일 및 지침 파일 생성**
 
 파일 생성: `src/SpAnalyzer.Cli/appsettings.json`
 ```json
@@ -672,7 +672,7 @@ git commit -m "feat: add SessionManager to remember last used DB username"
 5. **로직 흐름 요약**: 트랜잭션 흐름과 예외 처리(Try...Catch) 유무를 포함해 비즈니스 흐름을 단계별(Step-by-Step) 설명합니다.
 ```
 
-- [ ] **Step 2: Program.cs에 Spectre.Console 대화형 로그인 및 설정 로드 코드 작성**
+- [x] **Step 2: Program.cs에 Spectre.Console 대화형 로그인 및 설정 로드 코드 작성**
 
 파일 생성/수정: `src/SpAnalyzer.Cli/Program.cs`
 ```csharp
@@ -766,17 +766,17 @@ namespace SpAnalyzer.Cli
 }
 ```
 
-- [ ] **Step 3: CLI 실행 테스트를 수동 빌드하여 에러 확인**
+- [x] **Step 3: CLI 실행 테스트를 수동 빌드하여 에러 확인**
 
 실행: `dotnet build`
 Expected: 빌드가 성공적으로 완료되어야 함.
 
-- [ ] **Step 4: 로컬에서 CLI를 임시 가동하여 화면 출력 확인**
+- [x] **Step 4: 로컬에서 CLI를 임시 가동하여 화면 출력 확인**
 
 실행: `dotnet run --project src/SpAnalyzer.Cli`
 Expected: 타이틀 출력 및 DB 계정/비밀번호 프롬프트 표시 확인.
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
