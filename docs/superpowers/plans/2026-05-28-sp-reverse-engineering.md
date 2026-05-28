@@ -113,7 +113,7 @@ git commit -m "feat: add SpDefinition and DependencyInfo data models"
 - Create: `src/SpAnalyzer.Core/Services/DbMetadataService.cs`
 - Create: `tests/SpAnalyzer.Core.Tests/DbMetadataServiceTests.cs`
 
-- [ ] **Step 1: SQL Server 메타데이터 조회를 검증하는 테스트 인터페이스 및 가짜 연결 테스트 작성**
+- [x] **Step 1: SQL Server 메타데이터 조회를 검증하는 테스트 인터페이스 및 가짜 연결 테스트 작성**
 
 파일 생성: `tests/SpAnalyzer.Core.Tests/DbMetadataServiceTests.cs`
 ```csharp
@@ -141,12 +141,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트를 빌드하여 실패 확인**
+- [x] **Step 2: 테스트를 빌드하여 실패 확인**
 
 실행: `dotnet test`
 Expected: `IDbMetadataService` 및 `DbMetadataService` 가 존재하지 않아 빌드 에러 발생.
 
-- [ ] **Step 3: 인터페이스 및 DbMetadataService 기본 구현 작성**
+- [x] **Step 3: 인터페이스 및 DbMetadataService 기본 구현 작성**
 
 파일 생성: `src/SpAnalyzer.Core/Services/IDbMetadataService.cs`
 ```csharp
@@ -210,12 +210,12 @@ namespace SpAnalyzer.Core.Services
 }
 ```
 
-- [ ] **Step 4: 테스트를 재실행하여 정상 동작 검증**
+- [x] **Step 4: 테스트를 재실행하여 정상 동작 검증**
 
 실행: `dotnet test`
 Expected: PASS (잘못된 Connection String에 대해 예외 발생 검증 완료)
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
@@ -350,7 +350,7 @@ git commit -m "feat: implement GetSpDetailsAsync for SP DDL and SQL dependencies
 - Create: `src/SpAnalyzer.Core/Services/AiService.cs`
 - Create: `tests/SpAnalyzer.Core.Tests/AiServiceTests.cs`
 
-- [ ] **Step 1: AI API 연동(HttpClient 통신) 실패 및 성공 시나리오 테스트 작성**
+- [x] **Step 1: AI API 연동(HttpClient 통신) 실패 및 성공 시나리오 테스트 작성**
 
 파일 생성: `tests/SpAnalyzer.Core.Tests/AiServiceTests.cs`
 ```csharp
@@ -381,12 +381,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트 빌드하여 실패 확인**
+- [x] **Step 2: 테스트 빌드하여 실패 확인**
 
 실행: `dotnet test`
 Expected: `IAiService` 및 `AiService` 미정의로 빌드 실패.
 
-- [ ] **Step 3: IAiService 및 OpenAI 호환 API 클라이언트 구현 작성**
+- [x] **Step 3: IAiService 및 OpenAI 호환 API 클라이언트 구현 작성**
 
 파일 생성: `src/SpAnalyzer.Core/Services/IAiService.cs`
 ```csharp
@@ -501,12 +501,12 @@ namespace SpAnalyzer.Core.Services
 }
 ```
 
-- [ ] **Step 4: 테스트 재실행하여 예외 발생 및 통과 검증**
+- [x] **Step 4: 테스트 재실행하여 예외 발생 및 통과 검증**
 
 실행: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
