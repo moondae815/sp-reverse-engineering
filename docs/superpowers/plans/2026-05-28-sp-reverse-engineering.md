@@ -17,7 +17,7 @@
 - Create: `src/SpAnalyzer.Core/Models/DependencyInfo.cs`
 - Create: `tests/SpAnalyzer.Core.Tests/ModelsTest.cs`
 
-- [ ] **Step 1: SpDefinition 및 DependencyInfo 모델 매핑을 검증하는 실패하는 테스트 작성**
+- [x] **Step 1: SpDefinition 및 DependencyInfo 모델 매핑을 검증하는 실패하는 테스트 작성**
 
 파일 생성: `tests/SpAnalyzer.Core.Tests/ModelsTest.cs`
 ```csharp
@@ -55,12 +55,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트를 빌드하여 실패하는지 확인**
+- [x] **Step 2: 테스트를 빌드하여 실패하는지 확인**
 
 실행: `dotnet test` (또는 프로젝트 디렉터리에서 수행)
 Expected: `SpDefinition` 및 `DependencyInfo` 가 정의되지 않아 빌드 실패.
 
-- [ ] **Step 3: 데이터 모델 클래스 정의 작성**
+- [x] **Step 3: 데이터 모델 클래스 정의 작성**
 
 파일 생성: `src/SpAnalyzer.Core/Models/DependencyInfo.cs`
 ```csharp
@@ -91,12 +91,12 @@ namespace SpAnalyzer.Core.Models
 }
 ```
 
-- [ ] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
+- [x] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
 
 실행: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 실행:
 ```bash
