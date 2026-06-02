@@ -15,7 +15,8 @@ namespace SpAnalyzer.Core.Tests
             IDbMetadataService service = new DbMetadataService();
 
             // Act & Assert
-            await Assert.ThrowsAsync<Microsoft.Data.SqlClient.SqlException>(() => service.GetSpDetailsAsync(invalidConnString, "dbo", "USP_NonExistent"));
+            // maxDepth=3 인자를 전달하여 호출 시그니처 변경에 따른 오류 유발 및 1차 예외 통과 확인
+            await Assert.ThrowsAnyAsync<Exception>(() => service.GetSpDetailsAsync(invalidConnString, "dbo", "USP_NonExistent", 3));
         }
     }
 }

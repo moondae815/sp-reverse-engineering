@@ -7,6 +7,6 @@ namespace SpAnalyzer.Core.Services
     public interface IDbMetadataService
     {
         Task<List<string>> GetStoredProcedureNamesAsync(string connectionString);
-        Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName);
+        Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth);
     }
 }

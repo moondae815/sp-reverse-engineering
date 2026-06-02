@@ -34,53 +34,56 @@ namespace SpAnalyzer.Core.Services
             return spList;
         }
 
-        public async Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName)
+        // 헬퍼 메서드: 특정 객체의 DDL 원본 텍스트 조회
+        private async Task<string> GetObjectDdlAsync(string connectionString, string schema, string objectName)
         {
-            var spDef = new SpDefinition { Schema = schema, Name = spName };
-            var spFullName = $"{schema}.{spName}";
+            var fullName = $"{schema}.{objectName}";
+            var query = @"
+                SELECT definition 
+                FROM sys.sql_modules 
+                WHERE object_id = OBJECT_ID(@FullName);";
 
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync();
-
-                // 1. SP DDL 텍스트 조회
-                var ddlQuery = @"
-                    SELECT definition 
-                    FROM sys.sql_modules 
-                    WHERE object_id = OBJECT_ID(@SpFullName);";
-
-                using (var cmd = new SqlCommand(ddlQuery, conn))
+                using (var cmd = new SqlCommand(query, conn))
                 {
-                    cmd.Parameters.AddWithValue("@SpFullName", spFullName);
+                    cmd.Parameters.AddWithValue("@FullName", fullName);
                     var result = await cmd.ExecuteScalarAsync();
                     if (result != null && result != DBNull.Value)
                     {
-                        spDef.DdlText = result.ToString() ?? string.Empty;
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Stored Procedure '{spFullName}'의 DDL 코드를 찾을 수 없습니다.");
+                        return result.ToString() ?? string.Empty;
                     }
                 }
+            }
+            throw new InvalidOperationException($"'{fullName}'의 DDL 코드를 찾을 수 없습니다.");
+        }
 
-                // 2. 의존 객체 메타데이터 조회
-                var depQuery = @"
-                    SELECT 
-                        COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
-                        d.referenced_entity_name AS ReferencedEntityName,
-                        o.type_desc AS ReferencedType
-                    FROM sys.sql_expression_dependencies d
-                    INNER JOIN sys.objects o ON d.referenced_id = o.object_id
-                    WHERE d.referencing_id = OBJECT_ID(@SpFullName);";
+        // 헬퍼 메서드: 특정 객체의 1차 의존 정보 목록 수집
+        private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string schema, string objectName)
+        {
+            var rawDeps = new List<DependencyInfo>();
+            var fullName = $"{schema}.{objectName}";
+            var query = @"
+                SELECT 
+                    COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
+                    d.referenced_entity_name AS ReferencedEntityName,
+                    o.type_desc AS ReferencedType
+                FROM sys.sql_expression_dependencies d
+                INNER JOIN sys.objects o ON d.referenced_id = o.object_id
+                WHERE d.referencing_id = OBJECT_ID(@FullName);";
 
-                using (var cmd = new SqlCommand(depQuery, conn))
+            using (var conn = new SqlConnection(connectionString))
+            {
+                await conn.OpenAsync();
+                using (var cmd = new SqlCommand(query, conn))
                 {
-                    cmd.Parameters.AddWithValue("@SpFullName", spFullName);
+                    cmd.Parameters.AddWithValue("@FullName", fullName);
                     using (var reader = await cmd.ExecuteReaderAsync())
                     {
                         while (await reader.ReadAsync())
                         {
-                            spDef.Dependencies.Add(new DependencyInfo
+                            rawDeps.Add(new DependencyInfo
                             {
                                 Schema = reader.GetString(0),
                                 Name = reader.GetString(1),
@@ -90,8 +93,92 @@ namespace SpAnalyzer.Core.Services
                     }
                 }
             }
+            return rawDeps;
+        }
+
+        // 메인 재귀 탐색 진입점
+        public async Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth)
+        {
+            var spDef = new SpDefinition { Schema = schema, Name = spName };
+            var spFullName = $"{schema}.{spName}";
+
+            // 1. 메인 SP의 DDL 조회
+            spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName);
+
+            // 2. 중복 방지 방문 해시셋 및 재귀 리스트 생성
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
+            
+            // 3. 재귀 수집 시작
+            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies);
 
             return spDef;
+        }
+
+        // 재귀 호출 메서드 (DFS)
+        private async Task GatherDependenciesRecursiveAsync(
+            string connectionString, string schema, string name, 
+            int currentDepth, int maxDepth, 
+            HashSet<string> visited, List<DependencyInfo> dependencies)
+        {
+            if (currentDepth > maxDepth) return;
+
+            List<DependencyInfo> rawDeps;
+            try
+            {
+                rawDeps = await GetRawDependenciesAsync(connectionString, schema, name);
+            }
+            catch
+            {
+                return; // 수집 실패 시 조용히 스킵 (Soft Fail)
+            }
+
+            foreach (var rawDep in rawDeps)
+            {
+                var depFullName = $"{rawDep.Schema}.{rawDep.Name}";
+                if (visited.Contains(depFullName)) continue;
+
+                visited.Add(depFullName);
+
+                var depInfo = new DependencyInfo
+                {
+                    Schema = rawDep.Schema,
+                    Name = rawDep.Name,
+                    Type = rawDep.Type,
+                    DiscoveryDepth = currentDepth
+                };
+
+                // 스키마 조회 분기 (테이블, 뷰)
+                if (rawDep.Type.Contains("TABLE") || rawDep.Type.Contains("VIEW"))
+                {
+                    try
+                    {
+                        depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name);
+                    }
+                    catch
+                    {
+                        // 일부 권한 누락 스킵
+                    }
+                }
+                // 코드 수집 및 하위 재귀 분기 (UDF, SP)
+                else if (rawDep.Type.Contains("FUNCTION") || rawDep.Type.Contains("PROCEDURE"))
+                {
+                    try
+                    {
+                        depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Schema, rawDep.Name);
+                        
+                        // 하위 재귀 수집 호출
+                        await GatherDependenciesRecursiveAsync(
+                            connectionString, rawDep.Schema, rawDep.Name, 
+                            currentDepth + 1, maxDepth, visited, dependencies);
+                    }
+                    catch
+                    {
+                        // 권한 오류 등 무시
+                    }
+                }
+
+                dependencies.Add(depInfo);
+            }
         }
 
         public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string schema, string tableName)
