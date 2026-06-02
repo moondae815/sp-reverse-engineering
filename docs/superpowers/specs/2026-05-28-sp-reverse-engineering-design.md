@@ -23,8 +23,9 @@ SP-Reverse-Engineering/
 │   │   ├── Services/               # DB 조회, AI 처리, 메타데이터 수출 서비스
 │   │   └── SpAnalyzer.Core.csproj
 │   │
-│   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 UI
-│       ├── Program.cs              # CLI 진입점 및 의존성 주입(DI) 설정
+│   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 UI 및 CLI 파서
+│       ├── Program.cs              # CLI 진입점, 옵션 분기 및 TUI/TUI 흐름 제어
+│       ├── CliArgs.cs              # 명령행 아규먼트 파싱 데이터 모델
 │       ├── appsettings.json        # 시스템 구성 설정 파일
 │       ├── instructions.txt        # 사용자 정의 AI 명세서 작성 규칙 파일
 │       └── SpAnalyzer.Cli.csproj
@@ -39,7 +40,7 @@ SP-Reverse-Engineering/
    - 역할: SQL Server 2022 메타데이터 수집, 재귀적 의존성 및 스키마 정보 추적, AI 공급자 연동, 원천 수집 데이터의 덤프 파일 내보내기 처리.
    - 핵심 라이브러리: `Microsoft.Data.SqlClient`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`
 2. **SpAnalyzer.Cli**
-   - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트), 진행률 스피너 제공, 마크다운 파일 저장 및 원천 데이터 덤프 명령 제어.
+   - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트) 및 무인 자동화 배치 명령줄 파싱, 진행률 스피너 제공, 마크다운 파일 저장 및 원천 데이터 덤프 명령 제어.
    - 핵심 라이브러리: `Spectre.Console`, `Microsoft.Extensions.Configuration.Json`, `Microsoft.Extensions.Hosting`
 
 ---
@@ -63,10 +64,10 @@ namespace SpAnalyzer.Core.Models
     {
         public string Schema { get; set; } = "dbo";
         public string Name { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty; // "USER_TABLE", "SQL_SCALAR_FUNCTION", "SQL_STORED_PROCEDURE" 등
-        public int DiscoveryDepth { get; set; }        // 발견된 깊이 단계 (1, 2, 3...)
-        public List<ColumnInfo> Columns { get; set; } = new(); // 객체가 테이블인 경우
-        public string? ReferencedDdlText { get; set; }        // 객체가 UDF/SP인 경우
+        public string Type { get; set; } = string.Empty;
+        public int DiscoveryDepth { get; set; }
+        public List<ColumnInfo> Columns { get; set; } = new();
+        public string? ReferencedDdlText { get; set; }
     }
 
     public class ColumnInfo
@@ -111,9 +112,6 @@ namespace SpAnalyzer.Core.Services
 {
     public interface IMetadataExporter
     {
-        /// <summary>
-        /// 수집한 DB 원천 메타데이터와 조립된 프롬프트 원문을 디렉터리에 출력 저장합니다.
-        /// </summary>
         Task ExportRawMetadataAsync(
             SpDefinition spDef, 
             string rawPromptContext, 
@@ -127,15 +125,23 @@ namespace SpAnalyzer.Core.Services
 
 ---
 
-## 3. 사용자 인터페이스 (TUI) 및 로그인 세션 설계
+## 3. 사용자 인터페이스 (TUI) 및 무인 자동화 (CLI) 설계
 
 ### 3.1 DB 로그인 정책 및 인터랙티브 입력
 보안 및 개발자 편의성을 위해 DB 로그인 및 세션 유지 방식은 다음과 같습니다.
 1. **마지막 계정 로컬 보관**: 성공적으로 연결된 DB 계정 ID를 로컬 세션 파일(`.session.json`)에 임시 보관하여, 다음 프로그램 실행 시 계정 입력창의 기본 제안값(Default Value)으로 보여줍니다.
 2. **보안 비밀번호 입력**: 비밀번호는 매 실행 시마다 새로 입력을 받되, `Spectre.Console`의 `Secret()` 속성을 활성화하여 화면상에 텍스트가 마스킹 처리되도록 합니다.
 
-### 3.2 SP 자동완성 및 검색
-`Spectre.Console`의 `SelectionPrompt` 검색 기능을 통해 타이핑 시 실시간으로 SP 목록이 필터링되는 자동완성 형태를 구성합니다. (`EnableSearch()` 기능 활성화)
+### 3.2 무인 자동화 (Batch) 분기 실행 설계 (`CliArgs`)
+명령행 인수 파싱 결과에 따라 비대화형 자동화 모드로 실행할 수 있는 구조를 제공합니다.
+
+- **옵션 명세**:
+  - `--conn "[ConnectionString]"`: 환경변수 `SP_ANALYZER_CONN_STR` 혹은 이 플래그가 있으면 연결 문자열을 즉시 주입하여 ID/PW 대화형 입력을 생략합니다.
+  - `--all`: 로그인 완료 후 전체 SP 목록을 조회하여 대화형 선택 프롬프트 없이 루프를 돌며 일괄 분석을 실행합니다.
+  - `--sp "[Schema.SpName],[Schema.SpName]"`: 쉼표로 구분된 프로시저 목록만 타겟팅하여 대화형 선택 프롬프트 없이 연속 일괄 분석을 실행합니다.
+- **분기 규칙**:
+  - 위의 배치 옵션(`--all` 또는 `--sp`)이 입력 배열(`args`)에 포함되면 자동화 배치 모드로 진입하며, 그 외의 경우 기존 TUI 로그인 및 자동완성 검색 화면으로 기동합니다.
+  - 배치 모드 실행 중 `--conn`이나 환경 변수로 연결 정보가 주입되지 않은 경우에는 에러 패널을 출력하고 프로그램 비정상 종료(Exit Code 1) 처리합니다.
 
 ---
 
@@ -159,27 +165,28 @@ namespace SpAnalyzer.Core.Services
   "OutputSettings": {
     "Directory": "./output",
     "InstructionsFile": "./instructions.txt",
-    "SaveRawJson": true,           // SpDefinition의 JSON 파일 덤프 옵션
-    "SaveRawContext": true,        // AI 전송 원본 프롬프트 저장 옵션
-    "SaveRawFiles": true           // 객체별 파일/폴더 개별 분산 덤프 옵션
+    "SaveRawJson": true,
+    "SaveRawContext": true,
+    "SaveRawFiles": true
   }
 }
 ```
 
-### 4.2 원천 데이터 분산 파일 내보내기 사양 (`SaveRawFiles = true`)
-해당 저장 옵션이 활성화되면, 출력 대상 폴더 하위에 개별 객체별 정보가 분할 저장됩니다.
+### 4.2 AI 프롬프트 조립 및 Mermaid 다이어그램 자동화
+명세서 문서의 시각화 수준을 극대화하기 위하여 지침 체계를 보완합니다.
 
-- `[schema].[name]_Raw/sp_definition.sql`: 원본 SP 생성 DDL 코드.
-- `[schema].[name]_Raw/tables/[table_schema].[table_name].md`: 각 참조 테이블 스키마 표.
-- `[schema].[name]_Raw/functions/[func_schema].[func_name].sql`: 각 참조 함수 코드 본문.
-- `[schema].[name]_Raw/procedures/[proc_schema].[proc_name].sql`: 각 참조 하위 프로시저 코드 본문.
+1. **`instructions.txt` 지침 추가**:
+   - Stored Procedure의 내부 조건 분기 및 데이터 변경(CRUD) 시퀀스를 시각적으로 요약할 수 있는 **Mermaid Flowchart** 다이어그램을 마크다운 출력 내에 ````mermaid ... ```` 블록 형태로 최소 1개 이상 작성하도록 지시합니다.
+   - 다이어그램 컴파일 에러를 방지하기 위해 노드 라벨 명시 시 쌍따옴표 문자열 처리(예: `id["Text"]`)를 철저히 지키도록 명시합니다.
+2. **`AiService` 시스템 프롬프트 가이드 보강**:
+   - 의존 스키마 정보와 SP 쿼리 로직 흐름이 적합한 형태의 흐름도로 시각화될 수 있도록 시스템 명령 프롬프트 규칙에 Mermaid 생성을 필수화하는 가이드라인을 강제 주입합니다.
 
 ---
 
 ## 5. 예외 및 에러 처리 (Error Handling)
 
-1. **DB 연결 실패 시**: 예외 메시지를 보기 좋은 경고 패널로 출력하고 프로그램을 안전하게 종료합니다.
-2. **의존성 쿼리 및 DDL 부재**: 대상 SP의 메타데이터를 수집하지 못할 경우, 경고 처리 후 SP 선택 화면으로 되돌아갑니다.
+1. **DB 연결 실패 시**: 예외 메시지를 보기 좋은 경고 패널로 출력하고 프로그램을 안전하게 종료합니다. (배치 모드 시 Exit Code 1 반환)
+2. **의존성 쿼리 및 DDL 부재**: 대상 SP의 메타데이터를 수집하지 못할 경우, 경고 처리 후 SP 선택 화면으로 되돌아갑니다. (배치 모드 시는 해당 SP를 스킵하고 다음 SP로 자동 전환)
 3. **지침 파일 누락**: `instructions.txt` 파일이 누락되었을 경우 경고 문구를 콘솔에 노출하고, 내부(Fallback)에 내장된 기본 AI 템플릿을 사용하여 분석을 진행합니다.
 4. **AI 통신 및 API 장애**: API 호출 중 네트워크 에러나 API 키 유효성 문제 발생 시 스피너를 중단하고, 에러 요약본을 출력한 뒤 세션을 복귀시킵니다.
 5. **의존 객체 수집 중 권한 부족**: 재귀 수집 과정에서 암호화되거나 권한이 없어 소스코드를 얻지 못하는 의존 객체가 있다면 이를 스킵하고 다른 객체를 수집하도록 예외를 안전하게 처리(Soft fail)합니다.
