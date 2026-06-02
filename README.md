@@ -24,7 +24,7 @@
 - **3단계 신뢰성 검증 파이프라인 (Verification Pipeline)**:
   - **Level 1 (기계적 정적 검증)**: 필수 마크다운 포맷 헤더가 누락되었거나 Mermaid 문법 오류 유발 여부를 정적으로 고속 검증(린팅)합니다.
   - **Level 2 (AI 교차 검증 및 자가 보완)**: 1차 작성이 끝나면 검토관(Reviewer) 에이전트가 비즈니스 로직의 결함과 왜곡을 검증해 N=1회 자가 수정(`Self-Correction`) 보완 루프를 실행합니다.
-  - **Level 3 (인간 개입 피드백 루프)**: TUI 대화형 화면에서 개발자가 결과 요약을 보고 최종 승인(`Approve`)하거나 직접 자연어 보완 의견(`Feedback`)을 기재하여 즉시 재조정할 수 있는 인터랙티브 흐름을 제공합니다. (무인 배치 모드에서는 자동으로 생략)
+  - **Level 3 (인간 개입 피드백 루프)**: TUI 대화형 화면에서 개발자가 생성된 기능 명세서의 전체 내용을 실시간 미리보기(Preview)로 확인한 후 최종 승인(`Approve`)하거나, 직접 자연어 보완 의견(`Feedback`)을 기재하여 즉시 재생성할 수 있습니다. 피드백 반영 후 다시 완성된 명세서 역시 한 번 더 화면에 렌더링되며 만족할 때까지 다회차에 걸쳐 반복 검증할 수 있는 직관적인 인터랙티브 흐름을 제공합니다. (무인 배치 모드에서는 자동으로 생략)
 - **다양한 AI 공급자 지원**: OpenAI(GPT) 및 로컬 환경에서 실행되는 Ollama(Llama 3 등)를 유연하게 연결 및 전환하여 사용할 수 있습니다.
 - **커스터마이징 가능한 지침**: 외부 `instructions.txt` 파일의 내용을 프롬프트에 자동으로 주입하여, 원하는 명세서 형식 및 분석 규칙을 텍스트 에디터로 간편하게 커스텀할 수 있습니다.
 - **인터랙티브 TUI 제공**: 
@@ -60,7 +60,7 @@ SP-Reverse-Engineering/
 ## ⚙ 설정 방법 (Configuration)
 
 ### 1. `appsettings.json` 설정
-프로그램 실행 전 `src/SpAnalyzer.Cli/appsettings.json` 파일을 열어 사용할 서버와 AI API 설정을 지정합니다.
+프로그램 실행 전 `src/SpAnalyzer.Cli/appsettings.json` 파일을 열어 기본적인 데이터베이스 환경 및 출력 설정을 지정합니다. 자격 증명 누출 방지를 위해 이 파일의 `ApiKey`는 비워두는 것을 권장합니다.
 
 ```json
 {
@@ -72,8 +72,8 @@ SP-Reverse-Engineering/
   "AiSettings": {
     "Provider": "OpenAI",          // "OpenAI" | "Claude" | "Gemini" | "Ollama" 중 선택
     "ModelName": "gpt-4o",         // 사용할 LLM 모델명
-    "ApiKey": "YOUR_API_KEY",      // Ollama 사용 시 빈 문자열 가능
-    "Endpoint": "",                // API 엔드포인트 주소 (Ollama의 경우 http://localhost:11434/v1 등)
+    "ApiKey": "",                  // 보안을 위해 공용 설정에서는 비워둡니다 (로컬 설정 권장)
+    "Endpoint": "https://api.openai.com/v1", // API 엔드포인트 주소 (Ollama의 경우 http://localhost:11434/v1 등)
     "Temperature": 0.2             // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
   },
   "OutputSettings": {
@@ -86,7 +86,20 @@ SP-Reverse-Engineering/
 }
 ```
 
-### 2. `instructions.txt` 설정
+### 2. 보안 가이드: `appsettings.local.json` 설정 (권장)
+보안상 안전하게 AI API Key 정보를 관리하기 위해, Git에 추적되지 않는 로컬 전용 설정 파일을 사용하는 것을 권장합니다.
+
+1. `src/SpAnalyzer.Cli/` 디렉터리에 `appsettings.local.json` 파일을 만듭니다. (이 파일은 `.gitignore`에 무시 대상 파일로 이미 등록되어 안전합니다.)
+2. 생성된 `appsettings.local.json` 파일 내에 다음과 같이 발급받은 API 키 설정을 넣으면 로컬 실행 시 보안 키가 우선적으로 적용됩니다.
+   ```json
+   {
+     "AiSettings": {
+       "ApiKey": "여기에_새로_발급받은_API키_입력"
+     }
+   }
+   ```
+
+### 3. `instructions.txt` 설정
 분석된 결과물의 마크다운 포맷 규칙을 정의하는 가이드라인 파일입니다. `src/SpAnalyzer.Cli/instructions.txt`에 작성된 텍스트 내용대로 AI가 리버스 엔지니어링 문서를 만듭니다.
 
 ---
