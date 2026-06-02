@@ -22,7 +22,13 @@ namespace SpAnalyzer.Core.Services
             _provider = provider;
             _modelName = modelName;
             _apiKey = apiKey;
-            _endpoint = string.IsNullOrWhiteSpace(endpoint) ? "https://api.openai.com/v1" : endpoint;
+            
+            var ep = string.IsNullOrWhiteSpace(endpoint) ? "https://api.openai.com/v1" : endpoint.Trim();
+            if (ep.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            {
+                ep = ep.Substring(0, ep.Length - "/chat/completions".Length).TrimEnd('/');
+            }
+            _endpoint = ep;
             _temperature = temperature;
         }
 

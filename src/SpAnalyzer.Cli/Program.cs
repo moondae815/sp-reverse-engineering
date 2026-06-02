@@ -54,6 +54,7 @@ namespace SpAnalyzer.Cli
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
                 .AddEnvironmentVariables()
                 .Build();
 
@@ -331,7 +332,7 @@ namespace SpAnalyzer.Cli
                         schema, name);
 
                     var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
-                    AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {outputFileName}"))
+                    AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
                     {
                         Border = BoxBorder.Rounded,
                         Header = new PanelHeader($" {selectedOption} 분석 완료 ")
@@ -364,7 +365,7 @@ namespace SpAnalyzer.Cli
                     }
                     catch (Exception ex)
                     {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - DB 조회 실패:[/] {ex.Message}");
+                        AnsiConsole.MarkupLine($"[red]{selectedOption} - DB 조회 실패:[/] {Markup.Escape(ex.Message)}");
                     }
                 });
 
@@ -389,7 +390,7 @@ namespace SpAnalyzer.Cli
                 bool genSuccess = false;
 
                 await AnsiConsole.Status()
-                    .StartAsync($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider}) [{attemptText}]...", async ctx =>
+                    .StartAsync($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider}) [[{attemptText}]]...", async ctx =>
                     {
                         try
                         {
@@ -398,7 +399,7 @@ namespace SpAnalyzer.Cli
                         }
                         catch (Exception ex)
                         {
-                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 분석 실패 (시도 {attempt}):[/] {ex.Message}");
+                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 분석 실패 (시도 {attempt}):[/] {Markup.Escape(ex.Message)}");
                         }
                     });
 
@@ -411,10 +412,10 @@ namespace SpAnalyzer.Cli
                 var l1Result = validator.Validate(specificationMarkdown);
                 if (!l1Result.IsValid)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [L1 기계 검증] 문법/구조 오류 발견 (시도 {attempt}/2):[/]");
+                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L1 기계 검증]] 문법/구조 오류 발견 (시도 {attempt}/2):[/]");
                     foreach (var err in l1Result.Errors)
                     {
-                        AnsiConsole.MarkupLine($"  [red]=> {err}[/]");
+                        AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(err)}[/]");
                     }
 
                     if (attempt < 2)
@@ -424,7 +425,7 @@ namespace SpAnalyzer.Cli
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [L1 기계 검증] 최종 보완 실패. 마지막 작성 버전을 사용합니다.[/]");
+                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [[L1 기계 검증]] 최종 보완 실패. 마지막 작성 버전을 사용합니다.[/]");
                         break;
                     }
                 }
@@ -443,14 +444,14 @@ namespace SpAnalyzer.Cli
                         }
                         catch (Exception ex)
                         {
-                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 교차 리뷰 실패 (시도 {attempt}):[/] {ex.Message}");
+                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 교차 리뷰 실패 (시도 {attempt}):[/] {Markup.Escape(ex.Message)}");
                         }
                     });
 
                 if (reviewSuccess && l2Result != null && l2Result.HasDefects)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [L2 AI 리뷰] 결함 및 보완 권고 발견 (시도 {attempt}/2):[/]");
-                    AnsiConsole.MarkupLine($"  [red]=> {l2Result.FeedbackComment}[/]");
+                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/2):[/]");
+                    AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(l2Result.FeedbackComment ?? string.Empty)}[/]");
 
                     if (attempt < 2)
                     {
@@ -459,7 +460,7 @@ namespace SpAnalyzer.Cli
                     }
                     else
                     {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [L2 AI 리뷰] 최종 보완 실패. 마지막 리뷰 반영 버전을 사용합니다.[/]");
+                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [[L2 AI 리뷰]] 최종 보완 실패. 마지막 리뷰 반영 버전을 사용합니다.[/]");
                         break;
                     }
                 }
@@ -467,7 +468,7 @@ namespace SpAnalyzer.Cli
                 // 검증을 통과한 경우 루프 탈출
                 if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
                 {
-                    AnsiConsole.MarkupLine($"[green]{selectedOption} - [L1/L2 자동 검증] 모두 통과![/]");
+                    AnsiConsole.MarkupLine($"[green]{selectedOption} - [[L1/L2 자동 검증]] 모두 통과![/]");
                     break;
                 }
             }
@@ -475,9 +476,14 @@ namespace SpAnalyzer.Cli
             // L3: 인간 개입형 승인 (TUI 모드 한정)
             if (!isBatchMode)
             {
+                AnsiConsole.WriteLine();
+                AnsiConsole.Write(new Rule($"[yellow]{selectedOption} 생성된 기능 명세서[/]") { Justification = Justify.Left });
+                AnsiConsole.Write(new Text(specificationMarkdown));
+                AnsiConsole.Write(new Rule().RuleStyle("grey"));
+                AnsiConsole.WriteLine();
+
                 while (true)
                 {
-                    AnsiConsole.WriteLine();
                     var menuChoice = AnsiConsole.Prompt(
                         new SelectionPrompt<string>()
                             .Title($"[bold blue]{selectedOption} 명세서 검증 완료.[/] 다음 작업을 선택하세요:")
@@ -517,7 +523,7 @@ namespace SpAnalyzer.Cli
                                 }
                                 catch (Exception ex)
                                 {
-                                    AnsiConsole.MarkupLine($"[red]피드백 반영 재생성 실패:[/] {ex.Message}");
+                                    AnsiConsole.MarkupLine($"[red]피드백 반영 재생성 실패:[/] {Markup.Escape(ex.Message)}");
                                 }
                             });
 
@@ -538,7 +544,15 @@ namespace SpAnalyzer.Cli
                             catch { }
                         }
 
-                        return (reSpec, spDef);
+                        specificationMarkdown = reSpec;
+
+                        AnsiConsole.WriteLine();
+                        AnsiConsole.Write(new Rule($"[yellow]{selectedOption} 피드백 반영 재생성 완료[/]") { Justification = Justify.Left });
+                        AnsiConsole.Write(new Text(specificationMarkdown));
+                        AnsiConsole.Write(new Rule().RuleStyle("grey"));
+                        AnsiConsole.WriteLine();
+
+                        continue;
                     }
                 }
             }
@@ -610,7 +624,7 @@ namespace SpAnalyzer.Cli
                 }
                 catch (Exception ex)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]원천 산출물(Raw Metadata) 저장 중 경고:[/] {ex.Message}");
+                    AnsiConsole.MarkupLine($"[yellow]원천 산출물(Raw Metadata) 저장 중 경고:[/] {Markup.Escape(ex.Message)}");
                 }
             }
 
