@@ -175,6 +175,15 @@ namespace SpAnalyzer.Cli
             IDbMetadataService dbService = new DbMetadataService();
             IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
             IMetadataExporter metadataExporter = new MetadataExporter();
+            var validator = new MechanicalValidator();
+            var userInteraction = new ConsoleUserInteraction();
+            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction);
+
+            string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";
+            if (File.Exists(instructionsFile))
+            {
+                instructions = await File.ReadAllTextAsync(instructionsFile);
+            }
 
             // 5. Stored Procedure 목록 로드
             List<string> spNames = new();
@@ -197,8 +206,6 @@ namespace SpAnalyzer.Cli
                 AnsiConsole.MarkupLine("[yellow]조회된 Stored Procedure가 없습니다. 종료합니다.[/]");
                 return;
             }
-
-            var validator = new MechanicalValidator();
 
             if (cliArgs.IsBatchMode)
             {
@@ -255,9 +262,8 @@ namespace SpAnalyzer.Cli
                         var schema = parts[0];
                         var name = parts[1];
 
-                        var (specMarkdown, spDef) = await RunVerificationPipelineAsync(
-                            dbService, aiService, validator, connectionString,
-                            schema, name, maxDepth, provider, instructionsFile, isBatchMode: true);
+                        var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true);
 
                         if (string.IsNullOrEmpty(specMarkdown))
                         {
@@ -311,9 +317,8 @@ namespace SpAnalyzer.Cli
                     var schema = parts[0];
                     var name = parts[1];
 
-                    var (specMarkdown, spDef) = await RunVerificationPipelineAsync(
-                        dbService, aiService, validator, connectionString,
-                        schema, name, maxDepth, provider, instructionsFile, isBatchMode: false);
+                    var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                        connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false);
 
                     if (string.IsNullOrEmpty(specMarkdown))
                     {
@@ -341,224 +346,6 @@ namespace SpAnalyzer.Cli
             }
         }
 
-        private static async Task<(string? SpecMarkdown, SpAnalyzer.Core.Models.SpDefinition? SpDef)> RunVerificationPipelineAsync(
-            IDbMetadataService dbService,
-            IAiService aiService,
-            MechanicalValidator validator,
-            string connectionString,
-            string schema,
-            string name,
-            int maxDepth,
-            string provider,
-            string instructionsFile,
-            bool isBatchMode)
-        {
-            var selectedOption = $"{schema}.{name}";
-            SpAnalyzer.Core.Models.SpDefinition? spDef = null;
-
-            await AnsiConsole.Status()
-                .StartAsync($"[yellow]{selectedOption}[/] - DB 메타데이터 및 의존성 분석 중 (최대 깊이: {maxDepth}단계)...", async ctx =>
-                {
-                    try
-                    {
-                        spDef = await dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth);
-                    }
-                    catch (Exception ex)
-                    {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - DB 조회 실패:[/] {Markup.Escape(ex.Message)}");
-                    }
-                });
-
-            if (spDef == null)
-            {
-                return (null, null);
-            }
-
-            string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";
-            if (File.Exists(instructionsFile))
-            {
-                instructions = await File.ReadAllTextAsync(instructionsFile);
-            }
-
-            string? feedbackLog = null;
-            string specificationMarkdown = string.Empty;
-
-            // 최대 2회 시도 (1차 생성 + L1/L2 오류 시 1회 자가 보완)
-            for (int attempt = 1; attempt <= 2; attempt++)
-            {
-                var attemptText = attempt == 1 ? "1차 분석" : "자가 수정 보완";
-                bool genSuccess = false;
-
-                await AnsiConsole.Status()
-                    .StartAsync($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider}) [[{attemptText}]]...", async ctx =>
-                    {
-                        try
-                        {
-                            specificationMarkdown = await aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog);
-                            genSuccess = true;
-                        }
-                        catch (Exception ex)
-                        {
-                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 분석 실패 (시도 {attempt}):[/] {Markup.Escape(ex.Message)}");
-                        }
-                    });
-
-                if (!genSuccess || string.IsNullOrEmpty(specificationMarkdown))
-                {
-                    return (null, spDef);
-                }
-
-                // L1: 기계적 무결성 검사
-                var l1Result = validator.Validate(specificationMarkdown);
-                if (!l1Result.IsValid)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L1 기계 검증]] 문법/구조 오류 발견 (시도 {attempt}/2):[/]");
-                    foreach (var err in l1Result.Errors)
-                    {
-                        AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(err)}[/]");
-                    }
-
-                    if (attempt < 2)
-                    {
-                        feedbackLog = l1Result.SuggestedPromptFix;
-                        continue;
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [[L1 기계 검증]] 최종 보완 실패. 마지막 작성 버전을 사용합니다.[/]");
-                        break;
-                    }
-                }
-
-                // L2: AI 교차 리뷰
-                ReviewResult? l2Result = null;
-                bool reviewSuccess = false;
-
-                await AnsiConsole.Status()
-                    .StartAsync($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider})...", async ctx =>
-                    {
-                        try
-                        {
-                            l2Result = await aiService.ReviewSpecificationAsync(spDef, specificationMarkdown);
-                            reviewSuccess = true;
-                        }
-                        catch (Exception ex)
-                        {
-                            AnsiConsole.MarkupLine($"[red]{selectedOption} - AI 교차 리뷰 실패 (시도 {attempt}):[/] {Markup.Escape(ex.Message)}");
-                        }
-                    });
-
-                if (reviewSuccess && l2Result != null && l2Result.HasDefects)
-                {
-                    AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/2):[/]");
-                    AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(l2Result.FeedbackComment ?? string.Empty)}[/]");
-
-                    if (attempt < 2)
-                    {
-                        feedbackLog = $"[L2 AI 리뷰 피드백]: 다음 결함/누락사항이 지적되었습니다. 전면 반영해서 수정해 주십시오.\n{l2Result.FeedbackComment}";
-                        continue;
-                    }
-                    else
-                    {
-                        AnsiConsole.MarkupLine($"[red]{selectedOption} - [[L2 AI 리뷰]] 최종 보완 실패. 마지막 리뷰 반영 버전을 사용합니다.[/]");
-                        break;
-                    }
-                }
-
-                // 검증을 통과한 경우 루프 탈출
-                if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
-                {
-                    AnsiConsole.MarkupLine($"[green]{selectedOption} - [[L1/L2 자동 검증]] 모두 통과![/]");
-                    break;
-                }
-            }
-
-            // L3: 인간 개입형 승인 (TUI 모드 한정)
-            if (!isBatchMode)
-            {
-                AnsiConsole.WriteLine();
-                AnsiConsole.Write(new Rule($"[yellow]{selectedOption} 생성된 기능 명세서[/]") { Justification = Justify.Left });
-                AnsiConsole.Write(new Text(specificationMarkdown));
-                AnsiConsole.Write(new Rule().RuleStyle("grey"));
-                AnsiConsole.WriteLine();
-
-                while (true)
-                {
-                    var menuChoice = AnsiConsole.Prompt(
-                        new SelectionPrompt<string>()
-                            .Title($"[bold blue]{selectedOption} 명세서 검증 완료.[/] 다음 작업을 선택하세요:")
-                            .AddChoices(new[] { "1. 승인 및 최종 저장 (Approve)", "2. 추가 보완 요청 피드백 입력 (Feedback)", "3. 저장 없이 이탈 (Cancel)" })
-                    );
-
-                    if (menuChoice.StartsWith("1"))
-                    {
-                        return (specificationMarkdown, spDef);
-                    }
-                    else if (menuChoice.StartsWith("3"))
-                    {
-                        return (null, spDef);
-                    }
-                    else if (menuChoice.StartsWith("2"))
-                    {
-                        var userFeedback = AnsiConsole.Prompt(
-                            new TextPrompt<string>("보완할 피드백 내용을 구체적으로 기재해 주십시오:")
-                        );
-
-                        if (string.IsNullOrWhiteSpace(userFeedback))
-                        {
-                            AnsiConsole.MarkupLine("[yellow]피드백이 비어있어 승인 여부 선택 메뉴로 복귀합니다.[/]");
-                            continue;
-                        }
-
-                        AnsiConsole.MarkupLine("[blue]사용자 피드백을 적용하여 보완 분석 프로세스를 재가동합니다...[/]");
-                        var humanFeedbackLog = $"[L3 사용자 보완 피드백 로그]:\n{userFeedback}";
-
-                        string reSpec = string.Empty;
-                        await AnsiConsole.Status()
-                            .StartAsync($"[yellow]{selectedOption}[/] - 피드백 반영 재생성 중...", async ctx =>
-                            {
-                                try
-                                {
-                                    reSpec = await aiService.GenerateSpecificationAsync(spDef, instructions, humanFeedbackLog);
-                                }
-                                catch (Exception ex)
-                                {
-                                    AnsiConsole.MarkupLine($"[red]피드백 반영 재생성 실패:[/] {Markup.Escape(ex.Message)}");
-                                }
-                            });
-
-                        if (string.IsNullOrEmpty(reSpec))
-                        {
-                            continue;
-                        }
-
-                        // 피드백 반영본에 대한 L1 정적 검사 1회 수행
-                        var l1Re = validator.Validate(reSpec);
-                        if (!l1Re.IsValid)
-                        {
-                            AnsiConsole.MarkupLine("[yellow]피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.[/]");
-                            try
-                            {
-                                reSpec = await aiService.GenerateSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix);
-                            }
-                            catch { }
-                        }
-
-                        specificationMarkdown = reSpec;
-
-                        AnsiConsole.WriteLine();
-                        AnsiConsole.Write(new Rule($"[yellow]{selectedOption} 피드백 반영 재생성 완료[/]") { Justification = Justify.Left });
-                        AnsiConsole.Write(new Text(specificationMarkdown));
-                        AnsiConsole.Write(new Rule().RuleStyle("grey"));
-                        AnsiConsole.WriteLine();
-
-                        continue;
-                    }
-                }
-            }
-
-            return (specificationMarkdown, spDef);
-        }
 
         private static async Task SaveOutputsAsync(
             SpAnalyzer.Core.Models.SpDefinition? spDef,

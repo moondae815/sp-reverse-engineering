@@ -1,0 +1,27 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using SpAnalyzer.Core.Models;
+
+namespace SpAnalyzer.Core.Services
+{
+    public interface IVerificationUserInteraction
+    {
+        // 일반 진행 상태 및 안내 메시지 출력
+        void NotifyStatus(string message);
+
+        // 예외 메시지 및 경고 출력
+        void NotifyError(string message);
+
+        // L1 기계 검증 단계의 오류 정보 출력
+        void NotifyL1Errors(string selectedOption, int attempt, List<string> errors);
+
+        // L2 AI 리뷰의 결함 피드백 코멘트 출력
+        void NotifyL2Defects(string selectedOption, int attempt, string feedbackComment);
+
+        // 검증 파이프라인 단계 성공 알림
+        void NotifyValidationSuccess(string selectedOption);
+
+        // L3 인간 개입형 검증 화면 제공 및 승인/피드백 결과 대기
+        Task<HumanReviewResult> RequestHumanReviewAsync(string selectedOption, string specificationMarkdown);
+    }
+}
