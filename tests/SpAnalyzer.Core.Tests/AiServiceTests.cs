@@ -20,6 +20,19 @@ namespace SpAnalyzer.Core.Tests
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => service.GenerateSpecificationAsync(spDef, instructions));
         }
+
+        [Fact]
+        public async Task ReviewSpecificationAsync_WithEmptyApiKeyForOpenAi_ShouldThrowException()
+        {
+            // Arrange
+            var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
+            var specMarkdown = "## 개요\n내용";
+
+            IAiService service = new AiService("OpenAI", "gpt-4o", "", "https://api.openai.com/v1", 0.2f);
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() => service.ReviewSpecificationAsync(spDef, specMarkdown));
+        }
     }
 }
 

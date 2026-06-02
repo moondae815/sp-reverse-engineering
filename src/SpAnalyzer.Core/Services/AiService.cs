@@ -48,7 +48,7 @@ namespace SpAnalyzer.Core.Services
             return sb.ToString();
         }
 
-        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions)
+        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -116,6 +116,11 @@ namespace SpAnalyzer.Core.Services
 위의 모든 참조 정보와 원본 코드를 자세히 리버스 엔지니어링하여 지침에 맞게 마크다운 형식의 기능 명세서를 완성하십시오.
 ";
 
+            if (!string.IsNullOrEmpty(feedbackLog))
+            {
+                userPrompt += $"\n\n[이전 시도에 대한 검증 오류/수정 피드백 로그]:\n{feedbackLog}\n위 검토 및 수정 의견을 전적으로 수용하여 명세서 내용을 정교하게 수정하고 오류를 바로잡아 다시 작성해 주십시오.";
+            }
+
             // OpenAI / Ollama 호환 JSON 페이로드 작성
             var requestBody = new
             {
@@ -147,6 +152,108 @@ namespace SpAnalyzer.Core.Services
             {
                 var root = doc.RootElement;
                 return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+            }
+        }
+
+        public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+            }
+
+            var systemPrompt = @"당신은 SQL Server Stored Procedure 기능 명세서의 완성도를 검증하는 수석 아키텍트이자 리뷰어 에이전트입니다.
+제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하십시오.
+
+[검토 기준]
+1. 명세서에 필수 헤더(개요, 파라미터 목록, CRUD 분석, 로직 흐름 요약, 비즈니스 흐름 시각화)가 다 존재하며 알맞은 내용을 담고 있는가?
+2. 원본 DDL 소스코드와 명세서의 비즈니스 로직(특히 중요 제어 흐름이나 트랜잭션 처리) 사이에 사실과 다르거나 심각한 환각(왜곡)이 존재하지 않는가?
+3. 참조 UDF 및 하위 프로시저 연산 알고리즘 분석이 정상 반영되었는가?
+
+[답변 작성 형식]
+반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. JSON 코드 블록 없이 순수 JSON만 반환해야 합니다:
+{
+  ""HasDefects"": true 또는 false,
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 null)""
+}";
+
+            var userPrompt = $@"
+[원본 Stored Procedure DDL SQL]
+```sql
+{spDef.DdlText}
+```
+
+[작성된 기능 명세서 마크다운]
+{specMarkdown}
+
+위 마크다운 명세서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.
+";
+
+            var requestBody = new
+            {
+                model = _modelName,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
+                },
+                temperature = 0.1f
+            };
+
+            var jsonPayload = JsonSerializer.Serialize(requestBody);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
+            {
+                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            }
+
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+            try
+            {
+                using (var doc = JsonDocument.Parse(responseContent))
+                {
+                    var root = doc.RootElement;
+                    var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+
+                    content = content.Trim();
+                    if (content.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        content = content.Substring(7);
+                    }
+                    if (content.EndsWith("```"))
+                    {
+                        content = content.Substring(0, content.Length - 3);
+                    }
+                    content = content.Trim();
+
+                    using (var resultDoc = JsonDocument.Parse(content))
+                    {
+                        var resultRoot = resultDoc.RootElement;
+                        var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
+                        var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
+
+                        return new ReviewResult
+                        {
+                            HasDefects = hasDefects,
+                            FeedbackComment = feedbackComment
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return new ReviewResult
+                {
+                    HasDefects = false,
+                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
+                };
             }
         }
     }
