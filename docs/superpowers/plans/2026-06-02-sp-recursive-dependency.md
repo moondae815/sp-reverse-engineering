@@ -644,7 +644,7 @@ git commit -m "feat: enrich AiService prompts with Markdown schemas and dependen
 - Modify: `src/SpAnalyzer.Cli/Program.cs`
 - Modify: `src/SpAnalyzer.Cli/appsettings.json`
 
-- [ ] **Step 1: appsettings.json에 MaxDependencyDepth 설정 키 추가**
+- [x] **Step 1: appsettings.json에 MaxDependencyDepth 설정 키 추가**
 
 파일 수정: `src/SpAnalyzer.Cli/appsettings.json`
 ```json
@@ -668,7 +668,7 @@ git commit -m "feat: enrich AiService prompts with Markdown schemas and dependen
 }
 ```
 
-- [ ] **Step 2: Program.cs 파일에 MaxDependencyDepth 설정 바인딩 및 GetSpDetailsAsync 호출 인자 연동**
+- [x] **Step 2: Program.cs 파일에 MaxDependencyDepth 설정 바인딩 및 GetSpDetailsAsync 호출 인자 연동**
 
 파일 수정: `src/SpAnalyzer.Cli/Program.cs`에서 `configuration` 값 바인딩 및 호출하는 라인을 수정합니다.
 - 변경 구간 1 (라인 95~101 부근):
@@ -685,17 +685,17 @@ git commit -m "feat: enrich AiService prompts with Markdown schemas and dependen
                               spDef = await dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth);
   ```
 
-- [ ] **Step 3: CLI 어플리케이션 컴파일 빌드 검증**
+- [x] **Step 3: CLI 어플리케이션 컴파일 빌드 검증**
 
 Run: `dotnet build`
 Expected: Build Success
 
-- [ ] **Step 4: 무결성 전체 단위 테스트 및 수동 작동 테스트 검증**
+- [x] **Step 4: 무결성 전체 단위 테스트 및 수동 작동 테스트 검증**
 
 Run: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 ```bash
 git add src/SpAnalyzer.Cli/Program.cs src/SpAnalyzer.Cli/appsettings.json

@@ -96,6 +96,10 @@ namespace SpAnalyzer.Cli
 
             IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
 
+            // MaxDependencyDepth 추가 로드
+            var depthStr = configuration["DatabaseSettings:MaxDependencyDepth"] ?? "3";
+            int.TryParse(depthStr, out int maxDepth);
+
             var outputDir = configuration["OutputSettings:Directory"] ?? "./output";
             if (!Path.IsPathRooted(outputDir))
             {
@@ -167,8 +171,8 @@ namespace SpAnalyzer.Cli
                     {
                         try
                         {
-                            ctx.Status($"[yellow]{selectedOption}[/] - DB 메타데이터 및 의존성 분석 중...");
-                            spDef = await dbService.GetSpDetailsAsync(connectionString, schema, name);
+                            ctx.Status($"[yellow]{selectedOption}[/] - DB 메타데이터 및 의존성 분석 중 (최대 깊이: {maxDepth}단계)...");
+                            spDef = await dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth);
 
                             ctx.Status($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider})...");
                             
