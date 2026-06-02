@@ -6,7 +6,7 @@
 
 ## 🛠️ 작업 목록 (Tasks Checklist)
 
-### [ ] Task 1: MechanicalValidator 구현 (1단계 검증)
+### [x] Task 1: MechanicalValidator 구현 (1단계 검증)
 - **목표**: 마크다운 결과물 내에 필수 색션 헤더 및 Mermaid 구문 문법 오류 여부를 정적으로 체크하는 유틸리티 구현.
 - **수행 상세**:
   - [xUnit 테스트 작성]: `tests/SpAnalyzer.Core.Tests/MechanicalValidatorTests.cs`를 생성하여 아래 항목을 테스트합니다. (실패하는 테스트부터 작성)
@@ -17,7 +17,7 @@
   - [빌드 및 확인]: `dotnet test`로 구현 코드가 모든 테스트를 통과하는지 확인.
   - [Git 커밋]: `feat: Implement MechanicalValidator and associated unit tests`
 
-### [ ] Task 2: AI 교차 검증 및 자가 수정 (2단계 검증)
+### [x] Task 2: AI 교차 검증 및 자가 수정 (2단계 검증)
 - **목표**: `AiService` 내에 교차 검토용 API를 구축하고, 1차 오류 검출 시 최대 1회 자가 보완 재생성 요청 연동.
 - **수행 상세**:
   - [xUnit 테스트 작성]: `tests/SpAnalyzer.Core.Tests/AiServiceTests.cs` 파일에 `ReviewSpecificationAsync` 호출 시 API Key 누락에 대해 ArgumentException이 발생하는지 등 검증 테스트 추가.
@@ -28,7 +28,7 @@
   - [빌드 및 확인]: `dotnet test` 동작 확인.
   - [Git 커밋]: `feat: Add AI Cross-Review API and self-correction input support`
 
-### [ ] Task 3: TUI 인간 개입형(Human-in-the-loop) 피드백 루프 연동 (3단계 검증)
+### [x] Task 3: TUI 인간 개입형(Human-in-the-loop) 피드백 루프 연동 (3단계 검증)
 - **목표**: `Program.cs` 내의 메인 비즈니스 루프(TUI 및 배치)에 3단계 검증 파이프라인 연동.
 - **수행 상세**:
   - [구현]: 
