@@ -93,5 +93,62 @@ namespace SpAnalyzer.Core.Services
 
             return spDef;
         }
+
+        public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string schema, string tableName)
+        {
+            var columns = new List<ColumnInfo>();
+            var query = @"
+                SELECT 
+                    c.COLUMN_NAME,
+                    c.DATA_TYPE + 
+                        CASE 
+                            WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN 
+                                '(' + CASE WHEN c.CHARACTER_MAXIMUM_LENGTH = -1 THEN 'MAX' ELSE CAST(c.CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)) END + ')'
+                            WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL AND c.DATA_TYPE IN ('decimal', 'numeric') THEN 
+                                '(' + CAST(c.NUMERIC_PRECISION AS VARCHAR(10)) + ',' + CAST(c.NUMERIC_SCALE AS VARCHAR(10)) + ')'
+                            ELSE ''
+                        END AS DataType,
+                    CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IsNullable,
+                    ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                            WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
+                              AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                              AND tc.TABLE_NAME = c.TABLE_NAME 
+                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsPrimaryKey,
+                    ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                            WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
+                              AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                              AND tc.TABLE_NAME = c.TABLE_NAME 
+                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
+                ORDER BY c.ORDINAL_POSITION;";
+
+            using (var conn = new SqlConnection(connectionString))
+            {
+                await conn.OpenAsync();
+                using (var cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@Schema", schema);
+                    cmd.Parameters.AddWithValue("@TableName", tableName);
+                    using (var reader = await cmd.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            columns.Add(new ColumnInfo
+                            {
+                                ColumnName = reader.GetString(0),
+                                DataType = reader.GetString(1),
+                                IsNullable = reader.GetInt32(2) == 1,
+                                IsPrimaryKey = reader.GetInt32(3) == 1,
+                                IsForeignKey = reader.GetInt32(4) == 1
+                            });
+                        }
+                    }
+                }
+            }
+            return columns;
+        }
     }
 }

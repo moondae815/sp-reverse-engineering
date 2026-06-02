@@ -18,5 +18,16 @@ namespace SpAnalyzer.Core.Tests
             // Act & Assert
             await Assert.ThrowsAnyAsync<System.Exception>(() => service.GetStoredProcedureNamesAsync(invalidConnString));
         }
+
+        [Fact]
+        public async Task GetTableColumnsAsync_WithInvalidConn_ShouldThrowException()
+        {
+            // Arrange
+            var invalidConnString = "Server=invalid_server;Database=invalid_db;Integrated Security=true;TrustServerCertificate=true;Connection Timeout=1;";
+            var service = new DbMetadataService();
+
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<System.Exception>(() => service.GetTableColumnsAsync(invalidConnString, "dbo", "NonExistentTable"));
+        }
     }
 }
