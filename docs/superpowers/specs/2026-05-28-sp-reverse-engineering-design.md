@@ -2,7 +2,7 @@
 
 이 문서는 SQL Server 2022에 저장된 Stored Procedure(SP)를 조회하고 분석하여, AI를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 CLI 도구의 설계 사양을 정의합니다.
 
-- **작성일**: 2026-05-28 (고도화 수정일: 2026-06-02)
+- **작성일**: 2026-05-28 (최종 업데이트일: 2026-06-02)
 - **상태**: 승인됨 (Approved)
 - **대상 플랫폼**: .NET 8.0 / C#
 
@@ -20,7 +20,7 @@ SP-Reverse-Engineering/
 ├── src/
 │   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
 │   │   ├── Models/                 # DB 및 AI 통신용 데이터 모델
-│   │   ├── Services/               # DB 조회, AI 처리 서비스 인터페이스 및 구현
+│   │   ├── Services/               # DB 조회, AI 처리, 메타데이터 수출 서비스
 │   │   └── SpAnalyzer.Core.csproj
 │   │
 │   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 UI
@@ -36,10 +36,10 @@ SP-Reverse-Engineering/
 
 ### 핵심 프로젝트별 역할 및 의존성
 1. **SpAnalyzer.Core**
-   - 역할: SQL Server 2022 메타데이터 수집, 재귀적 의존성 및 스키마 정보 추적, AI 공급자(OpenAI, Claude, Gemini, Ollama) 연동 추상화 및 처리.
+   - 역할: SQL Server 2022 메타데이터 수집, 재귀적 의존성 및 스키마 정보 추적, AI 공급자 연동, 원천 수집 데이터의 덤프 파일 내보내기 처리.
    - 핵심 라이브러리: `Microsoft.Data.SqlClient`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`
 2. **SpAnalyzer.Cli**
-   - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트), 진행률 스피너 제공, 마크다운 파일 저장.
+   - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트), 진행률 스피너 제공, 마크다운 파일 저장 및 원천 데이터 덤프 명령 제어.
    - 핵심 라이브러리: `Spectre.Console`, `Microsoft.Extensions.Configuration.Json`, `Microsoft.Extensions.Hosting`
 
 ---
@@ -47,8 +47,6 @@ SP-Reverse-Engineering/
 ## 2. 데이터 모델 및 인터페이스 설계
 
 ### 2.1 데이터 모델 (Models)
-
-재귀적으로 탐색한 참조 테이블의 스키마와 함수/SP의 소스코드를 수집하고 구조화하기 위한 모델입니다.
 
 ```csharp
 namespace SpAnalyzer.Core.Models
@@ -82,72 +80,47 @@ namespace SpAnalyzer.Core.Models
 }
 ```
 
-### 2.2 DB 메타데이터 서비스 인터페이스
+### 2.2 서비스 인터페이스 설계
+
+#### DB 메타데이터 서비스 인터페이스
 ```csharp
 namespace SpAnalyzer.Core.Services
 {
     public interface IDbMetadataService
     {
-        // 자동완성용 전체 SP 목록을 조회합니다.
         Task<List<string>> GetStoredProcedureNamesAsync(string connectionString);
-
-        // 지정된 SP의 DDL 소스코드와 재귀적 의존 객체 정보(상세 스키마 및 참조 코드 포함)를 추출합니다.
         Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth);
     }
 }
 ```
 
-### 2.3 DB 데이터 조회 쿼리 사양
-
-1. **의존성 쿼리**:
-   ```sql
-   SELECT 
-       COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
-       d.referenced_entity_name AS ReferencedEntityName,
-       o.type_desc AS ReferencedType
-   FROM sys.sql_expression_dependencies d
-   INNER JOIN sys.objects o ON d.referenced_id = o.object_id
-   WHERE d.referencing_id = OBJECT_ID(@SpFullName);
-   ```
-
-2. **테이블 스키마 상세 조회 쿼리**:
-   ```sql
-   SELECT 
-       c.COLUMN_NAME,
-       c.DATA_TYPE + 
-           CASE 
-               WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN 
-                   '(' + CASE WHEN c.CHARACTER_MAXIMUM_LENGTH = -1 THEN 'MAX' ELSE CAST(c.CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)) END + ')'
-               WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL AND c.DATA_TYPE IN ('decimal', 'numeric') THEN 
-                   '(' + CAST(c.NUMERIC_PRECISION AS VARCHAR(10)) + ',' + CAST(c.NUMERIC_SCALE AS VARCHAR(10)) + ')'
-               ELSE ''
-           END AS DataType,
-       CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IsNullable,
-       ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-               JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-               WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
-                 AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                 AND tc.TABLE_NAME = c.TABLE_NAME 
-                 AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsPrimaryKey,
-       ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-               JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-               WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
-                 AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                 AND tc.TABLE_NAME = c.TABLE_NAME 
-                 AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey
-   FROM INFORMATION_SCHEMA.COLUMNS c
-   WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
-   ORDER BY c.ORDINAL_POSITION;
-   ```
-
-### 2.4 AI 서비스 인터페이스
+#### AI 서비스 인터페이스
 ```csharp
 namespace SpAnalyzer.Core.Services
 {
     public interface IAiService
     {
-        // SP 메타데이터(참조 스키마 표 및 UDF 코드 본문 포함)와 사용자 지침 파일을 결합하여 마크다운 문서를 작성합니다.
         Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions);
+    }
+}
+```
+
+#### 원천 데이터 내보내기 서비스 인터페이스 (Exporter)
+```csharp
+namespace SpAnalyzer.Core.Services
+{
+    public interface IMetadataExporter
+    {
+        /// <summary>
+        /// 수집한 DB 원천 메타데이터와 조립된 프롬프트 원문을 디렉터리에 출력 저장합니다.
+        /// </summary>
+        Task ExportRawMetadataAsync(
+            SpDefinition spDef, 
+            string rawPromptContext, 
+            string baseOutputDir, 
+            bool saveJson, 
+            bool saveContext, 
+            bool saveFiles);
     }
 }
 ```
@@ -174,7 +147,7 @@ namespace SpAnalyzer.Core.Services
   "DatabaseSettings": {
     "Server": "localhost",
     "Database": "MyBusinessDb",
-    "MaxDependencyDepth": 3        // 재귀 의존성 분석 깊이 설정
+    "MaxDependencyDepth": 3
   },
   "AiSettings": {
     "Provider": "OpenAI",
@@ -185,33 +158,21 @@ namespace SpAnalyzer.Core.Services
   },
   "OutputSettings": {
     "Directory": "./output",
-    "InstructionsFile": "./instructions.txt"
+    "InstructionsFile": "./instructions.txt",
+    "SaveRawJson": true,           // SpDefinition의 JSON 파일 덤프 옵션
+    "SaveRawContext": true,        // AI 전송 원본 프롬프트 저장 옵션
+    "SaveRawFiles": true           // 객체별 파일/폴더 개별 분산 덤프 옵션
   }
 }
 ```
 
-### 4.2 AI 프롬프트 조립 포맷 사양
+### 4.2 원천 데이터 분산 파일 내보내기 사양 (`SaveRawFiles = true`)
+해당 저장 옵션이 활성화되면, 출력 대상 폴더 하위에 개별 객체별 정보가 분할 저장됩니다.
 
-`AiService`는 수집된 `Dependencies` 목록을 파싱하여, 테이블은 Markdown 표로 변환하고 UDF/SP는 DDL 소스코드로 가공하여 프롬프트에 동적으로 첨부합니다.
-
-```text
-분석 대상 Stored Procedure 정보:
-- Schema: dbo
-- Name: USP_GetOrderDetails
-
-[참조 테이블 상세 스키마 정보 (Markdown Tables)]
-### 테이블: dbo.Orders (USER_TABLE) - 발견 깊이: 1단계
-| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 |
-| :--- | :--- | :---: | :--- |
-| OrderId | int | No | PRIMARY KEY |
-| CustomerId | int | Yes | FOREIGN KEY |
-
-[참조 함수/SP 소스 코드 정의]
-### 함수: dbo.fn_CalculateTax (SQL_SCALAR_FUNCTION) - 발견 깊이: 2단계
-```sql
-CREATE FUNCTION dbo.fn_CalculateTax...
-```
-```
+- `[schema].[name]_Raw/sp_definition.sql`: 원본 SP 생성 DDL 코드.
+- `[schema].[name]_Raw/tables/[table_schema].[table_name].md`: 각 참조 테이블 스키마 표.
+- `[schema].[name]_Raw/functions/[func_schema].[func_name].sql`: 각 참조 함수 코드 본문.
+- `[schema].[name]_Raw/procedures/[proc_schema].[proc_name].sql`: 각 참조 하위 프로시저 코드 본문.
 
 ---
 
@@ -222,3 +183,4 @@ CREATE FUNCTION dbo.fn_CalculateTax...
 3. **지침 파일 누락**: `instructions.txt` 파일이 누락되었을 경우 경고 문구를 콘솔에 노출하고, 내부(Fallback)에 내장된 기본 AI 템플릿을 사용하여 분석을 진행합니다.
 4. **AI 통신 및 API 장애**: API 호출 중 네트워크 에러나 API 키 유효성 문제 발생 시 스피너를 중단하고, 에러 요약본을 출력한 뒤 세션을 복귀시킵니다.
 5. **의존 객체 수집 중 권한 부족**: 재귀 수집 과정에서 암호화되거나 권한이 없어 소스코드를 얻지 못하는 의존 객체가 있다면 이를 스킵하고 다른 객체를 수집하도록 예외를 안전하게 처리(Soft fail)합니다.
+6. **원천 메타데이터 덤프 오류**: 파일 쓰기 등의 오류가 발생하더라도 핵심 명세서 마크다운 생성은 중단되지 않도록 덤프 오류를 예외 격리(Try-catch) 처리합니다.
