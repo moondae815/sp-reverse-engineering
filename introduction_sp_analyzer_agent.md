@@ -39,34 +39,63 @@
 
 ## 📊 프로그램 실행 흐름 (Visual Execution Flow)
 
-아래 다이어그램은 SP Analyzer 프로그램이 기동되어 설정 파싱, 데이터베이스 메타데이터 재귀 수집, AI 분석 및 3단계 파이프라인 검증(L1 정적 검사, L2 AI 교차 리뷰, L3 사용자 피드백 루프)을 거쳐 결과물이 최종 저장되기까지의 전체 자율 실행 흐름을 시각적으로 나타냅니다.
+아래 다이어그램은 SP Analyzer 프로그램이 기동되어 설정 파싱, 데이터베이스 메타데이터 재귀 수집, AI 분석 및 결과 저장/이탈까지의 거시적인(Macro) 전체 실행 흐름을 시각적으로 나타냅니다. 복잡한 3단계 검증 절차는 하단 상세 흐름도로 분리하여 구조화했습니다.
 
 ```mermaid
 graph TD
-    Start["시작 (CLI 실행)"] --> Parse["설정 로드 및 CLI 인자 파싱 (CliArgs)"]
-    Parse --> ModeCheck{"배치 모드 여부?"}
+    %% 1단계: 초기화 및 연결
+    subgraph Setup ["1. 초기 설정 및 DB 연결 (Setup)"]
+        Start["시작 (CLI 실행)"] --> Parse["설정 로드 및 CLI 인자 파싱 (CliArgs)"]
+        Parse --> ModeCheck{"배치 모드 여부?"}
+        
+        ModeCheck -- "아니오 (TUI)" --> TUI["대화형 로그인 입력 (계정 기억 세션 연동)"]
+        ModeCheck -- "예 (Batch)" --> Batch["연결 문자열 추출 (인자/환경변수)"]
+        
+        TUI & Batch --> ConnTest["데이터베이스 연결성 검증"]
+        ConnTest --> LoadSps["전체 Stored Procedure 목록 로드"]
+    end
     
-    ModeCheck -- "아니오 (TUI)" --> TUI["대화형 로그인 입력 (계정 기억 세션 연동)"]
-    ModeCheck -- "예 (Batch)" --> Batch["연결 문자열 추출 (인자/환경변수)"]
+    %% 2단계: 대상 필터링
+    subgraph Selection ["2. 분석 대상 필터링 (Selection)"]
+        LoadSps --> TargetCheck{"배치 모드 여부?"}
+        
+        TargetCheck -- "아니오" --> SelectTUI["실시간 자동완성 검색으로 타겟 SP 선택"]
+        TargetCheck -- "예" --> SelectBatch["--all 또는 --sp 기준으로 분석 대상 목록 필터링"]
+    end
     
-    TUI --> ConnTest["데이터베이스 연결성 검증"]
-    Batch --> ConnTest
+    %% 3단계: 메인 분석 및 검증 파이프라인
+    subgraph Pipeline ["3. 분석 및 검증 파이프라인 (Pipeline)"]
+        SelectTUI & SelectBatch --> LoopStart["분석 루프 시작 (SP 개별 단위 예외 격리)"]
+        
+        LoopStart --> QueryMeta["재귀적 의존성 분석 (DbMetadataService)<br/>- 테이블 스키마 (PK/FK 판별)<br/>- 참조 UDF/SP SQL 원본 추출"]
+        QueryMeta --> GeneratePrompt["AI 프롬프트 컨텍스트 조립 (System 규칙 + 사용자 지침)"]
+        
+        GeneratePrompt --> VerificationPipeline["3단계 검증 파이프라인 실행<br/>(상세 흐름은 하단 다이어그램 참고)"]
+    end
     
-    ConnTest --> LoadSps["전체 Stored Procedure 목록 로드"]
+    %% 4단계: 산출물 내보내기 및 반복 제어
+    subgraph Save ["4. 결과 저장 및 다음 분석 (Export)"]
+        VerificationPipeline -- "승인 및 완료" --> ExportRaw["원천 데이터 다중 포맷 덤프<br/>(JSON, TXT, 개별 파일 트리)"]
+        ExportRaw --> SaveSpec["최종 Markdown 명세서 파일 저장<br/>([Schema].[SP이름]_Spec.md)"]
+    end
     
-    LoadSps --> TargetCheck{"배치 모드 여부?"}
+    SaveSpec --> CheckNext{"다음 분석 대상이 있는가?"}
+    VerificationPipeline -- "취소 및 이탈" --> CheckNext
     
-    TargetCheck -- "아니오" --> SelectTUI["실시간 자동완성 검색으로 타겟 SP 선택"]
-    TargetCheck -- "예" --> SelectBatch["--all 또는 --sp 기준으로 분석 대상 목록 필터링"]
-    
-    SelectTUI --> LoopStart["분석 루프 시작 (SP 개별 단위 예외 격리)"]
-    SelectBatch --> LoopStart
-    
-    LoopStart --> QueryMeta["재귀적 의존성 분석 (DbMetadataService)<br/>- 테이블 스키마 (PK/FK 판별)<br/>- 참조 UDF/SP SQL 원본 추출"]
-    QueryMeta --> GeneratePrompt["AI 프롬프트 컨텍스트 조립 (System 규칙 + 사용자 지침)"]
-    
-    GeneratePrompt --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
-    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청 (instructions + feedbackLog 반영)"]
+    CheckNext -- "예" --> LoopStart
+    CheckNext -- "아니오" --> End["종료"]
+```
+
+---
+
+## 🔍 3단계 검증 파이프라인 상세 (Verification Pipeline Details)
+
+AI가 생성한 1차 명세서의 신뢰성과 무결성을 검증하고, 오류 발견 시 자가 수정(`Self-Correction`) 및 사용자 피드백을 적용하는 상세 검증(Micro) 흐름도입니다.
+
+```mermaid
+graph TD
+    StartPipeline["파이프라인 시작<br/>(SpDefinition + Instructions)"] --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
+    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
     
     CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(필수 헤더 및 Mermaid 문법 린팅)?"}
     
@@ -85,26 +114,18 @@ graph TD
     L1Abort --> L3Check
     L2Abort --> L3Check
     
+    L3Check -- "예 (Batch)" --> ReturnSuccess["결과 반환 및 저장 단계로 진행"]
+    
     L3Check -- "아니오 (TUI)" --> HumanReview["L3: 사용자 검토 요청<br/>(미리보기 화면 렌더링)"]
     HumanReview --> HumanDecision{"사용자 결정?"}
     
-    HumanDecision -- "1. 승인 (Approve)" --> ExportRaw
-    HumanDecision -- "3. 취소 (Cancel)" --> CancelPipeline["저장 없이 이탈<br/>(분석 루프 복귀)"]
+    HumanDecision -- "1. 승인 (Approve)" --> ReturnSuccess
+    HumanDecision -- "3. 취소 (Cancel)" --> ReturnCancel["저장 없이 이탈 (분석 건너뛰기)"]
     HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
     
     RegenerateAI --> L1ReCheck{"L1 정적 검사 통과?"}
     L1ReCheck -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
     L1ReCheck -- "성공" --> HumanReview
-    
-    L3Check -- "예 (Batch)" --> ExportRaw["원천 데이터 다중 포맷 덤프<br/>(JSON, TXT, 개별 파일 트리)"]
-    
-    ExportRaw --> SaveSpec["최종 Markdown 명세서 파일 저장<br/>([Schema].[SP이름]_Spec.md)"]
-    
-    SaveSpec --> CheckNext{"다음 분석 대상이 있는가?"}
-    CancelPipeline --> CheckNext["다음 분석 대상이 있는가?"]
-    
-    CheckNext -- "예" --> LoopStart
-    CheckNext -- "아니오" --> End["종료"]
 ```
 
 ---
