@@ -26,7 +26,7 @@
   - **Level 2 (AI 교차 검증 및 자가 보완)**: 1차 작성이 끝나면 검토관(Reviewer) 에이전트가 비즈니스 로직의 결함과 왜곡을 검증해 N=1회 자가 수정(`Self-Correction`) 보완 루프를 실행합니다.
   - **Level 3 (인간 개입 피드백 루프)**: TUI 대화형 화면에서 개발자가 생성된 기능 명세서의 전체 내용을 실시간 미리보기(Preview)로 확인한 후 최종 승인(`Approve`)하거나, 직접 자연어 보완 의견(`Feedback`)을 기재하여 즉시 재생성할 수 있습니다. 피드백 반영 후 다시 완성된 명세서 역시 한 번 더 화면에 렌더링되며 만족할 때까지 다회차에 걸쳐 반복 검증할 수 있는 직관적인 인터랙티브 흐름을 제공합니다. (무인 배치 모드에서는 자동으로 생략)
 - **다양한 AI 공급자 지원**: OpenAI(GPT) 및 로컬 환경에서 실행되는 Ollama(Llama 3 등)를 유연하게 연결 및 전환하여 사용할 수 있습니다.
-- **커스터마이징 가능한 지침**: 외부 `instructions.txt` 파일의 내용을 프롬프트에 자동으로 주입하여, 원하는 명세서 형식 및 분석 규칙을 텍스트 에디터로 간편하게 커스텀할 수 있습니다.
+- **커스터마이징 가능한 지침**: 외부 `instructions.md` 파일의 내용을 프롬프트에 자동으로 주입하여, 원하는 명세서 형식 및 분석 규칙을 텍스트 에디터로 간편하게 커스텀할 수 있습니다.
 - **인터랙티브 TUI 제공**: 
   - **보안 로그인**: 직전 성공 계정을 로컬 세션 파일(`.session.json`)에 기억하여 재입력을 최소화하며, 비밀번호는 입력 시 화면에 마스킹(`Secret()`)되어 안전합니다.
   - **자동완성 검색**: 타이핑 시 실시간으로 SP 목록이 필터링되는 자동완성 검색 기능이 탑재되어 있습니다.
@@ -50,7 +50,7 @@ SP-Reverse-Engineering/
 │   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI
 │       ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
 │       ├── appsettings.json        # DB/AI 연동 설정 파일
-│       └── instructions.txt        # AI 분석 세부 지침 규칙 파일
+│       └── instructions.md        # AI 분석 세부 지침 규칙 파일
 │
 └── tests/
     └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트
@@ -79,7 +79,7 @@ SP-Reverse-Engineering/
   },
   "OutputSettings": {
     "Directory": "./output",       // 명세서 파일이 저장될 출력 디렉터리
-    "InstructionsFile": "instructions.txt", // 분석 규칙 지침 파일 명칭
+    "InstructionsFile": "instructions.md", // 분석 규칙 지침 파일 명칭
     "SaveRawJson": true,           // [설정] SpDefinition JSON 파일 저장 여부
     "SaveRawContext": true,        // [설정] 조립된 프롬프트 텍스트 원문 저장 여부
     "SaveRawFiles": true           // [설정] 의존성 개별 객체 파일/폴더 분산 덤프 여부
@@ -100,8 +100,8 @@ SP-Reverse-Engineering/
    }
    ```
 
-### 3. `instructions.txt` 설정
-분석된 결과물의 마크다운 포맷 규칙을 정의하는 가이드라인 파일입니다. `src/SpAnalyzer.Cli/instructions.txt`에 작성된 텍스트 내용대로 AI가 리버스 엔지니어링 문서를 만듭니다.
+### 3. `instructions.md` 설정
+분석된 결과물의 마크다운 포맷 규칙을 정의하는 가이드라인 파일입니다. `src/SpAnalyzer.Cli/instructions.md`에 작성된 텍스트 내용대로 AI가 리버스 엔지니어링 문서를 만듭니다.
 
 ---
 

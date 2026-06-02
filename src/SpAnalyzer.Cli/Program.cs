@@ -78,7 +78,7 @@ namespace SpAnalyzer.Cli
                 outputDir = Path.Combine(AppContext.BaseDirectory, outputDir);
             }
 
-            var instructionsFile = configuration["OutputSettings:InstructionsFile"] ?? "instructions.txt";
+            var instructionsFile = configuration["OutputSettings:InstructionsFile"] ?? "instructions.md";
             if (!Path.IsPathRooted(instructionsFile))
             {
                 instructionsFile = Path.Combine(AppContext.BaseDirectory, instructionsFile);
