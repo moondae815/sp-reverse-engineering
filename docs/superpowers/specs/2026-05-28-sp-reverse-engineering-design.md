@@ -2,7 +2,7 @@
 
 이 문서는 SQL Server 2022에 저장된 Stored Procedure(SP)를 조회하고 분석하여, AI를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 CLI 도구의 설계 사양을 정의합니다.
 
-- **작성일**: 2026-05-28
+- **작성일**: 2026-05-28 (고도화 수정일: 2026-06-02)
 - **상태**: 승인됨 (Approved)
 - **대상 플랫폼**: .NET 8.0 / C#
 
@@ -15,7 +15,7 @@
 ```
 SP-Reverse-Engineering/
 │
-├── SP-Reverse-Engineering.sln      # .NET 솔루션 파일
+├── SP-Reverse-Engineering.slnx      # .NET 솔루션 파일
 │
 ├── src/
 │   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
@@ -36,7 +36,7 @@ SP-Reverse-Engineering/
 
 ### 핵심 프로젝트별 역할 및 의존성
 1. **SpAnalyzer.Core**
-   - 역할: SQL Server 2022 메타데이터 수집, 시스템 뷰 기반 의존성 추적, AI 공급자(OpenAI, Claude, Gemini, Ollama) 연동 추상화 및 처리.
+   - 역할: SQL Server 2022 메타데이터 수집, 재귀적 의존성 및 스키마 정보 추적, AI 공급자(OpenAI, Claude, Gemini, Ollama) 연동 추상화 및 처리.
    - 핵심 라이브러리: `Microsoft.Data.SqlClient`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`
 2. **SpAnalyzer.Cli**
    - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트), 진행률 스피너 제공, 마크다운 파일 저장.
@@ -48,6 +48,8 @@ SP-Reverse-Engineering/
 
 ### 2.1 데이터 모델 (Models)
 
+재귀적으로 탐색한 참조 테이블의 스키마와 함수/SP의 소스코드를 수집하고 구조화하기 위한 모델입니다.
+
 ```csharp
 namespace SpAnalyzer.Core.Models
 {
@@ -55,21 +57,32 @@ namespace SpAnalyzer.Core.Models
     {
         public string Schema { get; set; } = "dbo";
         public string Name { get; set; } = string.Empty;
-        public string DdlText { get; set; } = string.Empty; // SP 생성 DDL 쿼리 본문
+        public string DdlText { get; set; } = string.Empty;
         public List<DependencyInfo> Dependencies { get; set; } = new();
     }
 
     public class DependencyInfo
     {
         public string Schema { get; set; } = "dbo";
-        public string Name { get; set; } = string.Empty;    // 참조 대상 객체명 (예: Users 테이블)
-        public string Type { get; set; } = string.Empty;    // 객체 유형 (TABLE, VIEW, FUNCTION, PROCEDURE 등)
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty; // "USER_TABLE", "SQL_SCALAR_FUNCTION", "SQL_STORED_PROCEDURE" 등
+        public int DiscoveryDepth { get; set; }        // 발견된 깊이 단계 (1, 2, 3...)
+        public List<ColumnInfo> Columns { get; set; } = new(); // 객체가 테이블인 경우
+        public string? ReferencedDdlText { get; set; }        // 객체가 UDF/SP인 경우
+    }
+
+    public class ColumnInfo
+    {
+        public string ColumnName { get; set; } = string.Empty;
+        public string DataType { get; set; } = string.Empty;
+        public bool IsNullable { get; set; }
+        public bool IsPrimaryKey { get; set; }
+        public bool IsForeignKey { get; set; }
     }
 }
 ```
 
 ### 2.2 DB 메타데이터 서비스 인터페이스
-
 ```csharp
 namespace SpAnalyzer.Core.Services
 {
@@ -78,31 +91,62 @@ namespace SpAnalyzer.Core.Services
         // 자동완성용 전체 SP 목록을 조회합니다.
         Task<List<string>> GetStoredProcedureNamesAsync(string connectionString);
 
-        // 지정된 SP의 DDL 소스코드와 SQL 의존 관계(Dependencies)를 추출합니다.
-        Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName);
+        // 지정된 SP의 DDL 소스코드와 재귀적 의존 객체 정보(상세 스키마 및 참조 코드 포함)를 추출합니다.
+        Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth);
     }
 }
 ```
 
-* **의존성 정보 조회용 SQL 쿼리**:
-  ```sql
-  SELECT 
-      COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
-      d.referenced_entity_name AS ReferencedEntityName,
-      o.type_desc AS ReferencedType
-  FROM sys.sql_expression_dependencies d
-  INNER JOIN sys.objects o ON d.referenced_id = o.object_id
-  WHERE d.referencing_id = OBJECT_ID(@SpFullName);
-  ```
+### 2.3 DB 데이터 조회 쿼리 사양
 
-### 2.3 AI 서비스 인터페이스
+1. **의존성 쿼리**:
+   ```sql
+   SELECT 
+       COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
+       d.referenced_entity_name AS ReferencedEntityName,
+       o.type_desc AS ReferencedType
+   FROM sys.sql_expression_dependencies d
+   INNER JOIN sys.objects o ON d.referenced_id = o.object_id
+   WHERE d.referencing_id = OBJECT_ID(@SpFullName);
+   ```
 
+2. **테이블 스키마 상세 조회 쿼리**:
+   ```sql
+   SELECT 
+       c.COLUMN_NAME,
+       c.DATA_TYPE + 
+           CASE 
+               WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN 
+                   '(' + CASE WHEN c.CHARACTER_MAXIMUM_LENGTH = -1 THEN 'MAX' ELSE CAST(c.CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)) END + ')'
+               WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL AND c.DATA_TYPE IN ('decimal', 'numeric') THEN 
+                   '(' + CAST(c.NUMERIC_PRECISION AS VARCHAR(10)) + ',' + CAST(c.NUMERIC_SCALE AS VARCHAR(10)) + ')'
+               ELSE ''
+           END AS DataType,
+       CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IsNullable,
+       ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+               JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+               WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
+                 AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                 AND tc.TABLE_NAME = c.TABLE_NAME 
+                 AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsPrimaryKey,
+       ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+               JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+               WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
+                 AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
+                 AND tc.TABLE_NAME = c.TABLE_NAME 
+                 AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey
+   FROM INFORMATION_SCHEMA.COLUMNS c
+   WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
+   ORDER BY c.ORDINAL_POSITION;
+   ```
+
+### 2.4 AI 서비스 인터페이스
 ```csharp
 namespace SpAnalyzer.Core.Services
 {
     public interface IAiService
     {
-        // SP 메타데이터와 사용자 지침 파일을 결합하여 AI 기능 명세서를 마크다운으로 생성합니다.
+        // SP 메타데이터(참조 스키마 표 및 UDF 코드 본문 포함)와 사용자 지침 파일을 결합하여 마크다운 문서를 작성합니다.
         Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions);
     }
 }
@@ -114,44 +158,11 @@ namespace SpAnalyzer.Core.Services
 
 ### 3.1 DB 로그인 정책 및 인터랙티브 입력
 보안 및 개발자 편의성을 위해 DB 로그인 및 세션 유지 방식은 다음과 같습니다.
-
-1. **마지막 계정 로컬 보관**: 
-   성공적으로 연결된 DB 계정 ID를 로컬 세션 파일(`.session.json`)에 임시 보관하여, 다음 프로그램 실행 시 계정 입력창의 기본 제안값(Default Value)으로 보여줍니다. (보안을 위해 `.session.json`은 Git 관리 대상에서 제외)
-2. **보안 비밀번호 입력**: 
-   비밀번호는 매 실행 시마다 새로 입력을 받되, `Spectre.Console`의 `Secret()` 속성을 활성화하여 화면상에 텍스트가 마스킹되거나 표시되지 않도록 처리합니다.
-
-```csharp
-// Spectre.Console을 사용한 로그인 UI 흐름 예시
-string lastUserId = LoadLastSessionUserId();
-
-string userId = AnsiConsole.Prompt(
-    new TextPrompt<string>("DB 계정을 입력하세요:")
-        .DefaultValue(string.IsNullOrEmpty(lastUserId) ? "sa" : lastUserId)
-);
-
-string password = AnsiConsole.Prompt(
-    new TextPrompt<string>("DB 비밀번호를 입력하세요:")
-        .Secret()
-);
-```
+1. **마지막 계정 로컬 보관**: 성공적으로 연결된 DB 계정 ID를 로컬 세션 파일(`.session.json`)에 임시 보관하여, 다음 프로그램 실행 시 계정 입력창의 기본 제안값(Default Value)으로 보여줍니다.
+2. **보안 비밀번호 입력**: 비밀번호는 매 실행 시마다 새로 입력을 받되, `Spectre.Console`의 `Secret()` 속성을 활성화하여 화면상에 텍스트가 마스킹 처리되도록 합니다.
 
 ### 3.2 SP 자동완성 및 검색
-`Spectre.Console`의 `SelectionPrompt` 검색 기능을 통해 타이핑 시 실시간으로 SP 목록이 필터링되는 자동완성 형태를 구성합니다.
-
-```csharp
-var spNames = await dbService.GetStoredProcedureNamesAsync(connectionString);
-var selectedSpName = AnsiConsole.Prompt(
-    new SelectionPrompt<string>()
-        .Title("분석할 [green]Stored Procedure[/]를 선택하거나 검색하세요:")
-        .PageSize(10)
-        .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
-        .AddChoices(spNames)
-        .EnableSearch() // 실시간 타이핑 자동완성 필터링 기능
-);
-```
-
-### 3.3 로딩 스피너 및 출력 결과
-분석 중에는 `AnsiConsole.Status` 스피너를 보여주어 긴 대기 시간 동안 프로세스가 살아 있음을 시각화하고, 분석이 완료되면 결과 저장 경로를 담은 알림 패널을 출력합니다.
+`Spectre.Console`의 `SelectionPrompt` 검색 기능을 통해 타이핑 시 실시간으로 SP 목록이 필터링되는 자동완성 형태를 구성합니다. (`EnableSearch()` 기능 활성화)
 
 ---
 
@@ -162,45 +173,52 @@ var selectedSpName = AnsiConsole.Prompt(
 {
   "DatabaseSettings": {
     "Server": "localhost",
-    "Database": "MyBusinessDb"
+    "Database": "MyBusinessDb",
+    "MaxDependencyDepth": 3        // 재귀 의존성 분석 깊이 설정
   },
   "AiSettings": {
-    "Provider": "OpenAI",          // "OpenAI" | "Claude" | "Gemini" | "Ollama"
-    "ModelName": "gpt-4o",         // 해당 공급자의 모델 지정
-    "ApiKey": "YOUR_API_KEY",      // 로컬 Ollama 사용 시 빈 값
-    "Endpoint": "",                // API 프록시 또는 로컬 Ollama 호출용 (예: http://localhost:11434/v1)
+    "Provider": "OpenAI",
+    "ModelName": "gpt-4o",
+    "ApiKey": "YOUR_API_KEY",
+    "Endpoint": "",
     "Temperature": 0.2
   },
   "OutputSettings": {
-    "Directory": "./output",       // 마크다운 파일 저장 경로
+    "Directory": "./output",
     "InstructionsFile": "./instructions.txt"
   }
 }
 ```
 
-### 4.2 사용자 정의 지침 파일 (`instructions.txt`) 예시
-AI 분석의 엄격한 포맷팅 준수를 위한 프롬프트 가이드라인을 외부 파일로 분리합니다.
+### 4.2 AI 프롬프트 조립 포맷 사양
+
+`AiService`는 수집된 `Dependencies` 목록을 파싱하여, 테이블은 Markdown 표로 변환하고 UDF/SP는 DDL 소스코드로 가공하여 프롬프트에 동적으로 첨부합니다.
+
 ```text
-# Stored Procedure 기능 명세서 작성 지침
+분석 대상 Stored Procedure 정보:
+- Schema: dbo
+- Name: USP_GetOrderDetails
 
-당신은 SQL Server Stored Procedure(SP)를 리버스 엔지니어링하여 비즈니스 로직 기능 명세서를 마크다운으로 작성하는 전문 소프트웨어 아키텍트입니다. 다음 규칙을 준수하세요:
+[참조 테이블 상세 스키마 정보 (Markdown Tables)]
+### 테이블: dbo.Orders (USER_TABLE) - 발견 깊이: 1단계
+| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 |
+| :--- | :--- | :---: | :--- |
+| OrderId | int | No | PRIMARY KEY |
+| CustomerId | int | Yes | FOREIGN KEY |
 
-1. 문서는 한글로 작성되어야 하며 읽기 쉽고 구조적이어야 합니다.
-2. **문서 헤더**: SP의 전체 이름, 스키마, 그리고 생성 목적(Summary)을 명확하게 작성합니다.
-3. **매개변수 분석**: 입력 및 출력 매개변수 목록을 테이블(표) 형태로 표현하고, 각 변수의 타입 및 역할을 기술합니다.
-4. **참조 테이블 & CRUD 매트릭스**: 
-   - SP 내에서 접근하는 모든 테이블 목록을 제시합니다.
-   - 각 테이블에 대해 어떤 CRUD 작업(Create, Read, Update, Delete)을 수행하는지 분석하여 매트릭스 표로 표현합니다.
-5. **비즈니스 로직 흐름**:
-   - 로직의 흐름을 순차적으로 이해하기 쉽게 단계별(Step-by-Step) 요약합니다.
-   - 트랜잭션 처리(BEGIN TRAN / COMMIT) 및 예외 처리(TRY...CATCH) 유무를 상세히 포함합니다.
+[참조 함수/SP 소스 코드 정의]
+### 함수: dbo.fn_CalculateTax (SQL_SCALAR_FUNCTION) - 발견 깊이: 2단계
+```sql
+CREATE FUNCTION dbo.fn_CalculateTax...
+```
 ```
 
 ---
 
 ## 5. 예외 및 에러 처리 (Error Handling)
 
-1. **DB 연결 실패 시**: 네트워크 지연, 서버 오프라인, 잘못된 인증 정보 등의 경우 예외 메시지를 보기 좋은 경고 패널로 출력하고 즉시 로그인 절차로 되돌아가거나 프로그램을 안전하게 종료합니다.
+1. **DB 연결 실패 시**: 예외 메시지를 보기 좋은 경고 패널로 출력하고 프로그램을 안전하게 종료합니다.
 2. **의존성 쿼리 및 DDL 부재**: 대상 SP의 메타데이터를 수집하지 못할 경우, 경고 처리 후 SP 선택 화면으로 되돌아갑니다.
 3. **지침 파일 누락**: `instructions.txt` 파일이 누락되었을 경우 경고 문구를 콘솔에 노출하고, 내부(Fallback)에 내장된 기본 AI 템플릿을 사용하여 분석을 진행합니다.
-4. **AI 통신 및 API 장애**: API 호출 중 네트워크 에러나 API 키 유효성 문제 발생 시 스피너를 중단하고, 에러 요약본을 출력한 뒤 세션을 원복시킵니다.
+4. **AI 통신 및 API 장애**: API 호출 중 네트워크 에러나 API 키 유효성 문제 발생 시 스피너를 중단하고, 에러 요약본을 출력한 뒤 세션을 복귀시킵니다.
+5. **의존 객체 수집 중 권한 부족**: 재귀 수집 과정에서 암호화되거나 권한이 없어 소스코드를 얻지 못하는 의존 객체가 있다면 이를 스킵하고 다른 객체를 수집하도록 예외를 안전하게 처리(Soft fail)합니다.
