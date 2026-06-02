@@ -17,7 +17,7 @@
 - Create: `src/SpAnalyzer.Core/Services/MetadataExporter.cs`
 - Create: `tests/SpAnalyzer.Core.Tests/MetadataExporterTests.cs`
 
-- [ ] **Step 1: 임시 디렉토리를 사용해 JSON 파일 덤프를 생성하는지 검증하는 실패하는 xUnit 테스트 작성**
+- [x] **Step 1: 임시 디렉토리를 사용해 JSON 파일 덤프를 생성하는지 검증하는 실패하는 xUnit 테스트 작성**
 
 파일 생성: `tests/SpAnalyzer.Core.Tests/MetadataExporterTests.cs`
 ```csharp
@@ -70,12 +70,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트를 빌드하여 컴파일 실패(Red) 확인**
+- [x] **Step 2: 테스트를 빌드하여 컴파일 실패(Red) 확인**
 
 Run: `dotnet test`
 Expected: `IMetadataExporter` 및 `MetadataExporter` 클래스 미정의로 빌드 오류 발생.
 
-- [ ] **Step 3: IMetadataExporter 인터페이스 및 MetadataExporter 클래스 기본 구현 작성**
+- [x] **Step 3: IMetadataExporter 인터페이스 및 MetadataExporter 클래스 기본 구현 작성**
 
 파일 생성: `src/SpAnalyzer.Core/Services/IMetadataExporter.cs`
 ```csharp
@@ -207,12 +207,12 @@ namespace SpAnalyzer.Core.Services
 }
 ```
 
-- [ ] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
+- [x] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
 
 Run: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 ```bash
 git add src/SpAnalyzer.Core/Services/IMetadataExporter.cs src/SpAnalyzer.Core/Services/MetadataExporter.cs tests/SpAnalyzer.Core.Tests/MetadataExporterTests.cs
@@ -227,7 +227,7 @@ git commit -m "feat: implement MetadataExporter for multiple format raw outputs"
 - Modify: `src/SpAnalyzer.Cli/Program.cs`
 - Modify: `src/SpAnalyzer.Cli/appsettings.json`
 
-- [ ] **Step 1: appsettings.json에 파일 덤프 유무를 제어하는 플래그 3개 추가**
+- [x] **Step 1: appsettings.json에 파일 덤프 유무를 제어하는 플래그 3개 추가**
 
 파일 수정: `src/SpAnalyzer.Cli/appsettings.json`
 ```json
@@ -254,7 +254,7 @@ git commit -m "feat: implement MetadataExporter for multiple format raw outputs"
 }
 ```
 
-- [ ] **Step 2: Program.cs에 Exporter 연동 및 격리 예외 처리 코드 추가**
+- [x] **Step 2: Program.cs에 Exporter 연동 및 격리 예외 처리 코드 추가**
 
 파일 수정: `src/SpAnalyzer.Cli/Program.cs`
 - 서비스 인스턴스화 부분 (라인 97 부근):
@@ -305,17 +305,17 @@ git commit -m "feat: implement MetadataExporter for multiple format raw outputs"
                   await File.WriteAllTextAsync(outputFileName, specificationMarkdown);
   ```
 
-- [ ] **Step 3: CLI 어플리케이션 컴파일 빌드 검증**
+- [x] **Step 3: CLI 어플리케이션 컴파일 빌드 검증**
 
 Run: `dotnet build`
 Expected: Build Success
 
-- [ ] **Step 4: 무결성 전체 단위 테스트 검증**
+- [x] **Step 4: 무결성 전체 단위 테스트 검증**
 
 Run: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 ```bash
 git add src/SpAnalyzer.Cli/Program.cs src/SpAnalyzer.Cli/appsettings.json

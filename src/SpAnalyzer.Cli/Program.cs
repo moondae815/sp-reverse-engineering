@@ -95,6 +95,7 @@ namespace SpAnalyzer.Cli
             float.TryParse(tempStr, out float temp);
 
             IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
+            IMetadataExporter metadataExporter = new MetadataExporter();
 
             // MaxDependencyDepth 추가 로드
             var depthStr = configuration["DatabaseSettings:MaxDependencyDepth"] ?? "3";
@@ -111,6 +112,11 @@ namespace SpAnalyzer.Cli
             {
                 instructionsFile = Path.Combine(AppContext.BaseDirectory, instructionsFile);
             }
+
+            // 원천 산출물 저장 활성화 옵션 바인딩
+            bool.TryParse(configuration["OutputSettings:SaveRawJson"] ?? "false", out bool saveRawJson);
+            bool.TryParse(configuration["OutputSettings:SaveRawContext"] ?? "false", out bool saveRawContext);
+            bool.TryParse(configuration["OutputSettings:SaveRawFiles"] ?? "false", out bool saveRawFiles);
 
             // 4. Stored Procedure 목록 로드
             List<string> spNames = new();
@@ -209,6 +215,64 @@ namespace SpAnalyzer.Cli
                 if (!Directory.Exists(outputDir))
                 {
                     Directory.CreateDirectory(outputDir);
+                }
+
+                // DB 원천 수집 산출물 디렉터리 저장 연동
+                if (spDef != null)
+                {
+                    try
+                    {
+                        var dependenciesText = new System.Text.StringBuilder();
+                        var tableSchemasText = new System.Text.StringBuilder();
+                        var referenceDdlsText = new System.Text.StringBuilder();
+
+                        foreach (var dep in spDef.Dependencies)
+                        {
+                            dependenciesText.AppendLine($"- Schema: {dep.Schema}, Name: {dep.Name}, Type: {dep.Type} (발견 깊이: {dep.DiscoveryDepth}단계)");
+                            if (dep.Columns.Count > 0)
+                            {
+                                tableSchemasText.AppendLine($"### 테이블: {dep.Schema}.{dep.Name} ({dep.Type})");
+                                foreach (var col in dep.Columns)
+                                {
+                                    tableSchemasText.AppendLine($"| {col.ColumnName} | {col.DataType} | {(col.IsNullable ? "Yes" : "No")} |");
+                                }
+                            }
+                            if (!string.IsNullOrEmpty(dep.ReferencedDdlText))
+                            {
+                                referenceDdlsText.AppendLine($"### {dep.Type}: {dep.Schema}.{dep.Name}");
+                                referenceDdlsText.AppendLine(dep.ReferencedDdlText);
+                            }
+                        }
+
+                        // AI에게 전달되는 프롬프트 결합 텍스트 복원
+                        var rawPromptContext = $@"
+[시스템 규칙 지침]
+{(File.Exists(instructionsFile) ? await File.ReadAllTextAsync(instructionsFile) : "기본 마크다운 규칙을 적용하여 분석해 주세요.")}
+
+[수집된 DB 메타데이터 의존관계 목록]
+{dependenciesText}
+
+[의존하는 참조 테이블 상세 스키마 정보]
+{tableSchemasText}
+
+[의존하는 참조 UDF/SP 소스 코드]
+{referenceDdlsText}
+
+[Stored Procedure DDL SQL 원본]
+{spDef.DdlText}
+";
+                        await metadataExporter.ExportRawMetadataAsync(
+                            spDef,
+                            rawPromptContext,
+                            outputDir,
+                            saveRawJson,
+                            saveRawContext,
+                            saveRawFiles);
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]원천 산출물(Raw Metadata) 저장 중 경고:[/] {ex.Message}");
+                    }
                 }
 
                 var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
