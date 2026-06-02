@@ -39,15 +39,15 @@
 
 ## 📊 프로그램 실행 흐름 (Visual Execution Flow)
 
-아래 다이어그램은 SP Analyzer 프로그램이 기동되어 설정 파싱, 데이터베이스 메타데이터 재귀 수집, AI 분석 및 3단계 파이프라인 검증을 거쳐 결과물이 최종 저장되기까지의 전체 자율 실행 흐름을 시각적으로 나타냅니다.
+아래 다이어그램은 SP Analyzer 프로그램이 기동되어 설정 파싱, 데이터베이스 메타데이터 재귀 수집, AI 분석 및 3단계 파이프라인 검증(L1 정적 검사, L2 AI 교차 리뷰, L3 사용자 피드백 루프)을 거쳐 결과물이 최종 저장되기까지의 전체 자율 실행 흐름을 시각적으로 나타냅니다.
 
 ```mermaid
 graph TD
-    Start["시작 (CLI 실행)"] --> Parse["설정 로드 및 CLI 인자 파싱<br/>(CliArgs)"]
+    Start["시작 (CLI 실행)"] --> Parse["설정 로드 및 CLI 인자 파싱 (CliArgs)"]
     Parse --> ModeCheck{"배치 모드 여부?"}
     
-    ModeCheck -- "아니오 (TUI)" --> TUI["대화형 로그인 입력<br/>(계정 기억 세션 연동)"]
-    ModeCheck -- "예 (Batch)" --> Batch["연결 문자열 추출<br/>(인자/환경변수)"]
+    ModeCheck -- "아니오 (TUI)" --> TUI["대화형 로그인 입력 (계정 기억 세션 연동)"]
+    ModeCheck -- "예 (Batch)" --> Batch["연결 문자열 추출 (인자/환경변수)"]
     
     TUI --> ConnTest["데이터베이스 연결성 검증"]
     Batch --> ConnTest
@@ -56,20 +56,53 @@ graph TD
     
     LoadSps --> TargetCheck{"배치 모드 여부?"}
     
-    TargetCheck -- "아니오" --> SelectTUI["실시간 자동완성 검색으로<br/>타겟 SP 선택 및 분석 루프"]
-    TargetCheck -- "예" --> SelectBatch["--all 또는 --sp 기준으로<br/>분석 대상 목록 필터링"]
+    TargetCheck -- "아니오" --> SelectTUI["실시간 자동완성 검색으로 타겟 SP 선택"]
+    TargetCheck -- "예" --> SelectBatch["--all 또는 --sp 기준으로 분석 대상 목록 필터링"]
     
-    SelectTUI --> LoopStart["분석 루프 시작<br/>(SP 개별 단위 예외 격리)"]
+    SelectTUI --> LoopStart["분석 루프 시작 (SP 개별 단위 예외 격리)"]
     SelectBatch --> LoopStart
     
     LoopStart --> QueryMeta["재귀적 의존성 분석 (DbMetadataService)<br/>- 테이블 스키마 (PK/FK 판별)<br/>- 참조 UDF/SP SQL 원본 추출"]
-    QueryMeta --> GeneratePrompt["AI 프롬프트 컨텍스트 조립<br/>(System 규칙 + 사용자 지침)"]
-    GeneratePrompt --> CallAI["AI 리버스 엔지니어링 요청<br/>(Mermaid 시각화 지침 포함)"]
+    QueryMeta --> GeneratePrompt["AI 프롬프트 컨텍스트 조립 (System 규칙 + 사용자 지침)"]
     
-    CallAI --> ExportRaw["원천 데이터 다중 포맷 덤프<br/>(JSON, TXT, 개별 파일 트리)"]
+    GeneratePrompt --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
+    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청 (instructions + feedbackLog 반영)"]
+    
+    CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(필수 헤더 및 Mermaid 문법 린팅)?"}
+    
+    L1Check -- "실패" --> L1FailAttempt{"attempt < 2?"}
+    L1FailAttempt -- "예 (1차 실패)" --> SetL1Feedback["L1 피드백 세팅<br/>(attempt = 2)"] --> CallAI
+    L1FailAttempt -- "아니오 (최종 실패)" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
+    
+    L1Check -- "성공" --> L2Review["AI 교차 리뷰 분석 요청"]
+    L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
+    
+    L2Check -- "실패" --> L2FailAttempt{"attempt < 2?"}
+    L2FailAttempt -- "예 (1차 실패)" --> SetL2Feedback["L2 피드백 세팅<br/>(attempt = 2)"] --> CallAI
+    L2FailAttempt -- "아니오 (최종 실패)" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
+    
+    L2Check -- "성공" --> L3Check{"배치 모드인가?"}
+    L1Abort --> L3Check
+    L2Abort --> L3Check
+    
+    L3Check -- "아니오 (TUI)" --> HumanReview["L3: 사용자 검토 요청<br/>(미리보기 화면 렌더링)"]
+    HumanReview --> HumanDecision{"사용자 결정?"}
+    
+    HumanDecision -- "1. 승인 (Approve)" --> ExportRaw
+    HumanDecision -- "3. 취소 (Cancel)" --> CancelPipeline["저장 없이 이탈<br/>(분석 루프 복귀)"]
+    HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
+    
+    RegenerateAI --> L1ReCheck{"L1 정적 검사 통과?"}
+    L1ReCheck -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
+    L1ReCheck -- "성공" --> HumanReview
+    
+    L3Check -- "예 (Batch)" --> ExportRaw["원천 데이터 다중 포맷 덤프<br/>(JSON, TXT, 개별 파일 트리)"]
+    
     ExportRaw --> SaveSpec["최종 Markdown 명세서 파일 저장<br/>([Schema].[SP이름]_Spec.md)"]
     
     SaveSpec --> CheckNext{"다음 분석 대상이 있는가?"}
+    CancelPipeline --> CheckNext["다음 분석 대상이 있는가?"]
+    
     CheckNext -- "예" --> LoopStart
     CheckNext -- "아니오" --> End["종료"]
 ```
@@ -81,3 +114,4 @@ graph TD
 * **레거시 시스템 마이그레이션**: 오랜 기간 정비되지 않은 대규모 레거시 Stored Procedure의 비즈니스 로직을 빠르게 문서화하고 도식화합니다.
 * **신입 개발자 온보딩**: 복잡한 데이터베이스 의존 관계를 AI 에이전트가 탐색하여 다이어그램과 함께 구조적으로 해설하므로 개발 지식 전파 비용을 대폭 낮춥니다.
 * **CI/CD 파이프라인 자동화**: 주기적으로 배치 모드를 실행하여 데이터베이스 스키마와 프로시저 변경 이력을 명세서로 자동 추적하고 변경 감지 리포트를 산출할 수 있습니다.
+
