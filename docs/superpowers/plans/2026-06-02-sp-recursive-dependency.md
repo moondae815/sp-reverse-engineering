@@ -18,7 +18,7 @@
 - Modify: `src/SpAnalyzer.Core/Models/SpDefinition.cs`
 - Modify: `tests/SpAnalyzer.Core.Tests/ModelsTest.cs`
 
-- [ ] **Step 1: ColumnInfo 및 확장된 모델 정보를 빌드 검증하는 실패하는 테스트 작성**
+- [x] **Step 1: ColumnInfo 및 확장된 모델 정보를 빌드 검증하는 실패하는 테스트 작성**
 
 파일 수정: `tests/SpAnalyzer.Core.Tests/ModelsTest.cs`
 ```csharp
@@ -76,12 +76,12 @@ namespace SpAnalyzer.Core.Tests
 }
 ```
 
-- [ ] **Step 2: 테스트를 빌드하여 컴파일 실패(Red) 확인**
+- [x] **Step 2: 테스트를 빌드하여 컴파일 실패(Red) 확인**
 
 Run: `dotnet test`
 Expected: `ColumnInfo` 클래스 부재, `DiscoveryDepth`, `Columns`, `ReferencedDdlText` 필드 부재로 컴파일 오류 발생.
 
-- [ ] **Step 3: 데이터 모델 구현 추가**
+- [x] **Step 3: 데이터 모델 구현 추가**
 
 파일 생성: `src/SpAnalyzer.Core/Models/ColumnInfo.cs`
 ```csharp
@@ -116,12 +116,12 @@ namespace SpAnalyzer.Core.Models
 }
 ```
 
-- [ ] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
+- [x] **Step 4: 테스트를 재실행하여 빌드 및 패스 검증**
 
 Run: `dotnet test`
 Expected: PASS
 
-- [ ] **Step 5: Git Commit**
+- [x] **Step 5: Git Commit**
 
 ```bash
 git add src/SpAnalyzer.Core/Models/ColumnInfo.cs src/SpAnalyzer.Core/Models/DependencyInfo.cs tests/SpAnalyzer.Core.Tests/ModelsTest.cs
