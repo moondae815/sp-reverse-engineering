@@ -1,0 +1,29 @@
+# User custom session ignore
+.session.json
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Log]s/
+[Oo]utput/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider / IntelliJ / VS Code
+.idea/
+.vscode/
+
+# NuGet Packages
+*.nuget.props
+*.nuget.targets
+project.assets.json
+project.lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
