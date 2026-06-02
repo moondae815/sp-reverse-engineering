@@ -21,6 +21,7 @@
     3. **개별 파일/폴더 분산 저장**: 메인 DDL(sql), 개별 테이블 스키마 표(md), 참조 함수/SP 본문(sql)을 계층화된 폴더 트리 구조로 각각 쪼개어 저장.
   - 저장 처리 도중 용량 부족 등으로 에러가 발생하더라도 핵심 명세서 저장은 지속되도록 예외 격리(Soft Fail) 처리를 적용했습니다.
 - **다양한 AI 공급자 지원**: OpenAI(GPT) 및 로컬 환경에서 실행되는 Ollama(Llama 3 등)를 유연하게 연결 및 전환하여 사용할 수 있습니다.
+- **비즈니스 흐름 시각화 (Mermaid Diagram)**: 명세서 내에 실행 흐름과 CRUD 제어 시퀀스를 표현하는 Mermaid Flowchart 자동 생성 지침이 내장되어 노드 단위 특수문자 문법 예외 처리까지 완벽히 대응합니다.
 - **커스터마이징 가능한 지침**: 외부 `instructions.txt` 파일의 내용을 프롬프트에 자동으로 주입하여, 원하는 명세서 형식 및 분석 규칙을 텍스트 에디터로 간편하게 커스텀할 수 있습니다.
 - **인터랙티브 TUI 제공**: 
   - **보안 로그인**: 직전 성공 계정을 로컬 세션 파일(`.session.json`)에 기억하여 재입력을 최소화하며, 비밀번호는 입력 시 화면에 마스킹(`Secret()`)되어 안전합니다.
@@ -87,16 +88,41 @@ SP-Reverse-Engineering/
 ---
 
 ## 🏃 실행 및 사용 방법 (Running the Tool)
+ 
+### 1. 대화형 TUI 모드 실행
+기본적으로 아무 아규먼트 없이 실행하면 로그인 정보 입력 및 Stored Procedure 자동완성 검색/선택이 가능한 TUI 모드로 시작합니다.
+```bash
+dotnet run --project src/SpAnalyzer.Cli
+```
+1. DB 계정(ID)과 패스워드를 입력하여 SQL Server에 로그인합니다.
+2. 분석하고자 하는 Stored Procedure의 이름을 검색 또는 방향키로 선택합니다.
+3. 로딩이 완료되면 지정된 출력 디렉터리(기본 `./output`) 내부에 `[스키마].[SP이름]_Spec.md` 형식의 분석 명세서 파일이 생성됩니다.
 
-### 프로그램 실행
-1. 프로젝트 루트 경로로 이동합니다.
-2. 아래 명령어를 터미널에 입력하여 프로그램을 기동합니다.
-   ```bash
-   dotnet run --project src/SpAnalyzer.Cli
-   ```
-3. DB 계정(ID)과 패스워드를 입력하여 SQL Server에 로그인합니다.
-4. 분석하고자 하는 Stored Procedure의 이름을 검색 또는 방향키로 선택합니다.
-5. 로딩이 완료되면 지정된 출력 디렉터리(기본 `./output`) 내부에 `[스키마].[SP이름]_Spec.md` 형식의 분석 명세서 파일이 생성되고, 활성화된 옵션에 따라 수집 데이터 원본 산출물이 생성됩니다.
+### 2. 배치 모드 및 CLI 자동화 실행 (Batch Mode)
+명령줄 아규먼트(`--conn`, `--all`, `--sp`) 또는 환경 변수(`SP_ANALYZER_CONN_STR`)를 통해 로그인 및 TUI 선택 단계를 완전히 건너뛰고 무인 대량 일괄 처리가 가능합니다.
+
+- **명령줄 옵션**:
+  - `--conn <연결문자열>`: 분석용 데이터베이스 연결 문자열을 직접 지정합니다. (생략 시 `SP_ANALYZER_CONN_STR` 환경 변수 값을 조회합니다.)
+  - `--all`: 데이터베이스 내의 모든 Stored Procedure를 일괄 분석합니다.
+  - `--sp <SP이름1,SP이름2,...>`: 특정 Stored Procedure들만 지정하여 분석합니다. 쉼표(`,`)로 구분하며 스키마명을 포함(`dbo.USP_1`)하거나 생략(`USP_1`)할 수 있습니다.
+  
+- **배치 실행 예시**:
+  - **특정 SP 지정 분석**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder
+    ```
+  - **전체 SP 일괄 분석**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --all
+    ```
+  - **환경 변수를 활용한 분석**:
+    ```bash
+    export SP_ANALYZER_CONN_STR="Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true"
+    dotnet run --project src/SpAnalyzer.Cli -- --all
+    ```
+
+> [!NOTE]
+> 배치 모드로 대량 실행 중 특정 SP에 대한 메타데이터 조회 실패 또는 AI 통신 에러가 발생하더라도, 해당 SP만 에러 로그가 출력되고 스킵(try-catch 격리)되며 전체 배치 작업은 중단 없이 다음 SP 분석을 계속 수행합니다.
 
 ---
 
