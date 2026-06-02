@@ -27,3 +27,6 @@ project.lock.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local configuration
+appsettings.local.json
