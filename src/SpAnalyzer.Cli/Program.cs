@@ -9,8 +9,42 @@ using SpAnalyzer.Core.Services;
 
 namespace SpAnalyzer.Cli
 {
-    class Program
+    public class Program
     {
+        public static CliArgs ParseCommandLineArgs(string[] args)
+        {
+            var cliArgs = new CliArgs();
+            cliArgs.ConnectionString = Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR");
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                var arg = args[i];
+
+                if (arg.Equals("--conn", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    cliArgs.ConnectionString = args[++i];
+                }
+                else if (arg.Equals("--all", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliArgs.AnalyzeAll = true;
+                }
+                else if (arg.Equals("--sp", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    var sps = args[++i].Split(',');
+                    foreach (var sp in sps)
+                    {
+                        var trimmed = sp.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                        {
+                            cliArgs.TargetProcedures.Add(trimmed);
+                        }
+                    }
+                }
+            }
+
+            return cliArgs;
+        }
+
         static async Task Main(string[] args)
         {
             AnsiConsole.Clear();
