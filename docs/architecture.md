@@ -15,7 +15,7 @@
 | | [SessionManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 |
 | **SpAnalyzer.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집 |
 | | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립, 명세서 생성, AI 리뷰(L2) 및 배치 현대화 설계서 기안 |
-| | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | L1 정적 마크다운 포맷팅 린팅 및 Mermaid 문법 적합성 정밀 패턴 검사 |
+| | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
 | | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 제어 |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
 
@@ -34,7 +34,7 @@
 
 ### 3. 3단계 신뢰성 검증 파이프라인 (Verification Pipeline)
 * **대칭형 검증 아키텍처**: 개별 SP 분석서(`_Spec.md`)와 통합 배치 전환 계획서(`_BatchMigrationPlan.md`) 모두에 100% 대칭형 검증 파이프라인이 구동됩니다.
-* **L1 (기계 검사 - 정적 Linter)**: 각 문서 포맷별 필수 섹션 존재 유무(개별 5대 헤더 / 통합 4대 헤더) 및 Mermaid 다이어그램 구문을 정적으로 고속 린팅합니다.
+* **L1 (기계 검사 - 정적 Linter)**: 마크다운 구조(AST) 파서인 **`Markdig`**을 사용해 필수 섹션(개별 5대 헤더 / 통합 4대 헤더) 누락 여부를 구조적으로 정교히 검증하며, 설정에 따라 **`mermaid-cli` 도구 컴파일 검증** 또는 정적 괄호 마스킹 예외 린팅을 선택적으로 가동합니다.
 * **L2 (AI 교차 리뷰어)**: 수석 아키텍트 프롬프트로 리뷰어 에이전트를 가동하여 원천 정보와 생성 설계서 간의 불일치를 스크리닝하고 누락 발견 시 설정된 시도 횟수(기본 1회, 또는 검증 완료시까지 무제한)만큼 자가 보완(`Self-Correction`)을 수행합니다.
 * **L3 (인간 개입 조율 - HITL)**: TUI 모드에서 렌더링된 결과를 개발자가 직접 프리뷰하고 승인(`Approve`)하거나, 보완 피드백(`Feedback`)을 자연어로 주어 재생성하는 인터랙티브 조율을 지원합니다.
 
@@ -107,7 +107,7 @@ graph TD
     StartPipeline["파이프라인 시작<br/>(SpDefinition + Instructions)"] --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
     InitAttempt --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
     
-    CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(필수 헤더 및 Mermaid 문법 린팅)?"}
+    CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(Markdig AST 구조 확인 & mmdc 컴파일)?"}
     
     L1Check -- "실패" --> L1FailAttempt{"attempt < maxAttempts?"}
     L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI

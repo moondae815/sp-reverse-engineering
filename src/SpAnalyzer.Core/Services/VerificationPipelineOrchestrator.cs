@@ -12,18 +12,21 @@ namespace SpAnalyzer.Core.Services
         private readonly IVerificationUserInteraction _userInteraction;
         private readonly int _maxL2Attempts;
         private readonly int _maxAttempts;
+        private readonly string _modelName;
 
         public VerificationPipelineOrchestrator(
             IDbMetadataService dbService,
             IAiService aiService,
             MechanicalValidator validator,
             IVerificationUserInteraction userInteraction,
-            string maxL2Attempts = "1")
+            string maxL2Attempts = "1",
+            string modelName = "")
         {
             _dbService = dbService;
             _aiService = aiService;
             _validator = validator;
             _userInteraction = userInteraction;
+            _modelName = modelName;
 
             if (string.Equals(maxL2Attempts, "unlimited", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(maxL2Attempts, "검증 완료까지", StringComparison.OrdinalIgnoreCase) ||
@@ -80,7 +83,7 @@ namespace SpAnalyzer.Core.Services
                 var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                 bool genSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider}) [[{attemptText}]]...");
+                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}) [[{attemptText}]]...");
                 try
                 {
                     specificationMarkdown = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog);
@@ -120,7 +123,7 @@ namespace SpAnalyzer.Core.Services
                 ReviewResult? l2Result = null;
                 bool reviewSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider})...");
+                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider} - {_modelName})...");
                 try
                 {
                     l2Result = await _aiService.ReviewSpecificationAsync(spDef, specificationMarkdown);
@@ -233,7 +236,7 @@ namespace SpAnalyzer.Core.Services
                 var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                 bool genSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({provider}) [[{attemptText}]]...");
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({provider} - {_modelName}) [[{attemptText}]]...");
                 try
                 {
                     var specsCopy = new System.Collections.Generic.List<(string FileName, string Content)>(specs);
@@ -279,7 +282,7 @@ namespace SpAnalyzer.Core.Services
                 ReviewResult? l2Result = null;
                 bool reviewSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({provider})...");
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({provider} - {_modelName})...");
                 try
                 {
                     l2Result = await _aiService.ReviewConsolidatedPlanAsync(specs, consolidatedPlan, jobName);

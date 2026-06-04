@@ -218,7 +218,7 @@ namespace SpAnalyzer.Cli
             var validator = new MechanicalValidator(useMermaidCli);
             var userInteraction = new ConsoleUserInteraction();
             var maxL2Attempts = configuration["AiSettings:MaxL2Attempts"] ?? "1";
-            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts);
+            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts, modelName);
 
             string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";
             if (File.Exists(instructionsFile))
@@ -326,7 +326,7 @@ namespace SpAnalyzer.Cli
                         await SaveOutputsAsync(
                             spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name);
+                            schema, name, provider, modelName);
 
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
@@ -405,7 +405,7 @@ namespace SpAnalyzer.Cli
                         await SaveOutputsAsync(
                             spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name);
+                            schema, name, provider, modelName);
 
                         var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                         AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -479,7 +479,8 @@ namespace SpAnalyzer.Cli
                         }
 
                         var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
-                        await File.WriteAllTextAsync(planFileName, consolidatedPlan);
+                        var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                        await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
                         AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
                         {
                             Border = BoxBorder.Rounded,
@@ -502,7 +503,9 @@ namespace SpAnalyzer.Cli
             bool saveRawContext,
             bool saveRawFiles,
             string schema,
-            string name)
+            string name,
+            string provider,
+            string modelName)
         {
             if (spDef != null)
             {
@@ -560,13 +563,15 @@ namespace SpAnalyzer.Cli
                 }
             }
 
+            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+
             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
-            await File.WriteAllTextAsync(outputFileName, specMarkdown);
+            await File.WriteAllTextAsync(outputFileName, metadataHeader + specMarkdown);
 
             if (!string.IsNullOrEmpty(migrationPlan))
             {
                 var planFileName = Path.Combine(outputDir, $"{schema}.{name}_BatchMigrationPlan.md");
-                await File.WriteAllTextAsync(planFileName, migrationPlan);
+                await File.WriteAllTextAsync(planFileName, metadataHeader + migrationPlan);
             }
         }
     }
