@@ -266,5 +266,102 @@ namespace SpAnalyzer.Core.Services
                 };
             }
         }
+
+        public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+            }
+
+            var systemPrompt = $@"당신은 SQL Server Agent의 스케줄러 배치 작업을 현대적인 애플리케이션 기반 배치 프레임워크로 전환하는 최적화 설계 전문가입니다.
+대상 Stored Procedure 소스 코드와 의존 테이블/UDF 구조를 분석하여, {targetLanguage} 기반의 현대적인 백그라운드 배치 컴포넌트로 포팅하기 위한 '배치 전환 계획 설계서'를 작성해 주십시오.
+
+[설계서 작성 규칙 및 내용 필수 조건]
+1. 문서는 한글 마크다운 양식으로 작성하십시오.
+2. **배치 전환 아키텍처 개요**: SQL Server Agent Job 역할을 대체할 신규 스케줄러 프레임워크 제안 (예: C#인 경우 Quartz.NET / Hangfire 기반 Worker Service, Java인 경우 Spring Batch + Quartz).
+3. **대량 데이터 청크(Chunk) 처리 전략**: OOM 방지를 위한 Paging Reader 패턴 및 벌크 연산(Bulk Write) 가이드라인 제안.
+4. **비즈니스 전환 설계 및 의사코드(Pseudocode)**: SP 내부의 주요 비즈니스 로직(분기, 루프, 데이터 처리 등)을 {targetLanguage}의 OOP 문법 및 ORM(EF Core / JPA)으로 전환하는 구체적 의사코드(코드 구조 예시) 제공.
+5. **로깅 및 실패 조치 계획**: 기존 TRY...CATCH 에러 로깅을 구조화된 로그(Serilog 등)로 전환하고 알림(Slack 등) 발송 방안 매핑.
+6. **데이터 정합성 검증 SQL 세트**: 신규 배치 코드가 레거시 SP와 동일한 데이터를 생성/수정했는지 검증하기 위한 실행 전후 카운트, 해시 검증용 SQL 쿼리 템플릿 포함.";
+
+            var dependenciesText = new StringBuilder();
+            var tableSchemasText = new StringBuilder();
+            var referenceDdlsText = new StringBuilder();
+
+            foreach (var dep in spDef.Dependencies)
+            {
+                dependenciesText.AppendLine($"- Schema: {dep.Schema}, Name: {dep.Name}, Type: {dep.Type} (발견 깊이: {dep.DiscoveryDepth}단계)");
+                
+                if (dep.Columns.Count > 0)
+                {
+                    tableSchemasText.AppendLine(FormatTableSchemaToMarkdown(dep));
+                    tableSchemasText.AppendLine();
+                }
+
+                if (!string.IsNullOrEmpty(dep.ReferencedDdlText))
+                {
+                    referenceDdlsText.AppendLine($"### 객체: {dep.Schema}.{dep.Name} ({dep.Type})");
+                    referenceDdlsText.AppendLine("```sql");
+                    referenceDdlsText.AppendLine(dep.ReferencedDdlText);
+                    referenceDdlsText.AppendLine("```");
+                    referenceDdlsText.AppendLine();
+                }
+            }
+
+            var userPrompt = $@"
+분석 대상 Stored Procedure 정보:
+- Schema: {spDef.Schema}
+- Name: {spDef.Name}
+
+[DB에서 추출된 기계적 의존 관계 목록]
+{dependenciesText}
+
+[의존하는 참조 테이블 상세 스키마 정보 (테이블 및 컬럼 주석 설명 포함)]
+{tableSchemasText}
+
+[의존하는 참조 함수 및 Stored Procedure 정의 DDL 코드 목록]
+{referenceDdlsText}
+
+[Stored Procedure DDL SQL 원본]
+```sql
+{spDef.DdlText}
+```
+
+위 레거시 배치 SP 정보를 바탕으로 {targetLanguage} 기준의 '배치 전환 계획 설계서'를 작성해 주십시오.
+";
+
+            var requestBody = new
+            {
+                model = _modelName,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
+                },
+                temperature = _temperature
+            };
+
+            var jsonPayload = JsonSerializer.Serialize(requestBody);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
+            {
+                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            }
+
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(responseContent))
+            {
+                var root = doc.RootElement;
+                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+            }
+        }
     }
 }

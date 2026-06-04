@@ -88,6 +88,9 @@ namespace SpAnalyzer.Cli
             bool.TryParse(configuration["OutputSettings:SaveRawContext"] ?? "false", out bool saveRawContext);
             bool.TryParse(configuration["OutputSettings:SaveRawFiles"] ?? "false", out bool saveRawFiles);
 
+            bool.TryParse(configuration["MigrationSettings:Enabled"] ?? "true", out bool migrationEnabled);
+            var targetLanguage = configuration["MigrationSettings:TargetLanguage"] ?? "C#";
+
             string connectionString = string.Empty;
             string? userId = null;
 
@@ -270,13 +273,20 @@ namespace SpAnalyzer.Cli
                             throw new Exception("검증 파이프라인을 통과한 명세서 획득 실패");
                         }
 
+                        string? migrationPlan = null;
+                        if (migrationEnabled && spDef != null)
+                        {
+                            AnsiConsole.MarkupLine($"[yellow]{schema}.{name}[/] - 배치 전환 계획 설계서 작성 중 ({targetLanguage})...");
+                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage);
+                        }
+
                         if (!Directory.Exists(outputDir))
                         {
                             Directory.CreateDirectory(outputDir);
                         }
 
                         await SaveOutputsAsync(
-                            spDef, specMarkdown, outputDir, instructionsFile,
+                            spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                             schema, name);
 
@@ -326,13 +336,23 @@ namespace SpAnalyzer.Cli
                         continue;
                     }
 
+                    string? migrationPlan = null;
+                    if (migrationEnabled && spDef != null)
+                    {
+                        await AnsiConsole.Status()
+                            .StartAsync("배치 전환 계획 설계서 작성 중...", async ctx =>
+                            {
+                                migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage);
+                            });
+                    }
+
                     if (!Directory.Exists(outputDir))
                     {
                         Directory.CreateDirectory(outputDir);
                     }
 
                     await SaveOutputsAsync(
-                        spDef, specMarkdown, outputDir, instructionsFile,
+                        spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                         metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                         schema, name);
 
@@ -350,6 +370,7 @@ namespace SpAnalyzer.Cli
         private static async Task SaveOutputsAsync(
             SpAnalyzer.Core.Models.SpDefinition? spDef,
             string specMarkdown,
+            string? migrationPlan,
             string outputDir,
             string instructionsFile,
             IMetadataExporter metadataExporter,
@@ -417,6 +438,12 @@ namespace SpAnalyzer.Cli
 
             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
             await File.WriteAllTextAsync(outputFileName, specMarkdown);
+
+            if (!string.IsNullOrEmpty(migrationPlan))
+            {
+                var planFileName = Path.Combine(outputDir, $"{schema}.{name}_BatchMigrationPlan.md");
+                await File.WriteAllTextAsync(planFileName, migrationPlan);
+            }
         }
     }
 }
