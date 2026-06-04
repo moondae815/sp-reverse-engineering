@@ -94,6 +94,9 @@ SP-Reverse-Engineering/
   "MigrationSettings": {
     "Enabled": true,               // [설정] 신규 시스템 현대화 설계서 추가 생성 활성화 여부
     "TargetLanguage": "C#"         // [설정] 제안할 신규 시스템의 배치 프레임워크 언어 (C# | Java 등)
+  },
+  "ValidationSettings": {
+    "UseMermaidCli": false         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false, 사용 시 node.js 환경 및 mermaid-cli 설치 필요)
   }
 }
 ```

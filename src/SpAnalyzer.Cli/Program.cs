@@ -214,7 +214,8 @@ namespace SpAnalyzer.Cli
             IDbMetadataService dbService = new DbMetadataService();
             IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
             IMetadataExporter metadataExporter = new MetadataExporter();
-            var validator = new MechanicalValidator();
+            bool.TryParse(configuration["ValidationSettings:UseMermaidCli"] ?? "false", out bool useMermaidCli);
+            var validator = new MechanicalValidator(useMermaidCli);
             var userInteraction = new ConsoleUserInteraction();
             var maxL2Attempts = configuration["AiSettings:MaxL2Attempts"] ?? "1";
             var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts);
