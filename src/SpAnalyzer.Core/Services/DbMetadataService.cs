@@ -153,6 +153,7 @@ namespace SpAnalyzer.Core.Services
                     try
                     {
                         depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name);
+                        depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Schema, rawDep.Name);
                     }
                     catch
                     {
@@ -207,7 +208,13 @@ namespace SpAnalyzer.Core.Services
                             WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
                               AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
                               AND tc.TABLE_NAME = c.TABLE_NAME 
-                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey
+                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey,
+                    ISNULL((SELECT CAST(value AS NVARCHAR(1000))
+                            FROM sys.extended_properties
+                            WHERE major_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
+                              AND minor_id = COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), c.COLUMN_NAME, 'ColumnId')
+                              AND class = 1
+                              AND name = 'MS_Description'), '') AS Description
                 FROM INFORMATION_SCHEMA.COLUMNS c
                 WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
                 ORDER BY c.ORDINAL_POSITION;";
@@ -229,13 +236,48 @@ namespace SpAnalyzer.Core.Services
                                 DataType = reader.GetString(1),
                                 IsNullable = reader.GetInt32(2) == 1,
                                 IsPrimaryKey = reader.GetInt32(3) == 1,
-                                IsForeignKey = reader.GetInt32(4) == 1
+                                IsForeignKey = reader.GetInt32(4) == 1,
+                                Description = reader.GetString(5)
                             });
                         }
                     }
                 }
             }
             return columns;
+        }
+
+        private async Task<string> GetTableDescriptionAsync(string connectionString, string schema, string tableName)
+        {
+            var fullName = $"{schema}.{tableName}";
+            var query = @"
+                SELECT CAST(value AS NVARCHAR(MAX)) 
+                FROM sys.extended_properties 
+                WHERE major_id = OBJECT_ID(@FullName) 
+                  AND minor_id = 0 
+                  AND class = 1
+                  AND name = 'MS_Description';";
+
+            try
+            {
+                using (var conn = new SqlConnection(connectionString))
+                {
+                    await conn.OpenAsync();
+                    using (var cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@FullName", fullName);
+                        var result = await cmd.ExecuteScalarAsync();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            return result.ToString() ?? string.Empty;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 권한 오류 등 무시
+            }
+            return string.Empty;
         }
     }
 }

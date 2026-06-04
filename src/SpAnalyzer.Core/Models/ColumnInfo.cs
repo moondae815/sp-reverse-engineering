@@ -7,5 +7,6 @@ namespace SpAnalyzer.Core.Models
         public bool IsNullable { get; set; }
         public bool IsPrimaryKey { get; set; }
         public bool IsForeignKey { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 }

@@ -36,8 +36,12 @@ namespace SpAnalyzer.Core.Services
         {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine($"### 테이블: {dep.Schema}.{dep.Name} ({dep.Type}) - 발견 깊이: {dep.DiscoveryDepth}단계");
-            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 |");
-            sb.AppendLine("| :--- | :--- | :---: | :--- |");
+            if (!string.IsNullOrEmpty(dep.Description))
+            {
+                sb.AppendLine($"* 테이블 설명: {dep.Description}");
+            }
+            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 | 설명 |");
+            sb.AppendLine("| :--- | :--- | :---: | :--- | :--- |");
             
             foreach (var col in dep.Columns)
             {
@@ -48,7 +52,7 @@ namespace SpAnalyzer.Core.Services
                 var constraintStr = string.Join(", ", constraints);
                 var nullableStr = col.IsNullable ? "Yes" : "No";
                 
-                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} |");
+                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} | {col.Description} |");
             }
             
             return sb.ToString();

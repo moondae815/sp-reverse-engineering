@@ -10,5 +10,6 @@ namespace SpAnalyzer.Core.Models
         public int DiscoveryDepth { get; set; }
         public List<ColumnInfo> Columns { get; set; } = new();
         public string? ReferencedDdlText { get; set; }
+        public string Description { get; set; } = string.Empty;
     }
 }
