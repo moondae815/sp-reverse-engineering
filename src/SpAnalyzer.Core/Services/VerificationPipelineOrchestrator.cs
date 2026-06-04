@@ -191,5 +191,157 @@ namespace SpAnalyzer.Core.Services
 
             return (specificationMarkdown, spDef);
         }
+
+        public async Task<string?> RunConsolidatedPipelineAsync(
+            System.Collections.Generic.List<(string FileName, string Content)> specs,
+            string targetLanguage,
+            string jobName,
+            string provider)
+        {
+            string? feedbackLog = null;
+            string consolidatedPlan = string.Empty;
+
+            // 최대 2회 시도 (1차 생성 + L1/L2 오류 시 1회 자가 보완)
+            for (int attempt = 1; attempt <= 2; attempt++)
+            {
+                var attemptText = attempt == 1 ? "1차 분석" : "자가 수정 보완";
+                bool genSuccess = false;
+
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({provider}) [[{attemptText}]]...");
+                try
+                {
+                    var specsCopy = new System.Collections.Generic.List<(string FileName, string Content)>(specs);
+                    if (!string.IsNullOrEmpty(feedbackLog))
+                    {
+                        specsCopy.Add(("Feedback_Log.txt", $"[이전 시도에 대한 검토 피드백]:\n{feedbackLog}\n위 에러/피드백 사항을 전적으로 수용하여 통합 설계서를 완성해 주세요."));
+                    }
+
+                    consolidatedPlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName);
+                    genSuccess = true;
+                }
+                catch (Exception ex)
+                {
+                    _userInteraction.NotifyError($"{jobName} - AI 통합 계획 생성 실패 (시도 {attempt}): {ex.Message}");
+                }
+
+                if (!genSuccess || string.IsNullOrEmpty(consolidatedPlan))
+                {
+                    return null;
+                }
+
+                // L1: 기계적 무결성 검사
+                var l1Result = _validator.ValidateConsolidated(consolidatedPlan);
+                if (!l1Result.IsValid)
+                {
+                    _userInteraction.NotifyL1Errors(jobName, attempt, l1Result.Errors);
+
+                    if (attempt < 2)
+                    {
+                        feedbackLog = l1Result.SuggestedPromptFix;
+                        continue;
+                    }
+                    else
+                    {
+                        _userInteraction.NotifyError($"{jobName} - [[L1 기계 검증]] 최종 보완 실패. 마지막 작성 버전을 사용합니다.");
+                        break;
+                    }
+                }
+
+                // L2: AI 교차 리뷰
+                ReviewResult? l2Result = null;
+                bool reviewSuccess = false;
+
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({provider})...");
+                try
+                {
+                    l2Result = await _aiService.ReviewConsolidatedPlanAsync(specs, consolidatedPlan, jobName);
+                    reviewSuccess = true;
+                }
+                catch (Exception ex)
+                {
+                    _userInteraction.NotifyError($"{jobName} - AI 교차 리뷰 실패 (시도 {attempt}): {ex.Message}");
+                }
+
+                if (reviewSuccess && l2Result != null && l2Result.HasDefects)
+                {
+                    _userInteraction.NotifyL2Defects(jobName, attempt, l2Result.FeedbackComment ?? string.Empty);
+
+                    if (attempt < 2)
+                    {
+                        feedbackLog = $"[L2 AI 리뷰 피드백]: 다음 결함/누락사항이 지적되었습니다. 전면 반영해서 수정해 주십시오.\n{l2Result.FeedbackComment}";
+                        continue;
+                    }
+                    else
+                    {
+                        _userInteraction.NotifyError($"{jobName} - [[L2 AI 리뷰]] 최종 보완 실패. 마지막 리뷰 반영 버전을 사용합니다.");
+                        break;
+                    }
+                }
+
+                // 검증을 통과한 경우 루프 탈출
+                if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
+                {
+                    _userInteraction.NotifyValidationSuccess(jobName);
+                    break;
+                }
+            }
+
+            // L3: 인간 개입형 승인 (TUI 모드 전용)
+            while (true)
+            {
+                var reviewResult = await _userInteraction.RequestHumanReviewAsync(jobName, consolidatedPlan);
+
+                if (reviewResult.Decision == UserDecision.Approve)
+                {
+                    return consolidatedPlan;
+                }
+                else if (reviewResult.Decision == UserDecision.Cancel)
+                {
+                    return null;
+                }
+                else if (reviewResult.Decision == UserDecision.ProvideFeedback)
+                {
+                    if (string.IsNullOrWhiteSpace(reviewResult.UserFeedback))
+                    {
+                        continue;
+                    }
+
+                    _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - 피드백 반영 재생성 중...");
+                    var specsCopy = new System.Collections.Generic.List<(string FileName, string Content)>(specs);
+                    specsCopy.Add(("User_Feedback_Log.txt", $"[L3 사용자 보완 피드백 로그]:\n{reviewResult.UserFeedback}\n사용자 의견을 수용하여 설계 내용을 수정 및 보완해 주십시오."));
+
+                    string rePlan = string.Empty;
+                    try
+                    {
+                        rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName);
+                    }
+                    catch (Exception ex)
+                    {
+                        _userInteraction.NotifyError($"피드백 반영 재생성 실패: {ex.Message}");
+                    }
+
+                    if (string.IsNullOrEmpty(rePlan))
+                    {
+                        continue;
+                    }
+
+                    // 피드백 반영본에 대한 L1 정적 검사 1회 수행
+                    var l1Re = _validator.ValidateConsolidated(rePlan);
+                    if (!l1Re.IsValid)
+                    {
+                        _userInteraction.NotifyStatus("피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.");
+                        try
+                        {
+                            var specsRe = new System.Collections.Generic.List<(string FileName, string Content)>(specsCopy);
+                            specsRe.Add(("L1_Re_Fix.txt", l1Re.SuggestedPromptFix ?? string.Empty));
+                            rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsRe, targetLanguage, jobName);
+                        }
+                        catch { }
+                    }
+
+                    consolidatedPlan = rePlan;
+                }
+            }
+        }
     }
 }

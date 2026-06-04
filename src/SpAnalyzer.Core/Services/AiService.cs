@@ -433,5 +433,113 @@ namespace SpAnalyzer.Core.Services
                 return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
             }
         }
+
+        public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+            }
+
+            var systemPrompt = @"당신은 여러 레거시 SP 분석 명세서들을 종합하여 설계된 통합 배치 전환 계획서(Markdown)의 완성도를 검증하는 수석 배치 아키텍트이자 리뷰어 에이전트입니다.
+제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하십시오.
+
+[검토 기준]
+1. 계획서에 필수 4대 헤더(## 통합 배치 아키텍처 개요, ## Mermaid 기반 통합 흐름도, ## 단계별 이행 상세 및 의사코드, ## 통합 데이터 정합성 검증 SQL 세트)가 다 존재하며 알맞은 내용을 담고 있는가?
+2. 각 개별 SP 분석서에 적힌 비즈니스 정합성이 신규 통합 배치 흐름 내에서 훼손되거나 환각(왜곡)이 존재하지 않는가?
+3. 단계별 이행 의사코드, 대량 데이터 청크 페이징 전략, 실패 재시작 가이드가 누락 없이 올바르게 서술되어 있는가?
+
+[답변 작성 형식]
+반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. JSON 코드 블록 없이 순수 JSON만 반환해야 합니다:
+{
+  ""HasDefects"": true 또는 false,
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 null)""
+}";
+
+            var userPrompt = new StringBuilder();
+            userPrompt.AppendLine($"통합 배치 Job 명칭: {jobName}");
+            userPrompt.AppendLine();
+            userPrompt.AppendLine("[제공된 개별 Stored Procedure 분석 명세서 목록]");
+
+            foreach (var spec in specs)
+            {
+                userPrompt.AppendLine($"---");
+                userPrompt.AppendLine($"파일명: {spec.FileName}");
+                userPrompt.AppendLine(spec.Content);
+                userPrompt.AppendLine();
+            }
+
+            userPrompt.AppendLine("[작성된 통합 배치 전환 계획서 마크다운]");
+            userPrompt.AppendLine(planMarkdown);
+            userPrompt.AppendLine();
+            userPrompt.AppendLine("위 계획서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.");
+
+            var requestBody = new
+            {
+                model = _modelName,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt.ToString() }
+                },
+                temperature = 0.1f
+            };
+
+            var jsonPayload = JsonSerializer.Serialize(requestBody);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
+            {
+                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            }
+
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+            try
+            {
+                using (var doc = JsonDocument.Parse(responseContent))
+                {
+                    var root = doc.RootElement;
+                    var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+
+                    content = content.Trim();
+                    if (content.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
+                    {
+                        content = content.Substring(7);
+                    }
+                    if (content.EndsWith("```"))
+                    {
+                        content = content.Substring(0, content.Length - 3);
+                    }
+                    content = content.Trim();
+
+                    using (var resultDoc = JsonDocument.Parse(content))
+                    {
+                        var resultRoot = resultDoc.RootElement;
+                        var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
+                        var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
+
+                        return new ReviewResult
+                        {
+                            HasDefects = hasDefects,
+                            FeedbackComment = feedbackComment
+                        };
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return new ReviewResult
+                {
+                    HasDefects = false,
+                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
+                };
+            }
+        }
     }
 }

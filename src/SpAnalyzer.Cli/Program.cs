@@ -94,6 +94,8 @@ namespace SpAnalyzer.Cli
             string connectionString = string.Empty;
             string? userId = null;
 
+            bool connectionSuccess = false;
+
             if (cliArgs.IsBatchMode)
             {
                 // 배치 모드
@@ -104,74 +106,108 @@ namespace SpAnalyzer.Cli
                     return;
                 }
                 connectionString = cliArgs.ConnectionString;
+
+                // 연결 테스트
+                await AnsiConsole.Status()
+                    .StartAsync("데이터베이스 연결 시도 중...", async ctx =>
+                    {
+                        try
+                        {
+                            using (var conn = new SqlConnection(connectionString))
+                            {
+                                await conn.OpenAsync();
+                                connectionSuccess = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.WriteException(ex);
+                        }
+                    });
+
+                if (!connectionSuccess)
+                {
+                    AnsiConsole.MarkupLine("[red]데이터베이스 연결에 실패하였습니다. 종료합니다.[/]");
+                    return;
+                }
             }
             else
             {
-                // 대화형 TUI 모드
-                AnsiConsole.Clear();
-                AnsiConsole.Write(new FigletText("SP Analyzer").Color(Color.Green));
-                AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
-                AnsiConsole.WriteLine();
-
-                AnsiConsole.MarkupLine($"[bold blue]서버:[/] {server}");
-                AnsiConsole.MarkupLine($"[bold blue]DB:[/] {database}");
-                AnsiConsole.WriteLine();
-
-                // 대화형 ID/비밀번호 로그인 처리
-                var lastUserId = SessionManager.LoadLastUsedUserId();
-                userId = AnsiConsole.Prompt(
-                    new TextPrompt<string>("DB 계정을 입력하세요:")
-                        .DefaultValue(string.IsNullOrEmpty(lastUserId) ? "sa" : lastUserId)
-                );
-
-                var password = AnsiConsole.Prompt(
-                    new TextPrompt<string>("DB 비밀번호를 입력하세요:")
-                        .Secret()
-                );
-
-                // Connection String 빌드
-                var connStrBuilder = new SqlConnectionStringBuilder
+                // 대화형 TUI 모드 - 로그인 성공 시까지 루프
+                while (true)
                 {
-                    DataSource = server,
-                    InitialCatalog = database,
-                    UserID = userId,
-                    Password = password,
-                    TrustServerCertificate = true,
-                    ConnectTimeout = 5
-                };
-                connectionString = connStrBuilder.ConnectionString;
-            }
+                    AnsiConsole.Clear();
+                    AnsiConsole.Write(new FigletText("SP Analyzer").Color(Color.Green));
+                    AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
+                    AnsiConsole.WriteLine();
 
-            // 연결 테스트
-            bool connectionSuccess = false;
-            await AnsiConsole.Status()
-                .StartAsync("데이터베이스 연결 시도 중...", async ctx =>
-                {
-                    try
+                    AnsiConsole.MarkupLine($"[bold blue]서버:[/] {server}");
+                    AnsiConsole.MarkupLine($"[bold blue]DB:[/] {database}");
+                    AnsiConsole.WriteLine();
+
+                    // 대화형 ID/비밀번호 로그인 처리
+                    var lastUserId = SessionManager.LoadLastUsedUserId();
+                    userId = AnsiConsole.Prompt(
+                        new TextPrompt<string>("DB 계정을 입력하세요:")
+                            .DefaultValue(string.IsNullOrEmpty(lastUserId) ? "sa" : lastUserId)
+                    );
+
+                    var password = AnsiConsole.Prompt(
+                        new TextPrompt<string>("DB 비밀번호를 입력하세요:")
+                            .Secret()
+                    );
+
+                    // Connection String 빌드
+                    var connStrBuilder = new SqlConnectionStringBuilder
                     {
-                        using (var conn = new SqlConnection(connectionString))
+                        DataSource = server,
+                        InitialCatalog = database,
+                        UserID = userId,
+                        Password = password,
+                        TrustServerCertificate = true,
+                        ConnectTimeout = 5
+                    };
+                    connectionString = connStrBuilder.ConnectionString;
+
+                    // 연결 테스트
+                    string? loginError = null;
+                    await AnsiConsole.Status()
+                        .StartAsync("데이터베이스 연결 시도 중...", async ctx =>
                         {
-                            await conn.OpenAsync();
-                            connectionSuccess = true;
-                        }
-                    }
-                    catch (Exception ex)
+                            try
+                            {
+                                using (var conn = new SqlConnection(connectionString))
+                                {
+                                    await conn.OpenAsync();
+                                    connectionSuccess = true;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                loginError = ex.Message;
+                            }
+                        });
+
+                    if (connectionSuccess)
                     {
-                        AnsiConsole.WriteException(ex);
+                        if (userId != null)
+                        {
+                            SessionManager.SaveLastUsedUserId(userId);
+                        }
+                        break;
                     }
-                });
 
-            if (!connectionSuccess)
-            {
-                AnsiConsole.MarkupLine("[red]데이터베이스 연결에 실패하였습니다. 종료합니다.[/]");
-                return;
+                    AnsiConsole.MarkupLine("[red]로그인에 실패하였습니다. 계정 정보 또는 비밀번호를 확인해 주세요.[/]");
+                    if (!string.IsNullOrEmpty(loginError))
+                    {
+                        AnsiConsole.MarkupLine($"[grey](오류 상세: {Markup.Escape(loginError)})[/]");
+                    }
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 로그인 화면으로 돌아갑니다...[/]");
+                    Console.ReadKey(true);
+                }
             }
 
-            // TUI 모드인 경우 로그인 정보 성공 시 저장
-            if (!cliArgs.IsBatchMode && userId != null)
-            {
-                SessionManager.SaveLastUsedUserId(userId);
-            }
             AnsiConsole.MarkupLine("[green]데이터베이스 연결 성공![/]");
 
             // 4. 서비스 구성
@@ -333,6 +369,7 @@ namespace SpAnalyzer.Cli
                                 .Title("\n분석할 [green]Stored Procedure[/]를 선택하거나 검색하세요:")
                                 .PageSize(12)
                                 .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                .UseConverter(x => Markup.Escape(x))
                                 .AddChoices(choices)
                                 .EnableSearch()
                         );
@@ -390,7 +427,8 @@ namespace SpAnalyzer.Cli
                             continue;
                         }
 
-                        var fileChoices = new List<string>();
+                        var backOption = "[-- 메인 메뉴로 돌아가기 --]";
+                        var fileChoices = new List<string> { backOption };
                         foreach (var file in specFiles)
                         {
                             fileChoices.Add(Path.GetFileName(file));
@@ -402,8 +440,14 @@ namespace SpAnalyzer.Cli
                                 .Required()
                                 .PageSize(10)
                                 .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                .UseConverter(x => Markup.Escape(x))
                                 .AddChoices(fileChoices)
                         );
+
+                        if (selectedFiles.Contains(backOption))
+                        {
+                            continue;
+                        }
 
                         if (selectedFiles.Count == 0)
                         {
@@ -423,23 +467,22 @@ namespace SpAnalyzer.Cli
                                 .DefaultValue("Consolidated_Batch_Job")
                         );
 
-                        string consolidatedPlan = string.Empty;
-                        await AnsiConsole.Status()
-                            .StartAsync("통합 배치 전환 계획 설계서 작성 중...", async ctx =>
-                            {
-                                consolidatedPlan = await aiService.GenerateConsolidatedBatchPlanAsync(specsData, targetLanguage, jobName);
-                            });
+                        string? consolidatedPlan = null;
+                        consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider);
 
-                        if (!string.IsNullOrEmpty(consolidatedPlan))
+                        if (string.IsNullOrEmpty(consolidatedPlan))
                         {
-                            var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
-                            await File.WriteAllTextAsync(planFileName, consolidatedPlan);
-                            AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
-                            {
-                                Border = BoxBorder.Rounded,
-                                Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
-                            });
+                            AnsiConsole.MarkupLine("[red]통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");
+                            continue;
                         }
+
+                        var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
+                        await File.WriteAllTextAsync(planFileName, consolidatedPlan);
+                        AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
+                        {
+                            Border = BoxBorder.Rounded,
+                            Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
+                        });
                     }
                 }
             }
