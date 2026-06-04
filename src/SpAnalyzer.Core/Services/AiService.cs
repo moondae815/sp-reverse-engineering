@@ -185,7 +185,7 @@ namespace SpAnalyzer.Core.Services
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. JSON 코드 블록 없이 순수 JSON만 반환해야 합니다:
 {
   ""HasDefects"": true 또는 false,
-  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 null)""
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 빈 문자열 '' 반환)""
 }";
 
             var userPrompt = $@"
@@ -262,7 +262,7 @@ namespace SpAnalyzer.Core.Services
             {
                 return new ReviewResult
                 {
-                    HasDefects = false,
+                    HasDefects = true,
                     FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
                 };
             }
@@ -378,13 +378,12 @@ namespace SpAnalyzer.Core.Services
 
 [설계서 작성 규칙 및 내용 필수 조건]
 1. 문서는 한글 마크다운 양식으로 작성하십시오.
-2. **통합 배치 아키텍처 개요**: 제공된 여러 분석서 파일들이 어떤 순서(순차 체인, 조건 분기, 병렬 처리 등)로 구성되어 하나의 배치 Job 내의 Step들로 설계되는지 아키텍처 구조를 기술하십시오.
-3. **Mermaid 기반 통합 흐름도**: 각 SP의 데이터 입출력과 비즈니스 흐름을 바탕으로, 전체 배치 Job의 데이터 파이프라인 및 수행 단계를 묘사하는 Mermaid Flowchart 다이어그램을 필수로 작성하십시오.
-4. **단계별 이행 상세 및 의사코드(Pseudocode)**: 각 명세서 파일 내용을 매핑하여, 해당 단계를 처리하는 {targetLanguage} 클래스/컴포넌트 설계와 OOM 방지를 위한 대용량 청크(Chunk) 페이징 의사코드를 단계별로 구체화하여 제시하십시오.
-5. **공통 의존성 및 락/트랜잭션 설계**: 여러 Step들이 동일한 테이블을 공유할 때 발생할 수 있는 데이터 정합성 충돌(Deadlock 등) 방지책과 트랜잭션 범위 설정을 조언하십시오.
-6. **재시작성(Restartability) 및 복구 계획**: 배치 실행 중 특정 Step 실패 시, 체크포인트(Checkpoint)를 활용하여 처음부터가 아닌 실패 지점부터 이어서 재처리할 수 있는 구조적 전략과 Serilog/Slack 알림 통합 계획을 정의하십시오.
-7. **통합 데이터 정합성 검증 SQL 세트**: 배치 시작 전과 완료 후의 전체 데이터 무결성을 검증(건수 대조, 집계 검사 등)할 수 있는 통합 SQL 쿼리 세트를 포함하십시오.
-8. **문서 작성이 완료되면 추가 지원 제안, 인사말, 또는 향후 추가 분석 가능성에 대한 설명 등 본문 요건과 관련 없는 사족이나 안내 문구를 문서 끝에 절대 작성하지 마십시오. 문서의 정해진 필수 섹션 작성이 끝나는 즉시 깔끔하게 출력을 마쳐야 합니다.";
+2. 아래 4가지 필수 대헤더(##) 구조를 반드시 준수하여 문서를 구성해야 하며, 그 외의 다른 대헤더는 추가하지 마십시오.
+   - ## 통합 배치 아키텍처 개요: 제공된 여러 분석서 파일들이 어떤 순서(순차 체인, 조건 분기, 병렬 처리 등)로 구성되어 하나의 배치 Job 내의 Step들로 설계되는지 기술하십시오.
+   - ## Mermaid 기반 통합 흐름도: 전체 배치 Job의 데이터 파이프라인 및 수행 단계를 묘사하는 Mermaid Flowchart 다이어그램을 작성하십시오.
+   - ## 단계별 이행 상세 및 의사코드: 각 단계를 처리하는 {targetLanguage} 클래스/컴포넌트 설계, 대용량 청크(Chunk) 페이징 의사코드, 그리고 공통 의존성에 대한 락/트랜잭션 설계 및 실패 시 재시작(Restartability)/복구 계획을 이 섹션 하위에 포함하여 제시하십시오.
+   - ## 통합 데이터 정합성 검증 SQL 세트: 배치 실행 전후 데이터 무결성을 검증할 수 있는 통합 SQL 쿼리 세트를 포함하십시오.
+3. 문서 작성이 완료되면 추가 지원 제안, 인사말, 또는 향후 추가 분석 가능성에 대한 설명 등 본문 요건과 관련 없는 사족이나 안내 문구를 문서 끝에 절대 작성하지 마십시오. 문서의 정해진 필수 섹션 작성이 끝나는 즉시 깔끔하게 출력을 마쳐야 합니다.";
 
             var userPrompt = new StringBuilder();
             userPrompt.AppendLine($"통합 배치 Job 명칭: {jobName}");
@@ -456,7 +455,7 @@ namespace SpAnalyzer.Core.Services
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. JSON 코드 블록 없이 순수 JSON만 반환해야 합니다:
 {
   ""HasDefects"": true 또는 false,
-  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 null)""
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 빈 문자열 '' 반환)""
 }";
 
             var userPrompt = new StringBuilder();
@@ -539,7 +538,7 @@ namespace SpAnalyzer.Core.Services
             {
                 return new ReviewResult
                 {
-                    HasDefects = false,
+                    HasDefects = true,
                     FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
                 };
             }
