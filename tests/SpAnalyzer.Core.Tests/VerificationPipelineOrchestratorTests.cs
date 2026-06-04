@@ -83,7 +83,7 @@ namespace SpAnalyzer.Core.Tests
             // Assert
             Assert.NotNull(resultSpec);
             Assert.Equal(goodSpec, resultSpec);
-            _userInteraction.Received(1).NotifyL1Errors("dbo.USP_Test", 1, Arg.Any<List<string>>());
+            _userInteraction.Received(1).NotifyL1Errors("dbo.USP_Test", 1, Arg.Any<int>(), Arg.Any<List<string>>());
             _userInteraction.Received(1).NotifyValidationSuccess("dbo.USP_Test");
         }
 

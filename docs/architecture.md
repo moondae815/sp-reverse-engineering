@@ -35,7 +35,7 @@
 ### 3. 3단계 신뢰성 검증 파이프라인 (Verification Pipeline)
 * **대칭형 검증 아키텍처**: 개별 SP 분석서(`_Spec.md`)와 통합 배치 전환 계획서(`_BatchMigrationPlan.md`) 모두에 100% 대칭형 검증 파이프라인이 구동됩니다.
 * **L1 (기계 검사 - 정적 Linter)**: 각 문서 포맷별 필수 섹션 존재 유무(개별 5대 헤더 / 통합 4대 헤더) 및 Mermaid 다이어그램 구문을 정적으로 고속 린팅합니다.
-* **L2 (AI 교차 리뷰어)**: 수석 아키텍트 프롬프트로 리뷰어 에이전트를 가동하여 원천 정보와 생성 설계서 간의 불일치를 스크리닝하고 누락 발견 시 1회 자가 보완(`Self-Correction`)합니다.
+* **L2 (AI 교차 리뷰어)**: 수석 아키텍트 프롬프트로 리뷰어 에이전트를 가동하여 원천 정보와 생성 설계서 간의 불일치를 스크리닝하고 누락 발견 시 설정된 시도 횟수(기본 1회, 또는 검증 완료시까지 무제한)만큼 자가 보완(`Self-Correction`)을 수행합니다.
 * **L3 (인간 개입 조율 - HITL)**: TUI 모드에서 렌더링된 결과를 개발자가 직접 프리뷰하고 승인(`Approve`)하거나, 보완 피드백(`Feedback`)을 자연어로 주어 재생성하는 인터랙티브 조율을 지원합니다.
 
 ### 4. 현대화 배치 스케줄러 전환 설계 및 아키텍처 분리
@@ -109,16 +109,16 @@ graph TD
     
     CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(필수 헤더 및 Mermaid 문법 린팅)?"}
     
-    L1Check -- "실패" --> L1FailAttempt{"attempt < 2?"}
-    L1FailAttempt -- "예 (1차 실패)" --> SetL1Feedback["L1 피드백 세팅<br/>(attempt = 2)"] --> CallAI
-    L1FailAttempt -- "아니오 (최종 실패)" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
+    L1Check -- "실패" --> L1FailAttempt{"attempt < maxAttempts?"}
+    L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI
+    L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
     
     L1Check -- "성공" --> L2Review["AI 교차 리뷰 분석 요청"]
     L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
     
-    L2Check -- "실패" --> L2FailAttempt{"attempt < 2?"}
-    L2FailAttempt -- "예 (1차 실패)" --> SetL2Feedback["L2 피드백 세팅<br/>(attempt = 2)"] --> CallAI
-    L2FailAttempt -- "아니오 (최종 실패)" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
+    L2Check -- "실패" --> L2FailAttempt{"attempt < maxAttempts?"}
+    L2FailAttempt -- "예" --> SetL2Feedback["L2 피드백 세팅 및 시도 횟수 증가"] --> CallAI
+    L2FailAttempt -- "아니오" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
     
     L2Check -- "성공" --> L3Check{"배치 모드인가?"}
     L1Abort --> L3Check

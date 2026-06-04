@@ -13,10 +13,10 @@ namespace SpAnalyzer.Core.Services
         void NotifyError(string message);
 
         // L1 기계 검증 단계의 오류 정보 출력
-        void NotifyL1Errors(string selectedOption, int attempt, List<string> errors);
+        void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors);
 
         // L2 AI 리뷰의 결함 피드백 코멘트 출력
-        void NotifyL2Defects(string selectedOption, int attempt, string feedbackComment);
+        void NotifyL2Defects(string selectedOption, int attempt, int maxAttempts, string feedbackComment);
 
         // 검증 파이프라인 단계 성공 알림
         void NotifyValidationSuccess(string selectedOption);

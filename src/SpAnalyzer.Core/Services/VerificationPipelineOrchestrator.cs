@@ -10,17 +10,37 @@ namespace SpAnalyzer.Core.Services
         private readonly IAiService _aiService;
         private readonly MechanicalValidator _validator;
         private readonly IVerificationUserInteraction _userInteraction;
+        private readonly int _maxL2Attempts;
+        private readonly int _maxAttempts;
 
         public VerificationPipelineOrchestrator(
             IDbMetadataService dbService,
             IAiService aiService,
             MechanicalValidator validator,
-            IVerificationUserInteraction userInteraction)
+            IVerificationUserInteraction userInteraction,
+            string maxL2Attempts = "1")
         {
             _dbService = dbService;
             _aiService = aiService;
             _validator = validator;
             _userInteraction = userInteraction;
+
+            if (string.Equals(maxL2Attempts, "unlimited", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(maxL2Attempts, "검증 완료까지", StringComparison.OrdinalIgnoreCase) ||
+                maxL2Attempts == "-1")
+            {
+                _maxL2Attempts = -1;
+            }
+            else if (int.TryParse(maxL2Attempts, out int parsed))
+            {
+                _maxL2Attempts = parsed;
+            }
+            else
+            {
+                _maxL2Attempts = 1; // 기본값
+            }
+
+            _maxAttempts = _maxL2Attempts == -1 ? -1 : 1 + _maxL2Attempts;
         }
 
         public async Task<(string? SpecMarkdown, SpDefinition? SpDef)> RunPipelineAsync(
@@ -53,10 +73,11 @@ namespace SpAnalyzer.Core.Services
             string? feedbackLog = null;
             string specificationMarkdown = string.Empty;
 
-            // 최대 2회 시도 (1차 생성 + L1/L2 오류 시 1회 자가 보완)
-            for (int attempt = 1; attempt <= 2; attempt++)
+            // 설정에 따른 최대 시도 횟수 적용 (N회 또는 검증 완료까지)
+            int attempt = 1;
+            while (true)
             {
-                var attemptText = attempt == 1 ? "1차 분석" : "자가 수정 보완";
+                var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                 bool genSuccess = false;
 
                 _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider}) [[{attemptText}]]...");
@@ -79,11 +100,13 @@ namespace SpAnalyzer.Core.Services
                 var l1Result = _validator.Validate(specificationMarkdown);
                 if (!l1Result.IsValid)
                 {
-                    _userInteraction.NotifyL1Errors(selectedOption, attempt, l1Result.Errors);
+                    _userInteraction.NotifyL1Errors(selectedOption, attempt, _maxAttempts, l1Result.Errors);
 
-                    if (attempt < 2)
+                    bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
+                    if (canRetry)
                     {
                         feedbackLog = l1Result.SuggestedPromptFix;
+                        attempt++;
                         continue;
                     }
                     else
@@ -110,11 +133,13 @@ namespace SpAnalyzer.Core.Services
 
                 if (reviewSuccess && l2Result != null && l2Result.HasDefects)
                 {
-                    _userInteraction.NotifyL2Defects(selectedOption, attempt, l2Result.FeedbackComment ?? string.Empty);
+                    _userInteraction.NotifyL2Defects(selectedOption, attempt, _maxAttempts, l2Result.FeedbackComment ?? string.Empty);
 
-                    if (attempt < 2)
+                    bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
+                    if (canRetry)
                     {
                         feedbackLog = $"[L2 AI 리뷰 피드백]: 다음 결함/누락사항이 지적되었습니다. 전면 반영해서 수정해 주십시오.\n{l2Result.FeedbackComment}";
+                        attempt++;
                         continue;
                     }
                     else
@@ -201,10 +226,11 @@ namespace SpAnalyzer.Core.Services
             string? feedbackLog = null;
             string consolidatedPlan = string.Empty;
 
-            // 최대 2회 시도 (1차 생성 + L1/L2 오류 시 1회 자가 보완)
-            for (int attempt = 1; attempt <= 2; attempt++)
+            // 설정에 따른 최대 시도 횟수 적용 (N회 또는 검증 완료까지)
+            int attempt = 1;
+            while (true)
             {
-                var attemptText = attempt == 1 ? "1차 분석" : "자가 수정 보완";
+                var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                 bool genSuccess = false;
 
                 _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({provider}) [[{attemptText}]]...");
@@ -233,11 +259,13 @@ namespace SpAnalyzer.Core.Services
                 var l1Result = _validator.ValidateConsolidated(consolidatedPlan);
                 if (!l1Result.IsValid)
                 {
-                    _userInteraction.NotifyL1Errors(jobName, attempt, l1Result.Errors);
+                    _userInteraction.NotifyL1Errors(jobName, attempt, _maxAttempts, l1Result.Errors);
 
-                    if (attempt < 2)
+                    bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
+                    if (canRetry)
                     {
                         feedbackLog = l1Result.SuggestedPromptFix;
+                        attempt++;
                         continue;
                     }
                     else
@@ -264,11 +292,13 @@ namespace SpAnalyzer.Core.Services
 
                 if (reviewSuccess && l2Result != null && l2Result.HasDefects)
                 {
-                    _userInteraction.NotifyL2Defects(jobName, attempt, l2Result.FeedbackComment ?? string.Empty);
+                    _userInteraction.NotifyL2Defects(jobName, attempt, _maxAttempts, l2Result.FeedbackComment ?? string.Empty);
 
-                    if (attempt < 2)
+                    bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
+                    if (canRetry)
                     {
                         feedbackLog = $"[L2 AI 리뷰 피드백]: 다음 결함/누락사항이 지적되었습니다. 전면 반영해서 수정해 주십시오.\n{l2Result.FeedbackComment}";
+                        attempt++;
                         continue;
                     }
                     else

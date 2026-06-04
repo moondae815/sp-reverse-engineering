@@ -18,18 +18,20 @@ namespace SpAnalyzer.Cli
             AnsiConsole.MarkupLine($"[red]{message}[/]");
         }
 
-        public void NotifyL1Errors(string selectedOption, int attempt, List<string> errors)
+        public void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors)
         {
-            AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L1 기계 검증]] 문법/구조 오류 발견 (시도 {attempt}/2):[/]");
+            var maxStr = maxAttempts == -1 ? "검증 완료까지" : maxAttempts.ToString();
+            AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L1 기계 검증]] 문법/구조 오류 발견 (시도 {attempt}/{maxStr}):[/]");
             foreach (var err in errors)
             {
                 AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(err)}[/]");
             }
         }
 
-        public void NotifyL2Defects(string selectedOption, int attempt, string feedbackComment)
+        public void NotifyL2Defects(string selectedOption, int attempt, int maxAttempts, string feedbackComment)
         {
-            AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/2):[/]");
+            var maxStr = maxAttempts == -1 ? "검증 완료까지" : maxAttempts.ToString();
+            AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/{maxStr}):[/]");
             AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(feedbackComment)}[/]");
         }
 

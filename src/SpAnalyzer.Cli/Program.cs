@@ -216,7 +216,8 @@ namespace SpAnalyzer.Cli
             IMetadataExporter metadataExporter = new MetadataExporter();
             var validator = new MechanicalValidator();
             var userInteraction = new ConsoleUserInteraction();
-            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction);
+            var maxL2Attempts = configuration["AiSettings:MaxL2Attempts"] ?? "1";
+            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts);
 
             string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";
             if (File.Exists(instructionsFile))
