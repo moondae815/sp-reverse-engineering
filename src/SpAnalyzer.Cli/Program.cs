@@ -305,63 +305,142 @@ namespace SpAnalyzer.Cli
                 // 대화형 TUI 모드 실행
                 while (true)
                 {
-                    var exitOption = "-- 종료 (Exit) --";
-                    var choices = new List<string>(spNames) { exitOption };
+                    var choicesMenu = new[]
+                    {
+                        "1. Stored Procedure 개별 분석 명세서 작성",
+                        "2. 기분석 명세서 통합 배치 전환 계획 수립 (Multi-SP)",
+                        "3. 종료 (Exit)"
+                    };
 
-                    var selectedOption = AnsiConsole.Prompt(
+                    var selectedMenu = AnsiConsole.Prompt(
                         new SelectionPrompt<string>()
-                            .Title("\n분석할 [green]Stored Procedure[/]를 선택하거나 검색하세요 (종료하려면 맨 아래 선택):")
-                            .PageSize(12)
-                            .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
-                            .AddChoices(choices)
-                            .EnableSearch()
+                            .Title("[bold green]=== SP Analyzer 메인 메뉴 ===[/]")
+                            .AddChoices(choicesMenu)
                     );
 
-                    if (selectedOption == exitOption)
+                    if (selectedMenu.StartsWith("3"))
                     {
                         AnsiConsole.MarkupLine("[blue]도구를 종료합니다.[/]");
                         break;
                     }
-
-                    var parts = selectedOption.Split('.', 2);
-                    var schema = parts[0];
-                    var name = parts[1];
-
-                    var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                        connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false);
-
-                    if (string.IsNullOrEmpty(specMarkdown))
+                    else if (selectedMenu.StartsWith("1"))
                     {
-                        AnsiConsole.MarkupLine("[red]분석이 중단되었거나 명세서 생성에 실패했습니다.[/]");
-                        continue;
+                        var exitOption = "-- 메인 메뉴로 돌아가기 --";
+                        var choices = new List<string>(spNames) { exitOption };
+
+                        var selectedOption = AnsiConsole.Prompt(
+                            new SelectionPrompt<string>()
+                                .Title("\n분석할 [green]Stored Procedure[/]를 선택하거나 검색하세요:")
+                                .PageSize(12)
+                                .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                .AddChoices(choices)
+                                .EnableSearch()
+                        );
+
+                        if (selectedOption == exitOption)
+                        {
+                            continue;
+                        }
+
+                        var parts = selectedOption.Split('.', 2);
+                        var schema = parts[0];
+                        var name = parts[1];
+
+                        var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false);
+
+                        if (string.IsNullOrEmpty(specMarkdown))
+                        {
+                            AnsiConsole.MarkupLine("[red]분석이 중단되었거나 명세서 생성에 실패했습니다.[/]");
+                            continue;
+                        }
+
+                        // 분석과 전환 분리 요구에 따라, 개별 분석 시에는 배치 전환 설계서를 생성하지 않음 (null 지정)
+                        string? migrationPlan = null;
+
+                        if (!Directory.Exists(outputDir))
+                        {
+                            Directory.CreateDirectory(outputDir);
+                        }
+
+                        await SaveOutputsAsync(
+                            spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
+                            metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
+                            schema, name);
+
+                        var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
+                        AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
+                        {
+                            Border = BoxBorder.Rounded,
+                            Header = new PanelHeader($" {selectedOption} 분석 완료 ")
+                        });
                     }
-
-                    string? migrationPlan = null;
-                    if (migrationEnabled && spDef != null)
+                    else if (selectedMenu.StartsWith("2"))
                     {
+                        if (!Directory.Exists(outputDir))
+                        {
+                            AnsiConsole.MarkupLine("[yellow]경고: 출력 디렉터리가 존재하지 않거나 분석서가 없습니다. 먼저 1번 메뉴로 분석을 진행하세요.[/]");
+                            continue;
+                        }
+
+                        var specFiles = Directory.GetFiles(outputDir, "*_Spec.md");
+                        if (specFiles.Length == 0)
+                        {
+                            AnsiConsole.MarkupLine("[yellow]경고: 출력 디렉터리에 기분석된 명세서(*_Spec.md)가 존재하지 않습니다.[/]");
+                            continue;
+                        }
+
+                        var fileChoices = new List<string>();
+                        foreach (var file in specFiles)
+                        {
+                            fileChoices.Add(Path.GetFileName(file));
+                        }
+
+                        var selectedFiles = AnsiConsole.Prompt(
+                            new MultiSelectionPrompt<string>()
+                                .Title("통합 배치 Job으로 전환할 [green]명세서 파일들[/]을 스페이스바로 선택하세요:")
+                                .Required()
+                                .PageSize(10)
+                                .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                .AddChoices(fileChoices)
+                        );
+
+                        if (selectedFiles.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        var specsData = new List<(string FileName, string Content)>();
+                        foreach (var fileName in selectedFiles)
+                        {
+                            var fullPath = Path.Combine(outputDir, fileName);
+                            var content = await File.ReadAllTextAsync(fullPath);
+                            specsData.Add((fileName, content));
+                        }
+
+                        var jobName = AnsiConsole.Prompt(
+                            new TextPrompt<string>("생성할 통합 배치 Job의 이름을 입력하세요:")
+                                .DefaultValue("Consolidated_Batch_Job")
+                        );
+
+                        string consolidatedPlan = string.Empty;
                         await AnsiConsole.Status()
-                            .StartAsync("배치 전환 계획 설계서 작성 중...", async ctx =>
+                            .StartAsync("통합 배치 전환 계획 설계서 작성 중...", async ctx =>
                             {
-                                migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage);
+                                consolidatedPlan = await aiService.GenerateConsolidatedBatchPlanAsync(specsData, targetLanguage, jobName);
                             });
+
+                        if (!string.IsNullOrEmpty(consolidatedPlan))
+                        {
+                            var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
+                            await File.WriteAllTextAsync(planFileName, consolidatedPlan);
+                            AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
+                            {
+                                Border = BoxBorder.Rounded,
+                                Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
+                            });
+                        }
                     }
-
-                    if (!Directory.Exists(outputDir))
-                    {
-                        Directory.CreateDirectory(outputDir);
-                    }
-
-                    await SaveOutputsAsync(
-                        spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
-                        metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                        schema, name);
-
-                    var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
-                    AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
-                    {
-                        Border = BoxBorder.Rounded,
-                        Header = new PanelHeader($" {selectedOption} 분석 완료 ")
-                    });
                 }
             }
         }

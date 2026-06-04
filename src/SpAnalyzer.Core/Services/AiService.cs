@@ -363,5 +363,75 @@ namespace SpAnalyzer.Core.Services
                 return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
             }
         }
+
+        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+            }
+
+            var systemPrompt = $@"당신은 여러 개의 레거시 Stored Procedure 분석 명세서(마크다운)를 바탕으로, 이를 최신 {targetLanguage} 기반의 단일 배치 애플리케이션 및 스케줄러 전환 설계도(Consolidated Batch Modernization Plan)로 작성하는 전문 수석 배치 아키텍트입니다.
+제공된 개별 SP 분석서들의 비즈니스 요약과 테이블 CRUD 맵을 종합적으로 설계하여, '{jobName}'이라는 단일 통합 배치 Job으로 전환하는 계획서를 기안해 주십시오.
+
+[설계서 작성 규칙 및 내용 필수 조건]
+1. 문서는 한글 마크다운 양식으로 작성하십시오.
+2. **통합 배치 아키텍처 개요**: 제공된 여러 분석서 파일들이 어떤 순서(순차 체인, 조건 분기, 병렬 처리 등)로 구성되어 하나의 배치 Job 내의 Step들로 설계되는지 아키텍처 구조를 기술하십시오.
+3. **Mermaid 기반 통합 흐름도**: 각 SP의 데이터 입출력과 비즈니스 흐름을 바탕으로, 전체 배치 Job의 데이터 파이프라인 및 수행 단계를 묘사하는 Mermaid Flowchart 다이어그램을 필수로 작성하십시오.
+4. **단계별 이행 상세 및 의사코드(Pseudocode)**: 각 명세서 파일 내용을 매핑하여, 해당 단계를 처리하는 {targetLanguage} 클래스/컴포넌트 설계와 OOM 방지를 위한 대용량 청크(Chunk) 페이징 의사코드를 단계별로 구체화하여 제시하십시오.
+5. **공통 의존성 및 락/트랜잭션 설계**: 여러 Step들이 동일한 테이블을 공유할 때 발생할 수 있는 데이터 정합성 충돌(Deadlock 등) 방지책과 트랜잭션 범위 설정을 조언하십시오.
+6. **재시작성(Restartability) 및 복구 계획**: 배치 실행 중 특정 Step 실패 시, 체크포인트(Checkpoint)를 활용하여 처음부터가 아닌 실패 지점부터 이어서 재처리할 수 있는 구조적 전략과 Serilog/Slack 알림 통합 계획을 정의하십시오.
+7. **통합 데이터 정합성 검증 SQL 세트**: 배치 시작 전과 완료 후의 전체 데이터 무결성을 검증(건수 대조, 집계 검사 등)할 수 있는 통합 SQL 쿼리 세트를 포함하십시오.";
+
+            var userPrompt = new StringBuilder();
+            userPrompt.AppendLine($"통합 배치 Job 명칭: {jobName}");
+            userPrompt.AppendLine($"대상 기술 스택: {targetLanguage}");
+            userPrompt.AppendLine();
+            userPrompt.AppendLine("[제공된 개별 Stored Procedure 분석 명세서 목록]");
+
+            foreach (var spec in specs)
+            {
+                userPrompt.AppendLine($"---");
+                userPrompt.AppendLine($"파일명: {spec.FileName}");
+                userPrompt.AppendLine($"[본문 시작]");
+                userPrompt.AppendLine(spec.Content);
+                userPrompt.AppendLine($"[본문 끝]");
+                userPrompt.AppendLine();
+            }
+
+            userPrompt.AppendLine("위 개별 명세서들의 정보를 완벽히 분석하여, 지침에 맞추어 단일 통합 배치 전환 계획서를 구성해 주십시오.");
+
+            var requestBody = new
+            {
+                model = _modelName,
+                messages = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt.ToString() }
+                },
+                temperature = _temperature
+            };
+
+            var jsonPayload = JsonSerializer.Serialize(requestBody);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
+            {
+                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(_apiKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+            }
+
+            var response = await _httpClient.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            var responseContent = await response.Content.ReadAsStringAsync();
+            using (var doc = JsonDocument.Parse(responseContent))
+            {
+                var root = doc.RootElement;
+                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+            }
+        }
     }
 }

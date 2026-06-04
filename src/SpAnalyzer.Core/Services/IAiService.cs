@@ -8,6 +8,7 @@ namespace SpAnalyzer.Core.Services
         Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null);
         Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown);
         Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage);
+        Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName);
     }
 
     public class ReviewResult
