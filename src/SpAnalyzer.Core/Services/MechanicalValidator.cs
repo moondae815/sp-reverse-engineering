@@ -81,6 +81,7 @@ namespace SpAnalyzer.Core.Services
         public ValidationResult ValidateConsolidated(string markdown)
         {
             var result = new ValidationResult();
+            result.IsConsolidated = true;
 
             if (string.IsNullOrWhiteSpace(markdown))
             {
@@ -289,6 +290,7 @@ namespace SpAnalyzer.Core.Services
     public class ValidationResult
     {
         public bool IsValid { get; set; }
+        public bool IsConsolidated { get; set; }
         public List<string> Errors { get; set; } = new();
         public List<DetailedError> DetailedErrors { get; set; } = new();
 
@@ -320,11 +322,21 @@ namespace SpAnalyzer.Core.Services
                 sb.AppendLine();
                 sb.AppendLine("**[올바른 수정 구조 템플릿 예시]**:");
                 sb.AppendLine("```markdown");
-                sb.AppendLine("## 개요");
-                sb.AppendLine("## 파라미터 목록");
-                sb.AppendLine("## CRUD 분석");
-                sb.AppendLine("## 로직 흐름 요약");
-                sb.AppendLine("## 비즈니스 흐름 시각화");
+                if (IsConsolidated)
+                {
+                    sb.AppendLine("## 통합 배치 아키텍처 개요");
+                    sb.AppendLine("## Mermaid 기반 통합 흐름도");
+                    sb.AppendLine("## 단계별 이행 상세 및 의사코드");
+                    sb.AppendLine("## 통합 데이터 정합성 검증 SQL 세트");
+                }
+                else
+                {
+                    sb.AppendLine("## 개요");
+                    sb.AppendLine("## 파라미터 목록");
+                    sb.AppendLine("## CRUD 분석");
+                    sb.AppendLine("## 로직 흐름 요약");
+                    sb.AppendLine("## 비즈니스 흐름 시각화");
+                }
                 sb.AppendLine("```");
                 sb.AppendLine();
             }

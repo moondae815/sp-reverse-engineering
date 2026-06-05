@@ -234,18 +234,9 @@ namespace SpAnalyzer.Core.Services
                     var root = doc.RootElement;
                     var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
 
-                    content = content.Trim();
-                    if (content.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-                    {
-                        content = content.Substring(7);
-                    }
-                    if (content.EndsWith("```"))
-                    {
-                        content = content.Substring(0, content.Length - 3);
-                    }
-                    content = content.Trim();
+                    var jsonString = ExtractJson(content);
 
-                    using (var resultDoc = JsonDocument.Parse(content))
+                    using (var resultDoc = JsonDocument.Parse(jsonString))
                     {
                         var resultRoot = resultDoc.RootElement;
                         var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
@@ -510,18 +501,9 @@ namespace SpAnalyzer.Core.Services
                     var root = doc.RootElement;
                     var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
 
-                    content = content.Trim();
-                    if (content.StartsWith("```json", StringComparison.OrdinalIgnoreCase))
-                    {
-                        content = content.Substring(7);
-                    }
-                    if (content.EndsWith("```"))
-                    {
-                        content = content.Substring(0, content.Length - 3);
-                    }
-                    content = content.Trim();
+                    var jsonString = ExtractJson(content);
 
-                    using (var resultDoc = JsonDocument.Parse(content))
+                    using (var resultDoc = JsonDocument.Parse(jsonString))
                     {
                         var resultRoot = resultDoc.RootElement;
                         var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
@@ -543,6 +525,50 @@ namespace SpAnalyzer.Core.Services
                     FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
                 };
             }
+        }
+
+        private static string ExtractJson(string content)
+        {
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return string.Empty;
+            }
+
+            content = content.Trim();
+
+            // ```json ... ``` 블록 추출 시도
+            int jsonStartIndex = content.IndexOf("```json", StringComparison.OrdinalIgnoreCase);
+            if (jsonStartIndex != -1)
+            {
+                int start = jsonStartIndex + 7;
+                int end = content.IndexOf("```", start);
+                if (end != -1)
+                {
+                    return content.Substring(start, end - start).Trim();
+                }
+            }
+
+            // ``` ... ``` 블록 추출 시도 (json 키워드가 없는 경우)
+            int blockStartIndex = content.IndexOf("```");
+            if (blockStartIndex != -1)
+            {
+                int start = blockStartIndex + 3;
+                int end = content.IndexOf("```", start);
+                if (end != -1)
+                {
+                    return content.Substring(start, end - start).Trim();
+                }
+            }
+
+            // 가장 바깥쪽의 { } 짝 추출 시도
+            int firstBrace = content.IndexOf('{');
+            int lastBrace = content.LastIndexOf('}');
+            if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace)
+            {
+                return content.Substring(firstBrace, lastBrace - firstBrace + 1);
+            }
+
+            return content;
         }
     }
 }

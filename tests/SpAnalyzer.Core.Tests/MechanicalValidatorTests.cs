@@ -118,6 +118,10 @@ SELECT COUNT(*) FROM dbo.Users;
             Assert.False(result.IsValid);
             Assert.NotEmpty(result.Errors);
             Assert.Contains("Mermaid 기반 통합 흐름도", result.SuggestedPromptFix);
+            Assert.Contains("## 통합 배치 아키텍처 개요", result.SuggestedPromptFix);
+            Assert.Contains("## 단계별 이행 상세 및 의사코드", result.SuggestedPromptFix);
+            Assert.Contains("## 통합 데이터 정합성 검증 SQL 세트", result.SuggestedPromptFix);
+            Assert.DoesNotContain("## 개요", result.SuggestedPromptFix);
         }
 
         [Fact]

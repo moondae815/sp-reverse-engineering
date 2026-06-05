@@ -134,6 +134,44 @@ namespace SpAnalyzer.Core.Tests
             Assert.True(result.HasDefects);
             Assert.Contains("JSON 검토 보고서 파싱 실패", result.FeedbackComment);
         }
+
+        [Fact]
+        public async Task ReviewSpecificationAsync_WithMarkdownJsonBlock_ReturnsReviewResult()
+        {
+            // Arrange
+            var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
+            var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"```json\\n{\\n  \\\"HasDefects\\\": false,\\n  \\\"FeedbackComment\\\": \\\"\\\"\\n}\\n```\"}}]}";
+            var mockHandler = new MockHttpMessageHandler(mockResponse);
+            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+
+            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+
+            // Act
+            var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
+
+            // Assert
+            Assert.False(result.HasDefects);
+            Assert.Equal("", result.FeedbackComment);
+        }
+
+        [Fact]
+        public async Task ReviewSpecificationAsync_WithSurroundingText_ReturnsReviewResult()
+        {
+            // Arrange
+            var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
+            var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"Here is the JSON report:\\n{\\n  \\\"HasDefects\\\": true,\\n  \\\"FeedbackComment\\\": \\\"마크다운 오류\\\"\\n}\\nHope this helps!\"}}]}";
+            var mockHandler = new MockHttpMessageHandler(mockResponse);
+            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+
+            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+
+            // Act
+            var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
+
+            // Assert
+            Assert.True(result.HasDefects);
+            Assert.Equal("마크다운 오류", result.FeedbackComment);
+        }
     }
 
     public class MockHttpMessageHandler : System.Net.Http.HttpMessageHandler

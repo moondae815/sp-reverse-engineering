@@ -15,7 +15,7 @@ namespace SpAnalyzer.Cli
 
         public void NotifyError(string message)
         {
-            AnsiConsole.MarkupLine($"[red]{message}[/]");
+            AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
         }
 
         public void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors)
