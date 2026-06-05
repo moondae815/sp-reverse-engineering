@@ -118,5 +118,112 @@ namespace SpAnalyzer.Core.Tests
             Assert.NotNull(resultSpec);
             await _userInteraction.Received(2).RequestHumanReviewAsync("dbo.USP_Test", Arg.Any<string>());
         }
+
+        [Fact]
+        public async Task RunConsolidatedPipelineAsync_SuccessOnFirstTry_ReturnsPlan()
+        {
+            // Arrange
+            var specs = new List<(string, string)>
+            {
+                ("dbo.USP_Test1_Spec.md", "## 개요\n내용1"),
+                ("dbo.USP_Test2_Spec.md", "## 개요\n내용2")
+            };
+            var consolidatedPlan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
+
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
+                .Returns(Task.FromResult(consolidatedPlan));
+
+            var reviewResult = new ReviewResult { HasDefects = false };
+            _aiService.ReviewConsolidatedPlanAsync(Arg.Any<List<(string, string)>>(), consolidatedPlan, "Job_Test")
+                .Returns(Task.FromResult(reviewResult));
+
+            _userInteraction.RequestHumanReviewAsync("Job_Test", consolidatedPlan)
+                .Returns(Task.FromResult(new HumanReviewResult { Decision = UserDecision.Approve }));
+
+            // Act
+            var result = await _orchestrator.RunConsolidatedPipelineAsync(specs, "C#", "Job_Test", "OpenAI");
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(consolidatedPlan, result);
+            _userInteraction.Received(1).NotifyValidationSuccess("Job_Test");
+        }
+
+        [Fact]
+        public async Task RunConsolidatedPipelineAsync_L1ValidationError_AttemptsSelfCorrection()
+        {
+            // Arrange
+            var specs = new List<(string, string)> { ("dbo.USP_Test1_Spec.md", "내용") };
+            var badPlan = "잘못된 문서";
+            var goodPlan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
+
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
+                .Returns(
+                    _ => Task.FromResult(badPlan),
+                    _ => Task.FromResult(goodPlan)
+                );
+
+            var reviewResult = new ReviewResult { HasDefects = false };
+            _aiService.ReviewConsolidatedPlanAsync(Arg.Any<List<(string, string)>>(), goodPlan, "Job_Test")
+                .Returns(Task.FromResult(reviewResult));
+
+            _userInteraction.RequestHumanReviewAsync("Job_Test", goodPlan)
+                .Returns(Task.FromResult(new HumanReviewResult { Decision = UserDecision.Approve }));
+
+            // Act
+            var result = await _orchestrator.RunConsolidatedPipelineAsync(specs, "C#", "Job_Test", "OpenAI");
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(goodPlan, result);
+            _userInteraction.Received(1).NotifyL1Errors("Job_Test", 1, Arg.Any<int>(), Arg.Any<List<string>>());
+        }
+
+        [Fact]
+        public async Task RunConsolidatedPipelineAsync_L2ValidationError_AttemptsSelfCorrection()
+        {
+            // Arrange
+            var specs = new List<(string, string)> { ("dbo.USP_Test1_Spec.md", "내용") };
+            var plan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
+
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
+                .Returns(Task.FromResult(plan));
+
+            _aiService.ReviewConsolidatedPlanAsync(Arg.Any<List<(string, string)>>(), plan, "Job_Test")
+                .Returns(
+                    _ => Task.FromResult(new ReviewResult { HasDefects = true, FeedbackComment = "L2 결함" }),
+                    _ => Task.FromResult(new ReviewResult { HasDefects = false })
+                );
+
+            _userInteraction.RequestHumanReviewAsync("Job_Test", plan)
+                .Returns(Task.FromResult(new HumanReviewResult { Decision = UserDecision.Approve }));
+
+            // Act
+            var result = await _orchestrator.RunConsolidatedPipelineAsync(specs, "C#", "Job_Test", "OpenAI");
+
+            // Assert
+            Assert.NotNull(result);
+            _userInteraction.Received(1).NotifyL2Defects("Job_Test", 1, Arg.Any<int>(), "L2 결함");
+        }
+
+        [Theory]
+        [InlineData("unlimited", -1)]
+        [InlineData("검증 완료까지", -1)]
+        [InlineData("-1", -1)]
+        [InlineData("3", 3)]
+        [InlineData("invalid_string", 1)]
+        public void Orchestrator_Constructor_ParsesMaxL2AttemptsCorrectly(string input, int expectedL2Attempts)
+        {
+            // Act
+            var orchestrator = new VerificationPipelineOrchestrator(_dbService, _aiService, _validator, _userInteraction, maxL2Attempts: input);
+
+            // Use reflection to inspect private field value
+            var fieldInfo = typeof(VerificationPipelineOrchestrator).GetField("_maxL2Attempts", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.NotNull(fieldInfo);
+            var actual = (int)fieldInfo!.GetValue(orchestrator)!;
+
+            // Assert
+            Assert.Equal(expectedL2Attempts, actual);
+        }
     }
 }

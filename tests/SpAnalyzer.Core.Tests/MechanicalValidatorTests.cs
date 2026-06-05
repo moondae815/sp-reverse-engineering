@@ -78,5 +78,66 @@ graph TD
             Assert.NotEmpty(result.Errors);
             Assert.Contains("큰따옴표", result.SuggestedPromptFix);
         }
+
+        [Fact]
+        public void ValidateConsolidated_WithValidMarkdown_ShouldReturnTrue()
+        {
+            var validMarkdown = @"
+# 통합 계획서
+## 통합 배치 아키텍처 개요
+이 단계는 여러 SP를 묶어 단일 배치로 실행합니다.
+
+## Mermaid 기반 통합 흐름도
+```mermaid
+graph TD
+    A-->B
+```
+
+## 단계별 이행 상세 및 의사코드
+의사코드입니다.
+
+## 통합 데이터 정합성 검증 SQL 세트
+SELECT COUNT(*) FROM dbo.Users;
+";
+            var result = _validator.ValidateConsolidated(validMarkdown);
+
+            Assert.True(result.IsValid);
+            Assert.Empty(result.Errors);
+        }
+
+        [Fact]
+        public void ValidateConsolidated_WithMissingHeaders_ShouldReturnFalse()
+        {
+            var invalidMarkdown = @"
+# 통합 계획서
+## 통합 배치 아키텍처 개요
+내용
+";
+            var result = _validator.ValidateConsolidated(invalidMarkdown);
+
+            Assert.False(result.IsValid);
+            Assert.NotEmpty(result.Errors);
+            Assert.Contains("Mermaid 기반 통합 흐름도", result.SuggestedPromptFix);
+        }
+
+        [Fact]
+        public void Validate_WithNullOrEmpty_ShouldReturnFalse()
+        {
+            var result = _validator.Validate(null!);
+            Assert.False(result.IsValid);
+            Assert.Contains("비어있습니다", result.Errors[0]);
+
+            result = _validator.Validate("   ");
+            Assert.False(result.IsValid);
+            Assert.Contains("비어있습니다", result.Errors[0]);
+        }
+
+        [Fact]
+        public void ValidateConsolidated_WithNullOrEmpty_ShouldReturnFalse()
+        {
+            var result = _validator.ValidateConsolidated(null!);
+            Assert.False(result.IsValid);
+            Assert.Contains("비어있습니다", result.Errors[0]);
+        }
     }
 }

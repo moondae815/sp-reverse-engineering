@@ -30,3 +30,7 @@ Thumbs.db
 
 # Local configuration
 appsettings.local.json
+
+# Test results and coverage
+[Tt]est[Rr]esults/
+*.cobertura.xml

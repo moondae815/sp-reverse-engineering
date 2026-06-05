@@ -15,13 +15,14 @@ namespace SpAnalyzer.Core.Services
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly float _temperature;
-        private static readonly HttpClient _httpClient = new();
+        private readonly HttpClient _httpClient;
 
-        public AiService(string provider, string modelName, string apiKey, string endpoint, float temperature)
+        public AiService(string provider, string modelName, string apiKey, string endpoint, float temperature, HttpClient? httpClient = null)
         {
             _provider = provider;
             _modelName = modelName;
             _apiKey = apiKey;
+            _httpClient = httpClient ?? new HttpClient();
             
             var ep = string.IsNullOrWhiteSpace(endpoint) ? "https://api.openai.com/v1" : endpoint.Trim();
             if (ep.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))

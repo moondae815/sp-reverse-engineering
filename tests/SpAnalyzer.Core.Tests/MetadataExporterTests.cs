@@ -99,5 +99,103 @@ namespace SpAnalyzer.Core.Tests
                 Directory.Delete(testOutputDir, true);
             }
         }
+
+        [Fact]
+        public async Task ExportRawMetadataAsync_ShouldSaveContext_WhenSaveContextIsTrue()
+        {
+            // Arrange
+            var testOutputDir = Path.Combine(Directory.GetCurrentDirectory(), "test_output_exporter_context");
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+
+            var spDef = new SpDefinition
+            {
+                Schema = "dbo",
+                Name = "USP_TestExporterContext",
+                DdlText = "SELECT 1;"
+            };
+            var rawContext = "Test Context Content";
+            IMetadataExporter exporter = new MetadataExporter();
+
+            // Act
+            await exporter.ExportRawMetadataAsync(spDef, rawContext, testOutputDir, false, true, false);
+
+            // Assert
+            var expectedContextPath = Path.Combine(testOutputDir, "dbo.USP_TestExporterContext_RawContext.txt");
+            Assert.True(File.Exists(expectedContextPath));
+            var savedContext = await File.ReadAllTextAsync(expectedContextPath);
+            Assert.Equal(rawContext, savedContext);
+
+            // Clean up
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+        }
+
+        [Fact]
+        public async Task ExportRawMetadataAsync_ShouldExportProceduresAndFunctions_WhenSaveFilesIsTrue()
+        {
+            // Arrange
+            var testOutputDir = Path.Combine(Directory.GetCurrentDirectory(), "test_output_exporter_objects");
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+
+            var spDef = new SpDefinition
+            {
+                Schema = "dbo",
+                Name = "USP_TestExporterObjects",
+                DdlText = "SELECT 1;"
+            };
+
+            var procDep = new DependencyInfo
+            {
+                Schema = "dbo",
+                Name = "USP_ChildProc",
+                Type = "SQL_STORED_PROCEDURE",
+                DiscoveryDepth = 2,
+                ReferencedDdlText = "CREATE PROCEDURE dbo.USP_ChildProc AS SELECT 2;"
+            };
+
+            var funcDep = new DependencyInfo
+            {
+                Schema = "dbo",
+                Name = "UFN_ChildFunc",
+                Type = "SQL_SCALAR_FUNCTION",
+                DiscoveryDepth = 2,
+                ReferencedDdlText = "CREATE FUNCTION dbo.UFN_ChildFunc() RETURNS INT AS BEGIN RETURN 1; END;"
+            };
+
+            spDef.Dependencies.Add(procDep);
+            spDef.Dependencies.Add(funcDep);
+
+            IMetadataExporter exporter = new MetadataExporter();
+
+            // Act
+            await exporter.ExportRawMetadataAsync(spDef, "dummy context", testOutputDir, false, false, true);
+
+            // Assert
+            var expectedProcPath = Path.Combine(testOutputDir, "dbo.USP_TestExporterObjects_Raw", "procedures", "dbo.USP_ChildProc.sql");
+            var expectedFuncPath = Path.Combine(testOutputDir, "dbo.USP_TestExporterObjects_Raw", "functions", "dbo.UFN_ChildFunc.sql");
+
+            Assert.True(File.Exists(expectedProcPath));
+            Assert.True(File.Exists(expectedFuncPath));
+
+            var procContent = await File.ReadAllTextAsync(expectedProcPath);
+            var funcContent = await File.ReadAllTextAsync(expectedFuncPath);
+
+            Assert.Equal(procDep.ReferencedDdlText, procContent);
+            Assert.Equal(funcDep.ReferencedDdlText, funcContent);
+
+            // Clean up
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+        }
     }
 }
