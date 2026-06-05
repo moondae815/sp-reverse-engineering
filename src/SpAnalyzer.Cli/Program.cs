@@ -12,6 +12,8 @@ namespace SpAnalyzer.Cli
 {
     public class Program
     {
+        private static CancellationTokenSource? _currentCts;
+
         public static CliArgs ParseCommandLineArgs(string[] args)
         {
             var cliArgs = new CliArgs();
@@ -48,14 +50,20 @@ namespace SpAnalyzer.Cli
 
         static async Task Main(string[] args)
         {
-            // 0. 취소 토큰 소스 생성 및 Ctrl+C 이벤트 바인딩
-            using var cts = new CancellationTokenSource();
+            // 0. Ctrl+C 이벤트 바인딩 (활성화된 CancellationTokenSource를 취소하도록 함)
             Console.CancelKeyPress += (sender, e) =>
             {
-                AnsiConsole.MarkupLine("\n[red]사용자에 의해 작업 취소 요청이 발생했습니다. 안전하게 정리 중...[/]");
-                cts.Cancel();
-                e.Cancel = true; // 프로세스 즉시 종료 방지 및 OperationCanceledException 유도
+                if (_currentCts != null && !_currentCts.IsCancellationRequested)
+                {
+                    AnsiConsole.MarkupLine("\n[red]사용자에 의해 작업 취소 요청이 발생했습니다. 안전하게 정리 중...[/]");
+                    _currentCts.Cancel();
+                    e.Cancel = true; // 프로세스 즉시 종료 방지 및 OperationCanceledException 유도
+                }
             };
+
+            // 초기 전역 CancellationTokenSource 생성
+            using var globalCts = new CancellationTokenSource();
+            _currentCts = globalCts;
 
             // 1. 커맨드라인 아규먼트 및 환경 변수 파싱
             var cliArgs = ParseCommandLineArgs(args);
@@ -125,7 +133,7 @@ namespace SpAnalyzer.Cli
                         {
                             using (var conn = new SqlConnection(connectionString))
                             {
-                                await conn.OpenAsync(cts.Token);
+                                await conn.OpenAsync(globalCts.Token);
                                 connectionSuccess = true;
                             }
                         }
@@ -188,7 +196,7 @@ namespace SpAnalyzer.Cli
                             {
                                 using (var conn = new SqlConnection(connectionString))
                                 {
-                                    await conn.OpenAsync(cts.Token);
+                                    await conn.OpenAsync(globalCts.Token);
                                     connectionSuccess = true;
                                 }
                             }
@@ -243,7 +251,7 @@ namespace SpAnalyzer.Cli
                 {
                     try
                     {
-                        spNames = await dbService.GetStoredProcedureNamesAsync(connectionString, cts.Token);
+                        spNames = await dbService.GetStoredProcedureNamesAsync(connectionString, globalCts.Token);
                     }
                     catch (Exception ex)
                     {
@@ -314,7 +322,7 @@ namespace SpAnalyzer.Cli
                         var name = parts[1];
 
                         var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, cts.Token);
+                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, globalCts.Token);
 
                         if (string.IsNullOrEmpty(specMarkdown))
                         {
@@ -325,7 +333,7 @@ namespace SpAnalyzer.Cli
                         if (migrationEnabled && spDef != null)
                         {
                             AnsiConsole.MarkupLine($"[yellow]{schema}.{name}[/] - 배치 전환 계획 설계서 작성 중 ({targetLanguage})...");
-                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage, cts.Token);
+                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage, globalCts.Token);
                         }
 
                         if (!Directory.Exists(outputDir))
@@ -400,10 +408,13 @@ namespace SpAnalyzer.Cli
                         var schema = parts[0];
                         var name = parts[1];
 
+                        using var activeCts = new CancellationTokenSource();
+                        _currentCts = activeCts;
+
                         try
                         {
                             var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                                connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, cts.Token);
+                                connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, activeCts.Token);
 
                             if (string.IsNullOrEmpty(specMarkdown))
                             {
@@ -437,6 +448,17 @@ namespace SpAnalyzer.Cli
                             AnsiConsole.WriteLine();
                             AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 계속합니다...[/]");
                             Console.ReadKey(true);
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine($"[red]에러:[/] {selectedOption} 분석 또는 저장 중 오류 발생: {Markup.Escape(ex.Message)}");
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 계속합니다...[/]");
+                            Console.ReadKey(true);
+                        }
+                        finally
+                        {
+                            _currentCts = globalCts; // 전역 CTS 복원
                         }
                     }
                     else if (selectedMenu.StartsWith("2"))
@@ -495,14 +517,26 @@ namespace SpAnalyzer.Cli
                         );
 
                         string? consolidatedPlan = null;
+                        using var activeCts = new CancellationTokenSource();
+                        _currentCts = activeCts;
+
                         try
                         {
-                            consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider, cts.Token);
+                            consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider, activeCts.Token);
                             if (string.IsNullOrEmpty(consolidatedPlan))
                             {
                                 AnsiConsole.MarkupLine("[red]통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");
                                 continue;
                             }
+
+                            var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                            await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
+                            AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
+                            {
+                                Border = BoxBorder.Rounded,
+                                Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
+                            });
                         }
                         catch (OperationCanceledException)
                         {
@@ -512,15 +546,17 @@ namespace SpAnalyzer.Cli
                             Console.ReadKey(true);
                             continue;
                         }
-
-                        var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
-                        var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
-                        await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
-                        AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
+                        catch (Exception ex)
                         {
-                            Border = BoxBorder.Rounded,
-                            Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
-                        });
+                            AnsiConsole.MarkupLine($"[red]에러:[/] 통합 설계서 작성 또는 저장 중 오류 발생: {Markup.Escape(ex.Message)}");
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 계속합니다...[/]");
+                            Console.ReadKey(true);
+                        }
+                        finally
+                        {
+                            _currentCts = globalCts; // 전역 CTS 복원
+                        }
                     }
                 }
             }
