@@ -103,13 +103,21 @@ namespace SpAnalyzer.Core.Services
             var spFullName = $"{schema}.{spName}";
 
             // 1. 메인 SP의 DDL 조회
-            spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName);
+            try
+            {
+                spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName);
+            }
+            catch (Exception ex)
+            {
+                spDef.Warnings.Add($"[{spFullName}] 메인 프로시저 DDL 수집 실패: {ex.Message}");
+                throw;
+            }
 
             // 2. 중복 방지 방문 해시셋 및 재귀 리스트 생성
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
             
             // 3. 재귀 수집 시작
-            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies);
+            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings);
 
             return spDef;
         }
@@ -118,7 +126,8 @@ namespace SpAnalyzer.Core.Services
         private async Task GatherDependenciesRecursiveAsync(
             string connectionString, string schema, string name, 
             int currentDepth, int maxDepth, 
-            HashSet<string> visited, List<DependencyInfo> dependencies)
+            HashSet<string> visited, List<DependencyInfo> dependencies,
+            List<string> warnings)
         {
             if (currentDepth > maxDepth) return;
 
@@ -127,8 +136,9 @@ namespace SpAnalyzer.Core.Services
             {
                 rawDeps = await GetRawDependenciesAsync(connectionString, schema, name);
             }
-            catch
+            catch (Exception ex)
             {
+                warnings.Add($"[{schema}.{name}] 의존 관계 정보 수집 실패: {ex.Message}");
                 return; // 수집 실패 시 조용히 스킵 (Soft Fail)
             }
 
@@ -155,9 +165,9 @@ namespace SpAnalyzer.Core.Services
                         depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name);
                         depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Schema, rawDep.Name);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // 일부 권한 누락 스킵
+                        warnings.Add($"[{depFullName}] 테이블 스키마 및 코멘트 정보 수집 실패: {ex.Message}");
                     }
                 }
                 // 코드 수집 및 하위 재귀 분기 (UDF, SP)
@@ -170,11 +180,11 @@ namespace SpAnalyzer.Core.Services
                         // 하위 재귀 수집 호출
                         await GatherDependenciesRecursiveAsync(
                             connectionString, rawDep.Schema, rawDep.Name, 
-                            currentDepth + 1, maxDepth, visited, dependencies);
+                            currentDepth + 1, maxDepth, visited, dependencies, warnings);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // 권한 오류 등 무시
+                        warnings.Add($"[{depFullName}] 참조 객체 DDL 수집 실패: {ex.Message}");
                     }
                 }
 

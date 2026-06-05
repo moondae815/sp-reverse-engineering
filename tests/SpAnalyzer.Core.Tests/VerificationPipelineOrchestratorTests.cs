@@ -54,6 +54,34 @@ namespace SpAnalyzer.Core.Tests
         }
 
         [Fact]
+        public async Task RunPipelineAsync_WithWarnings_CallsNotifyWarnings()
+        {
+            // Arrange
+            var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "CREATE PROCEDURE USP_Test AS SELECT 1" };
+            spDef.Warnings.Add("테이블 dbo.User의 컬럼/설정 정보 수집 실패: 권한 없음");
+            
+            _dbService.GetSpDetailsAsync(Arg.Any<string>(), "dbo", "USP_Test", Arg.Any<int>())
+                .Returns(Task.FromResult(spDef));
+
+            var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
+                .Returns(Task.FromResult(specMarkdown));
+
+            var reviewResult = new ReviewResult { HasDefects = false };
+            _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
+                .Returns(Task.FromResult(reviewResult));
+
+            // Act
+            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+                "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true);
+
+            // Assert
+            Assert.NotNull(resultSpec);
+            _userInteraction.Received(1).NotifyWarnings("dbo.USP_Test", spDef.Warnings);
+            _userInteraction.Received(1).NotifyValidationSuccess("dbo.USP_Test");
+        }
+
+        [Fact]
         public async Task RunPipelineAsync_L1ValidationError_AttemptsSelfCorrection()
         {
             // Arrange

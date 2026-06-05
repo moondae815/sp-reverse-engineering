@@ -73,6 +73,11 @@ namespace SpAnalyzer.Core.Services
                 return (null, null);
             }
 
+            if (spDef.Warnings.Count > 0)
+            {
+                _userInteraction.NotifyWarnings(selectedOption, spDef.Warnings);
+            }
+
             string? feedbackLog = null;
             string specificationMarkdown = string.Empty;
 

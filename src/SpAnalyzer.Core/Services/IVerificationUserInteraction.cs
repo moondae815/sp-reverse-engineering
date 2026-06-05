@@ -11,6 +11,9 @@ namespace SpAnalyzer.Core.Services
 
         // 예외 메시지 및 경고 출력
         void NotifyError(string message);
+        
+        // DB 메타데이터 수집 중 발생한 경고 목록 출력
+        void NotifyWarnings(string selectedOption, List<string> warnings);
 
         // L1 기계 검증 단계의 오류 정보 출력
         void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors);

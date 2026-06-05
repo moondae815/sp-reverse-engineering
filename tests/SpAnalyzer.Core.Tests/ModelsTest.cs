@@ -47,6 +47,8 @@ namespace SpAnalyzer.Core.Tests
             Assert.False(dep.Columns[0].IsNullable);
             Assert.True(dep.Columns[0].IsPrimaryKey);
             Assert.False(dep.Columns[0].IsForeignKey);
+            Assert.NotNull(spDef.Warnings);
+            Assert.Empty(spDef.Warnings);
         }
     }
 }

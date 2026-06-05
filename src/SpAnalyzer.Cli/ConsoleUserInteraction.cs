@@ -18,6 +18,29 @@ namespace SpAnalyzer.Cli
             AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
         }
 
+        public void NotifyWarnings(string selectedOption, List<string> warnings)
+        {
+            if (warnings == null || warnings.Count == 0) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[yellow]Stored Procedure 수집 중 일부 데이터 누락 또는 접근 실패가 감지되었습니다. AI 분석 프롬프트에는 포함되나, 결과물이 불완전할 수 있습니다:[/]");
+            sb.AppendLine();
+            foreach (var warn in warnings)
+            {
+                sb.AppendLine($"[grey]- {Markup.Escape(warn)}[/]");
+            }
+
+            var panel = new Panel(new Markup(sb.ToString().TrimEnd()))
+            {
+                Border = BoxBorder.Rounded,
+                Header = new PanelHeader($"[yellow] 경고: {Markup.Escape(selectedOption)} 수집 정보 누락 ([bold]{warnings.Count}[/]) [/]"),
+                BorderStyle = new Style(Color.Yellow)
+            };
+
+            AnsiConsole.Write(panel);
+            AnsiConsole.WriteLine();
+        }
+
         public void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors)
         {
             var maxStr = maxAttempts == -1 ? "검증 완료까지" : maxAttempts.ToString();

@@ -514,6 +514,17 @@ namespace SpAnalyzer.Cli
                     var dependenciesText = new System.Text.StringBuilder();
                     var tableSchemasText = new System.Text.StringBuilder();
                     var referenceDdlsText = new System.Text.StringBuilder();
+                    var warningsText = new System.Text.StringBuilder();
+
+                    if (spDef.Warnings.Count > 0)
+                    {
+                        warningsText.AppendLine("[DB 메타데이터 수집 중 발생한 경고/오류 목록]");
+                        foreach (var warn in spDef.Warnings)
+                        {
+                            warningsText.AppendLine($"- {warn}");
+                        }
+                        warningsText.AppendLine();
+                    }
 
                     foreach (var dep in spDef.Dependencies)
                     {
@@ -537,6 +548,7 @@ namespace SpAnalyzer.Cli
 [시스템 규칙 지침]
 {(File.Exists(instructionsFile) ? await File.ReadAllTextAsync(instructionsFile) : "기본 마크다운 규칙을 적용하여 분석해 주세요.")}
 
+{warningsText}
 [수집된 DB 메타데이터 의존관계 목록]
 {dependenciesText}
 
