@@ -10,23 +10,23 @@
 
 | 컴포넌트 (프로젝트) | 모듈 (클래스/인터페이스) | 주요 아키텍처적 역할 및 기능 |
 | :--- | :--- | :--- |
-| **SpAnalyzer.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/Program.cs) | CLI 아규먼트 파싱, DI(의존성 주입) 구성, 대화형 및 배치 실행 모드 제어 |
-| | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공 |
+| **SpAnalyzer.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/Program.cs) | CLI 아규먼트 파싱, DI(의존성 주입) 구성, 대화형 및 배치 실행 모드 제어, CancellationTokenSource 취소 처리 연동 |
+| | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링 및 Markup.Escape 예외 방지 |
 | | [SessionManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 |
-| **SpAnalyzer.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집 |
-| | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립, 명세서 생성, AI 리뷰(L2) 및 배치 현대화 설계서 기안 |
-| | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
+| **SpAnalyzer.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
+| | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함), 명세서 생성, AI 리뷰(L2), 배치 현대화 설계서 기안, robust한 JSON 추출(`ExtractJson`) |
+| | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석(IsConsolidated 분기 검증) 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
 | | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 제어 |
-| | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
+| | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
 
 ---
 
 ## ⚙️ 핵심 아키텍처 메커니즘 (Core Mechanisms)
 
-### 1. 재귀적 의존성 수집 및 예외 격리 (DFS & Soft Fail)
+### 1. 재귀적 의존성 수집 및 예외 격리 (DFS & Soft Fail & Warnings)
 * **재귀적 탐색 알고리즘**: 타겟 SP가 참조하는 테이블, UDF, 하위 SP의 의존성을 `sys.sql_expression_dependencies`를 활용하여 **깊이 우선 탐색(DFS)** 방식으로 추적합니다.
 * **순환 참조 방지**: 탐색 중인 객체의 전체 이름을 담는 `HashSet<string> (visited)`을 관리하여 무한 루프 및 중복 DB 조회를 원천 차단합니다.
-* **소프트 페일(Soft Fail)**: 특정 UDF DDL이나 테이블 스키마 조회 시 권한 누락 예외가 발생할 경우, 예외를 에이전트 내에서 격리하고 경고 로그만 남긴 채 상위 객체 분석은 지속하는 높은 장애 내성(Fault Tolerance)을 갖추고 있습니다.
+* **소프트 페일 및 경고 누적(Soft Fail & Warnings)**: 특정 의존 테이블의 스키마나 UDF DDL 조회 중 권한 누락이나 존재하지 않는 객체 참조 등의 비치명적 오류가 발생하면, 파이프라인 전체를 중단시키는 대신 해당 내역을 `SpDefinition.Warnings` 리스트에 누적합니다. 이 경고 데이터는 TUI 화면에 명확한 경고 패널(Panel)로 렌더링될 뿐만 아니라 AI 분석 프롬프트에도 포함되어 AI가 누락된 리소스를 감안하여 현실적인 분석 명세서를 쓰도록 돕습니다.
 
 ### 2. 비즈니스 뉘앙스 확보를 위한 확장 속성(Extended Properties) 맵핑
 * 기술적 메타데이터(컬럼명, 데이터 타입) 수집 단계를 넘어, 데이터베이스의 확장 속성인 **`MS_Description`**에 등록된 테이블 요약과 컬럼별 한글 주석을 실시간 연동합니다.
@@ -34,8 +34,8 @@
 
 ### 3. 3단계 신뢰성 검증 파이프라인 (Verification Pipeline)
 * **대칭형 검증 아키텍처**: 개별 SP 분석서(`_Spec.md`)와 통합 배치 전환 계획서(`_BatchMigrationPlan.md`) 모두에 100% 대칭형 검증 파이프라인이 구동됩니다.
-* **L1 (기계 검사 - 정적 Linter)**: 마크다운 구조(AST) 파서인 **`Markdig`**을 사용해 필수 섹션(개별 5대 헤더 / 통합 4대 헤더) 누락 여부를 구조적으로 정교히 검증하며, 설정에 따라 **`mermaid-cli` 도구 컴파일 검증** 또는 정적 괄호 마스킹 예외 린팅을 선택적으로 가동합니다.
-* **L2 (AI 교차 리뷰어)**: 수석 아키텍트 프롬프트로 리뷰어 에이전트를 가동하여 원천 정보와 생성 설계서 간의 불일치를 스크리닝하고 누락 발견 시 설정된 시도 횟수(기본 1회, 또는 검증 완료시까지 무제한)만큼 자가 보완(`Self-Correction`)을 수행합니다.
+* **L1 (기계 검사 - 정적 Linter)**: 마크다운 구조(AST) 파서인 **`Markdig`**을 사용해 필수 섹션 누락 여부를 구조적으로 정교히 검증하며, 설정에 따라 **`mermaid-cli` 도구 컴파일 검증** 또는 정적 괄호 마스킹 예외 린팅을 선택적으로 가동합니다. L1 검증 실패 시 생성되는 교정 피드백 템플릿(`SuggestedPromptFix`)에서 개별 명세서와 통합 계획서의 요구 명세가 혼선되지 않도록 `IsConsolidated` 모델 분기 플래그를 도입하여 각 문헌 종류에 일치하는 맞춤형 헤더 린팅 가이드를 AI에게 명확히 피드백합니다.
+* **L2 (AI 교차 리뷰er)**: 수석 아키텍트 프롬프트로 리뷰어 에이전트를 가동하여 원천 정보와 생성 설계서 간의 불일치를 스크리닝하고 누락 발견 시 설정된 시도 횟수(기본 1회, 또는 검증 완료시까지 무제한)만큼 자가 보완(`Self-Correction`)을 수행합니다.
 * **L3 (인간 개입 조율 - HITL)**: TUI 모드에서 렌더링된 결과를 개발자가 직접 프리뷰하고 승인(`Approve`)하거나, 보완 피드백(`Feedback`)을 자연어로 주어 재생성하는 인터랙티브 조율을 지원합니다.
 
 ### 4. 현대화 배치 스케줄러 전환 설계 및 아키텍처 분리
@@ -43,6 +43,12 @@
   - **1단계: 개별 SP 정적 분석 (`_Spec.md`)**: SP 개별 단위의 로직 설명, 메타데이터 컬럼 맵, 의존 객체 분석에만 집중하여 AI 프롬프트 비용을 낮추고 명세서 문서를 개별 축적합니다.
   - **2단계: 다중 명세서 통합 배치 설계 (`_BatchMigrationPlan.md`)**: 사용자가 TUI/CLI 상에서 수동으로 선택한 복수의 기존 분석 명세서(`_Spec.md`) 파일들을 로드/조합하여, 이를 하나의 유기적인 배치 Job 아키텍처(예: .NET Worker Service 또는 Spring Batch의 Job & Step 구조)로 전환하는 통합 현대화 설계서를 자동 도출합니다.
   - 이를 통해 멀티 스텝 배치 워크플로우 제어(Restartability), 청크(Chunk) 페이징 의사코드, 단계별 예외 처리 및 알림 통합, 그리고 통합 정합성 검증 SQL 세트를 도출합니다.
+  - **동적 SQL 및 Linked Server 포팅 설계**: DB 정적 의존성 분석(`sys.sql_expression_dependencies`)이 포착하지 못하는 런타임 동적 SQL문(`EXEC(@sql)`)이나 Linked Server 참조(4파트 식별자)가 사용된 지점을 감지하여 마이그레이션 설계서에 반영합니다. 컴파일 타임에 검증 가능하며 인젝션 위협이 없는 안전한 타겟 언어 파라미터화 쿼리 구조와 멀티 데이터소스 구성/API 대체 등 애플리케이션 배치 환경에 적합한 연동 대안을 제시하도록 지침을 설계했습니다.
+
+### 5. 안전한 AI 응답 처리 및 비동기 작업 취소 메커니즘 (Robustness & Cancel-safety)
+* **안전한 JSON 추출 알고리즘 (`ExtractJson`)**: AI가 교차 리뷰 등에서 JSON 결과를 반환할 때, 마크다운 코드 블록(```json)으로 감싸거나 외부에 설명 텍스트를 함께 제공하면 기존 Json 파서는 에러가 발생합니다. 이를 위해 문자열 전체를 분석해 마크다운 블록을 무시하고, 가장 바깥쪽의 `{`와 `}` 한 쌍을 인덱스로 추적해 순수 JSON만 정밀 추출하는 견고한 문자열 전처리 엔진을 `AiService`에 탑재했습니다.
+* **비동기 파이프라인의 CancellationToken 전파**: 대량의 SP 데이터 수집이나 원격 AI 응답 대기가 장시간 블로킹되거나 무한 대기가 발생하는 것을 방지합니다. `Program`의 메인 컨트롤러부터 `VerificationPipelineOrchestrator`, `AiService`, `DbMetadataService` 등 모든 비동기 호출 경로로 `CancellationToken`을 전파하였고, CLI 환경에서 `Ctrl+C` 입력 감지 시 `CancellationTokenSource`를 즉시 취소하여 안전하게 예외를 격리하고 메인 루프를 복구합니다.
+
 
 ---
 
