@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using SpAnalyzer.Core.Models;
@@ -8,7 +9,7 @@ namespace SpAnalyzer.Core.Services
 {
     public class DbMetadataService : IDbMetadataService
     {
-        public async Task<List<string>> GetStoredProcedureNamesAsync(string connectionString)
+        public async Task<List<string>> GetStoredProcedureNamesAsync(string connectionString, CancellationToken cancellationToken = default)
         {
             var spList = new List<string>();
             var query = @"
@@ -19,12 +20,12 @@ namespace SpAnalyzer.Core.Services
 
             using (var conn = new SqlConnection(connectionString))
             {
-                await conn.OpenAsync();
+                await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
-                        while (await reader.ReadAsync())
+                        while (await reader.ReadAsync(cancellationToken))
                         {
                             spList.Add(reader.GetString(0));
                         }
@@ -35,7 +36,7 @@ namespace SpAnalyzer.Core.Services
         }
 
         // 헬퍼 메서드: 특정 객체의 DDL 원본 텍스트 조회
-        private async Task<string> GetObjectDdlAsync(string connectionString, string schema, string objectName)
+        private async Task<string> GetObjectDdlAsync(string connectionString, string schema, string objectName, CancellationToken cancellationToken)
         {
             var fullName = $"{schema}.{objectName}";
             var query = @"
@@ -45,11 +46,11 @@ namespace SpAnalyzer.Core.Services
 
             using (var conn = new SqlConnection(connectionString))
             {
-                await conn.OpenAsync();
+                await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
                     cmd.Parameters.AddWithValue("@FullName", fullName);
-                    var result = await cmd.ExecuteScalarAsync();
+                    var result = await cmd.ExecuteScalarAsync(cancellationToken);
                     if (result != null && result != DBNull.Value)
                     {
                         return result.ToString() ?? string.Empty;
@@ -60,7 +61,7 @@ namespace SpAnalyzer.Core.Services
         }
 
         // 헬퍼 메서드: 특정 객체의 1차 의존 정보 목록 수집
-        private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string schema, string objectName)
+        private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string schema, string objectName, CancellationToken cancellationToken)
         {
             var rawDeps = new List<DependencyInfo>();
             var fullName = $"{schema}.{objectName}";
@@ -75,13 +76,13 @@ namespace SpAnalyzer.Core.Services
 
             using (var conn = new SqlConnection(connectionString))
             {
-                await conn.OpenAsync();
+                await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
                     cmd.Parameters.AddWithValue("@FullName", fullName);
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
-                        while (await reader.ReadAsync())
+                        while (await reader.ReadAsync(cancellationToken))
                         {
                             rawDeps.Add(new DependencyInfo
                             {
@@ -97,7 +98,7 @@ namespace SpAnalyzer.Core.Services
         }
 
         // 메인 재귀 탐색 진입점
-        public async Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth)
+        public async Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth, CancellationToken cancellationToken = default)
         {
             var spDef = new SpDefinition { Schema = schema, Name = spName };
             var spFullName = $"{schema}.{spName}";
@@ -105,7 +106,7 @@ namespace SpAnalyzer.Core.Services
             // 1. 메인 SP의 DDL 조회
             try
             {
-                spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName);
+                spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -117,7 +118,7 @@ namespace SpAnalyzer.Core.Services
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
             
             // 3. 재귀 수집 시작
-            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings);
+            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
 
             return spDef;
         }
@@ -127,14 +128,14 @@ namespace SpAnalyzer.Core.Services
             string connectionString, string schema, string name, 
             int currentDepth, int maxDepth, 
             HashSet<string> visited, List<DependencyInfo> dependencies,
-            List<string> warnings)
+            List<string> warnings, CancellationToken cancellationToken)
         {
             if (currentDepth > maxDepth) return;
 
             List<DependencyInfo> rawDeps;
             try
             {
-                rawDeps = await GetRawDependenciesAsync(connectionString, schema, name);
+                rawDeps = await GetRawDependenciesAsync(connectionString, schema, name, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -162,8 +163,8 @@ namespace SpAnalyzer.Core.Services
                 {
                     try
                     {
-                        depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name);
-                        depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Schema, rawDep.Name);
+                        depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
+                        depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -175,12 +176,12 @@ namespace SpAnalyzer.Core.Services
                 {
                     try
                     {
-                        depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Schema, rawDep.Name);
+                        depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
                         
                         // 하위 재귀 수집 호출
                         await GatherDependenciesRecursiveAsync(
                             connectionString, rawDep.Schema, rawDep.Name, 
-                            currentDepth + 1, maxDepth, visited, dependencies, warnings);
+                            currentDepth + 1, maxDepth, visited, dependencies, warnings, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -192,7 +193,7 @@ namespace SpAnalyzer.Core.Services
             }
         }
 
-        public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string schema, string tableName)
+        public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string schema, string tableName, CancellationToken cancellationToken = default)
         {
             var columns = new List<ColumnInfo>();
             var query = @"
@@ -231,14 +232,14 @@ namespace SpAnalyzer.Core.Services
 
             using (var conn = new SqlConnection(connectionString))
             {
-                await conn.OpenAsync();
+                await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
                     cmd.Parameters.AddWithValue("@Schema", schema);
                     cmd.Parameters.AddWithValue("@TableName", tableName);
-                    using (var reader = await cmd.ExecuteReaderAsync())
+                    using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
-                        while (await reader.ReadAsync())
+                        while (await reader.ReadAsync(cancellationToken))
                         {
                             columns.Add(new ColumnInfo
                             {
@@ -256,7 +257,7 @@ namespace SpAnalyzer.Core.Services
             return columns;
         }
 
-        private async Task<string> GetTableDescriptionAsync(string connectionString, string schema, string tableName)
+        private async Task<string> GetTableDescriptionAsync(string connectionString, string schema, string tableName, CancellationToken cancellationToken)
         {
             var fullName = $"{schema}.{tableName}";
             var query = @"
@@ -271,11 +272,11 @@ namespace SpAnalyzer.Core.Services
             {
                 using (var conn = new SqlConnection(connectionString))
                 {
-                    await conn.OpenAsync();
+                    await conn.OpenAsync(cancellationToken);
                     using (var cmd = new SqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@FullName", fullName);
-                        var result = await cmd.ExecuteScalarAsync();
+                        var result = await cmd.ExecuteScalarAsync(cancellationToken);
                         if (result != null && result != DBNull.Value)
                         {
                             return result.ToString() ?? string.Empty;

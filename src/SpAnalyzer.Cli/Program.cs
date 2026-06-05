@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -47,6 +48,15 @@ namespace SpAnalyzer.Cli
 
         static async Task Main(string[] args)
         {
+            // 0. 취소 토큰 소스 생성 및 Ctrl+C 이벤트 바인딩
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += (sender, e) =>
+            {
+                AnsiConsole.MarkupLine("\n[red]사용자에 의해 작업 취소 요청이 발생했습니다. 안전하게 정리 중...[/]");
+                cts.Cancel();
+                e.Cancel = true; // 프로세스 즉시 종료 방지 및 OperationCanceledException 유도
+            };
+
             // 1. 커맨드라인 아규먼트 및 환경 변수 파싱
             var cliArgs = ParseCommandLineArgs(args);
 
@@ -115,7 +125,7 @@ namespace SpAnalyzer.Cli
                         {
                             using (var conn = new SqlConnection(connectionString))
                             {
-                                await conn.OpenAsync();
+                                await conn.OpenAsync(cts.Token);
                                 connectionSuccess = true;
                             }
                         }
@@ -178,7 +188,7 @@ namespace SpAnalyzer.Cli
                             {
                                 using (var conn = new SqlConnection(connectionString))
                                 {
-                                    await conn.OpenAsync();
+                                    await conn.OpenAsync(cts.Token);
                                     connectionSuccess = true;
                                 }
                             }
@@ -233,7 +243,7 @@ namespace SpAnalyzer.Cli
                 {
                     try
                     {
-                        spNames = await dbService.GetStoredProcedureNamesAsync(connectionString);
+                        spNames = await dbService.GetStoredProcedureNamesAsync(connectionString, cts.Token);
                     }
                     catch (Exception ex)
                     {
@@ -304,7 +314,7 @@ namespace SpAnalyzer.Cli
                         var name = parts[1];
 
                         var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true);
+                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, cts.Token);
 
                         if (string.IsNullOrEmpty(specMarkdown))
                         {
@@ -315,7 +325,7 @@ namespace SpAnalyzer.Cli
                         if (migrationEnabled && spDef != null)
                         {
                             AnsiConsole.MarkupLine($"[yellow]{schema}.{name}[/] - 배치 전환 계획 설계서 작성 중 ({targetLanguage})...");
-                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage);
+                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage, cts.Token);
                         }
 
                         if (!Directory.Exists(outputDir))
@@ -329,6 +339,11 @@ namespace SpAnalyzer.Cli
                             schema, name, provider, modelName);
 
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        AnsiConsole.MarkupLine("\n[red]사용자에 의해 배치 분석 작업이 중단되었습니다. 프로세스를 종료합니다.[/]");
+                        break;
                     }
                     catch (Exception ex)
                     {
@@ -385,34 +400,44 @@ namespace SpAnalyzer.Cli
                         var schema = parts[0];
                         var name = parts[1];
 
-                        var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false);
-
-                        if (string.IsNullOrEmpty(specMarkdown))
+                        try
                         {
-                            AnsiConsole.MarkupLine("[red]분석이 중단되었거나 명세서 생성에 실패했습니다.[/]");
-                            continue;
+                            var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                                connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, cts.Token);
+
+                            if (string.IsNullOrEmpty(specMarkdown))
+                            {
+                                AnsiConsole.MarkupLine("[red]분석이 중단되었거나 명세서 생성에 실패했습니다.[/]");
+                                continue;
+                            }
+
+                            // 분석과 전환 분리 요구에 따라, 개별 분석 시에는 배치 전환 설계서를 생성하지 않음 (null 지정)
+                            string? migrationPlan = null;
+
+                            if (!Directory.Exists(outputDir))
+                            {
+                                Directory.CreateDirectory(outputDir);
+                            }
+
+                            await SaveOutputsAsync(
+                                spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
+                                metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
+                                schema, name, provider, modelName);
+
+                            var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
+                            AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
+                            {
+                                Border = BoxBorder.Rounded,
+                                Header = new PanelHeader($" {selectedOption} 분석 완료 ")
+                            });
                         }
-
-                        // 분석과 전환 분리 요구에 따라, 개별 분석 시에는 배치 전환 설계서를 생성하지 않음 (null 지정)
-                        string? migrationPlan = null;
-
-                        if (!Directory.Exists(outputDir))
+                        catch (OperationCanceledException)
                         {
-                            Directory.CreateDirectory(outputDir);
+                            AnsiConsole.MarkupLine("\n[yellow]분석 작업이 사용자에 의해 중단되었습니다. 메인 메뉴로 돌아갑니다.[/]");
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 계속합니다...[/]");
+                            Console.ReadKey(true);
                         }
-
-                        await SaveOutputsAsync(
-                            spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
-                            metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name, provider, modelName);
-
-                        var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
-                        AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
-                        {
-                            Border = BoxBorder.Rounded,
-                            Header = new PanelHeader($" {selectedOption} 분석 완료 ")
-                        });
                     }
                     else if (selectedMenu.StartsWith("2"))
                     {
@@ -470,11 +495,21 @@ namespace SpAnalyzer.Cli
                         );
 
                         string? consolidatedPlan = null;
-                        consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider);
-
-                        if (string.IsNullOrEmpty(consolidatedPlan))
+                        try
                         {
-                            AnsiConsole.MarkupLine("[red]통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");
+                            consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider, cts.Token);
+                            if (string.IsNullOrEmpty(consolidatedPlan))
+                            {
+                                AnsiConsole.MarkupLine("[red]통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");
+                                continue;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            AnsiConsole.MarkupLine("\n[yellow]통합 설계서 수립 작업이 사용자에 의해 중단되었습니다. 메인 메뉴로 돌아갑니다.[/]");
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 계속합니다...[/]");
+                            Console.ReadKey(true);
                             continue;
                         }
 

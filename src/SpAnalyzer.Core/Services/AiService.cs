@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using SpAnalyzer.Core.Models;
 
@@ -59,7 +60,7 @@ namespace SpAnalyzer.Core.Services
             return sb.ToString();
         }
 
-        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null)
+        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -156,7 +157,7 @@ namespace SpAnalyzer.Core.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             }
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -167,7 +168,7 @@ namespace SpAnalyzer.Core.Services
             }
         }
 
-        public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown)
+        public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -223,7 +224,7 @@ namespace SpAnalyzer.Core.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             }
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -260,7 +261,7 @@ namespace SpAnalyzer.Core.Services
             }
         }
 
-        public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage)
+        public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -347,7 +348,7 @@ namespace SpAnalyzer.Core.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             }
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -358,7 +359,7 @@ namespace SpAnalyzer.Core.Services
             }
         }
 
-        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName)
+        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -417,7 +418,7 @@ namespace SpAnalyzer.Core.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             }
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -428,7 +429,7 @@ namespace SpAnalyzer.Core.Services
             }
         }
 
-        public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName)
+        public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -490,7 +491,7 @@ namespace SpAnalyzer.Core.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             }
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var responseContent = await response.Content.ReadAsStringAsync();

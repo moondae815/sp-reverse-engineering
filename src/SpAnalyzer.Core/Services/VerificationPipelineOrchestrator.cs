@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using SpAnalyzer.Core.Models;
 
@@ -53,7 +54,8 @@ namespace SpAnalyzer.Core.Services
             int maxDepth,
             string provider,
             string instructions,
-            bool isBatchMode)
+            bool isBatchMode,
+            CancellationToken cancellationToken = default)
         {
             var selectedOption = $"{schema}.{name}";
             SpDefinition? spDef = null;
@@ -61,7 +63,7 @@ namespace SpAnalyzer.Core.Services
             _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - DB 메타데이터 및 의존성 분석 중 (최대 깊이: {maxDepth}단계)...");
             try
             {
-                spDef = await _dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth);
+                spDef = await _dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -91,7 +93,7 @@ namespace SpAnalyzer.Core.Services
                 _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}) [[{attemptText}]]...");
                 try
                 {
-                    specificationMarkdown = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog);
+                    specificationMarkdown = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, cancellationToken);
                     genSuccess = true;
                 }
                 catch (Exception ex)
@@ -131,7 +133,7 @@ namespace SpAnalyzer.Core.Services
                 _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider} - {_modelName})...");
                 try
                 {
-                    l2Result = await _aiService.ReviewSpecificationAsync(spDef, specificationMarkdown);
+                    l2Result = await _aiService.ReviewSpecificationAsync(spDef, specificationMarkdown, cancellationToken);
                     reviewSuccess = true;
                 }
                 catch (Exception ex)
@@ -193,7 +195,7 @@ namespace SpAnalyzer.Core.Services
                         string reSpec = string.Empty;
                         try
                         {
-                            reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, humanFeedbackLog);
+                            reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, humanFeedbackLog, cancellationToken);
                         }
                         catch (Exception ex)
                         {
@@ -212,7 +214,7 @@ namespace SpAnalyzer.Core.Services
                             _userInteraction.NotifyStatus("피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.");
                             try
                             {
-                                reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix);
+                                reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, cancellationToken);
                             }
                             catch { }
                         }
@@ -229,7 +231,8 @@ namespace SpAnalyzer.Core.Services
             System.Collections.Generic.List<(string FileName, string Content)> specs,
             string targetLanguage,
             string jobName,
-            string provider)
+            string provider,
+            CancellationToken cancellationToken = default)
         {
             string? feedbackLog = null;
             string consolidatedPlan = string.Empty;
@@ -250,7 +253,7 @@ namespace SpAnalyzer.Core.Services
                         specsCopy.Add(("Feedback_Log.txt", $"[이전 시도에 대한 검토 피드백]:\n{feedbackLog}\n위 에러/피드백 사항을 전적으로 수용하여 통합 설계서를 완성해 주세요."));
                     }
 
-                    consolidatedPlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName);
+                    consolidatedPlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, cancellationToken);
                     genSuccess = true;
                 }
                 catch (Exception ex)
@@ -290,7 +293,7 @@ namespace SpAnalyzer.Core.Services
                 _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({provider} - {_modelName})...");
                 try
                 {
-                    l2Result = await _aiService.ReviewConsolidatedPlanAsync(specs, consolidatedPlan, jobName);
+                    l2Result = await _aiService.ReviewConsolidatedPlanAsync(specs, consolidatedPlan, jobName, cancellationToken);
                     reviewSuccess = true;
                 }
                 catch (Exception ex)
@@ -351,7 +354,7 @@ namespace SpAnalyzer.Core.Services
                     string rePlan = string.Empty;
                     try
                     {
-                        rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName);
+                        rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -372,7 +375,7 @@ namespace SpAnalyzer.Core.Services
                         {
                             var specsRe = new System.Collections.Generic.List<(string FileName, string Content)>(specsCopy);
                             specsRe.Add(("L1_Re_Fix.txt", l1Re.SuggestedPromptFix ?? string.Empty));
-                            rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsRe, targetLanguage, jobName);
+                            rePlan = await _aiService.GenerateConsolidatedBatchPlanAsync(specsRe, targetLanguage, jobName, cancellationToken);
                         }
                         catch { }
                     }
