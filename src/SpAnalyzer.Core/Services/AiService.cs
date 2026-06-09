@@ -1,6 +1,4 @@
 using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -11,26 +9,12 @@ namespace SpAnalyzer.Core.Services
 {
     public class AiService : IAiService
     {
-        private readonly string _provider;
-        private readonly string _modelName;
-        private readonly string _apiKey;
-        private readonly string _endpoint;
+        private readonly IAiClient _aiClient;
         private readonly float _temperature;
-        private readonly HttpClient _httpClient;
 
-        public AiService(string provider, string modelName, string apiKey, string endpoint, float temperature, HttpClient? httpClient = null)
+        public AiService(IAiClient aiClient, float temperature)
         {
-            _provider = provider;
-            _modelName = modelName;
-            _apiKey = apiKey;
-            _httpClient = httpClient ?? new HttpClient();
-            
-            var ep = string.IsNullOrWhiteSpace(endpoint) ? "https://api.openai.com/v1" : endpoint.Trim();
-            if (ep.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-            {
-                ep = ep.Substring(0, ep.Length - "/chat/completions".Length).TrimEnd('/');
-            }
-            _endpoint = ep;
+            _aiClient = aiClient ?? throw new ArgumentNullException(nameof(aiClient));
             _temperature = temperature;
         }
 
@@ -62,11 +46,6 @@ namespace SpAnalyzer.Core.Services
 
         public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
             // 프롬프트 조립
             var systemPrompt = $@"당신은 SQL Server Stored Procedure 분석 전문가입니다. 다음 규칙을 준수하여 마크다운 기능 명세서를 작성하십시오.
 
@@ -136,47 +115,11 @@ namespace SpAnalyzer.Core.Services
                 userPrompt += $"\n\n[이전 시도에 대한 검증 오류/수정 피드백 로그]:\n{feedbackLog}\n위 검토 및 수정 의견을 전적으로 수용하여 명세서 내용을 정교하게 수정하고 오류를 바로잡아 다시 작성해 주십시오.";
             }
 
-            // OpenAI / Ollama 호환 JSON 페이로드 작성
-            var requestBody = new
-            {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = _temperature
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            using (var doc = JsonDocument.Parse(responseContent))
-            {
-                var root = doc.RootElement;
-                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
-            }
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, cancellationToken);
         }
 
         public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
             var systemPrompt = @"당신은 SQL Server Stored Procedure 기능 명세서의 완성도를 검증하는 수석 아키텍트이자 리뷰어 에이전트입니다.
 제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하십시오.
 
@@ -204,53 +147,22 @@ namespace SpAnalyzer.Core.Services
 위 마크다운 명세서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.
 ";
 
-            var requestBody = new
-            {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = 0.1f
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, cancellationToken);
             try
             {
-                using (var doc = JsonDocument.Parse(responseContent))
+                var jsonString = ExtractJson(responseContent);
+
+                using (var resultDoc = JsonDocument.Parse(jsonString))
                 {
-                    var root = doc.RootElement;
-                    var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+                    var resultRoot = resultDoc.RootElement;
+                    var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
+                    var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
 
-                    var jsonString = ExtractJson(content);
-
-                    using (var resultDoc = JsonDocument.Parse(jsonString))
+                    return new ReviewResult
                     {
-                        var resultRoot = resultDoc.RootElement;
-                        var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
-                        var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
-
-                        return new ReviewResult
-                        {
-                            HasDefects = hasDefects,
-                            FeedbackComment = feedbackComment
-                        };
-                    }
+                        HasDefects = hasDefects,
+                        FeedbackComment = feedbackComment
+                    };
                 }
             }
             catch (Exception ex)
@@ -265,11 +177,6 @@ namespace SpAnalyzer.Core.Services
 
         public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
             var systemPrompt = $@"당신은 SQL Server Agent의 스케줄러 배치 작업을 현대적인 애플리케이션 기반 배치 프레임워크로 전환하는 최적화 설계 전문가입니다.
 대상 Stored Procedure 소스 코드와 의존 테이블/UDF 구조를 분석하여, {targetLanguage} 기반의 현대적인 백그라운드 배치 컴포넌트로 포팅하기 위한 '배치 전환 계획 설계서'를 작성해 주십시오.
 
@@ -330,46 +237,11 @@ namespace SpAnalyzer.Core.Services
 위 레거시 배치 SP 정보를 바탕으로 {targetLanguage} 기준의 '배치 전환 계획 설계서'를 작성해 주십시오.
 ";
 
-            var requestBody = new
-            {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = _temperature
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            using (var doc = JsonDocument.Parse(responseContent))
-            {
-                var root = doc.RootElement;
-                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
-            }
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, cancellationToken);
         }
 
         public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
             var systemPrompt = $@"당신은 여러 개의 레거시 Stored Procedure 분석 명세서(마크다운)를 바탕으로, 이를 최신 {targetLanguage} 기반의 단일 배치 애플리케이션 및 스케줄러 전환 설계도(Consolidated Batch Modernization Plan)로 작성하는 전문 수석 배치 아키텍트입니다.
 제공된 개별 SP 분석서들의 비즈니스 요약과 테이블 CRUD 맵을 종합적으로 설계하여, '{jobName}'이라는 단일 통합 배치 Job으로 전환하는 계획서를 기안해 주십시오.
 
@@ -400,46 +272,11 @@ namespace SpAnalyzer.Core.Services
 
             userPrompt.AppendLine("위 개별 명세서들의 정보를 완벽히 분석하여, 지침에 맞추어 단일 통합 배치 전환 계획서를 구성해 주십시오.");
 
-            var requestBody = new
-            {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt.ToString() }
-                },
-                temperature = _temperature
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
-            using (var doc = JsonDocument.Parse(responseContent))
-            {
-                var root = doc.RootElement;
-                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
-            }
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, cancellationToken);
         }
 
         public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _provider.Equals("OpenAI", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
             var systemPrompt = @"당신은 여러 레거시 SP 분석 명세서들을 종합하여 설계된 통합 배치 전환 계획서(Markdown)의 완성도를 검증하는 수석 배치 아키텍트이자 리뷰어 에이전트입니다.
 제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하십시오.
 
@@ -473,53 +310,22 @@ namespace SpAnalyzer.Core.Services
             userPrompt.AppendLine();
             userPrompt.AppendLine("위 계획서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.");
 
-            var requestBody = new
-            {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt.ToString() }
-                },
-                temperature = 0.1f
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var responseContent = await response.Content.ReadAsStringAsync();
+            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, cancellationToken);
             try
             {
-                using (var doc = JsonDocument.Parse(responseContent))
+                var jsonString = ExtractJson(responseContent);
+
+                using (var resultDoc = JsonDocument.Parse(jsonString))
                 {
-                    var root = doc.RootElement;
-                    var content = root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+                    var resultRoot = resultDoc.RootElement;
+                    var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
+                    var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
 
-                    var jsonString = ExtractJson(content);
-
-                    using (var resultDoc = JsonDocument.Parse(jsonString))
+                    return new ReviewResult
                     {
-                        var resultRoot = resultDoc.RootElement;
-                        var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
-                        var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
-
-                        return new ReviewResult
-                        {
-                            HasDefects = hasDefects,
-                            FeedbackComment = feedbackComment
-                        };
-                    }
+                        HasDefects = hasDefects,
+                        FeedbackComment = feedbackComment
+                    };
                 }
             }
             catch (Exception ex)

@@ -1,8 +1,10 @@
 using System;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Xunit;
 using SpAnalyzer.Core.Models;
 using SpAnalyzer.Core.Services;
+using SpAnalyzer.Core.Services.Clients;
 
 namespace SpAnalyzer.Core.Tests
 {
@@ -15,7 +17,8 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var instructions = "규칙1: 상세하게 쓸 것.";
             
-            IAiService service = new AiService("OpenAI", "gpt-4o", "", "https://api.openai.com/v1", 0.2f);
+            var client = new OpenAiClient(new HttpClient(), "", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => service.GenerateSpecificationAsync(spDef, instructions));
@@ -28,7 +31,8 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var specMarkdown = "## 개요\n내용";
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "", "https://api.openai.com/v1", 0.2f);
+            var client = new OpenAiClient(new HttpClient(), "", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => service.ReviewSpecificationAsync(spDef, specMarkdown));
@@ -40,7 +44,8 @@ namespace SpAnalyzer.Core.Tests
             // Arrange
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             
-            IAiService service = new AiService("OpenAI", "gpt-4o", "", "https://api.openai.com/v1", 0.2f);
+            var client = new OpenAiClient(new HttpClient(), "", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => service.GenerateBatchMigrationPlanAsync(spDef, "C#"));
@@ -56,7 +61,8 @@ namespace SpAnalyzer.Core.Tests
                 ("dbo.USP_Test2_Spec.md", "## 개요\n내용2")
             };
             
-            IAiService service = new AiService("OpenAI", "gpt-4o", "", "https://api.openai.com/v1", 0.2f);
+            var client = new OpenAiClient(new HttpClient(), "", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => service.GenerateConsolidatedBatchPlanAsync(specs, "C#", "Test_Consolidated_Job"));
@@ -86,9 +92,10 @@ namespace SpAnalyzer.Core.Tests
 
             var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"## 생성된 명세서\"}}]}";
             var mockHandler = new MockHttpMessageHandler(mockResponse);
-            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+            var httpClient = new HttpClient(mockHandler);
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+            var client = new OpenAiClient(httpClient, "test_key", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act
             var result = await service.GenerateSpecificationAsync(spDef, "지침");
@@ -104,9 +111,10 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"{\\\"HasDefects\\\": true, \\\"FeedbackComment\\\": \\\"결함 발견\\\"}\"}}]}";
             var mockHandler = new MockHttpMessageHandler(mockResponse);
-            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+            var httpClient = new HttpClient(mockHandler);
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+            var client = new OpenAiClient(httpClient, "test_key", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act
             var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
@@ -123,9 +131,10 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"Invalid JSON Content\"}}]}";
             var mockHandler = new MockHttpMessageHandler(mockResponse);
-            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+            var httpClient = new HttpClient(mockHandler);
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+            var client = new OpenAiClient(httpClient, "test_key", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act
             var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
@@ -142,9 +151,10 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"```json\\n{\\n  \\\"HasDefects\\\": false,\\n  \\\"FeedbackComment\\\": \\\"\\\"\\n}\\n```\"}}]}";
             var mockHandler = new MockHttpMessageHandler(mockResponse);
-            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+            var httpClient = new HttpClient(mockHandler);
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+            var client = new OpenAiClient(httpClient, "test_key", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act
             var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
@@ -161,9 +171,10 @@ namespace SpAnalyzer.Core.Tests
             var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "SELECT 1;" };
             var mockResponse = "{\"choices\":[{\"message\":{\"content\":\"Here is the JSON report:\\n{\\n  \\\"HasDefects\\\": true,\\n  \\\"FeedbackComment\\\": \\\"마크다운 오류\\\"\\n}\\nHope this helps!\"}}]}";
             var mockHandler = new MockHttpMessageHandler(mockResponse);
-            var httpClient = new System.Net.Http.HttpClient(mockHandler);
+            var httpClient = new HttpClient(mockHandler);
 
-            IAiService service = new AiService("OpenAI", "gpt-4o", "test_key", "https://api.openai.com/v1", 0.2f, httpClient);
+            var client = new OpenAiClient(httpClient, "test_key", "https://api.openai.com/v1", "gpt-4o");
+            IAiService service = new AiService(client, 0.2f);
 
             // Act
             var result = await service.ReviewSpecificationAsync(spDef, "## 개요");
@@ -174,7 +185,7 @@ namespace SpAnalyzer.Core.Tests
         }
     }
 
-    public class MockHttpMessageHandler : System.Net.Http.HttpMessageHandler
+    public class MockHttpMessageHandler : HttpMessageHandler
     {
         private readonly string _responseContent;
         private readonly System.Net.HttpStatusCode _statusCode;
@@ -185,14 +196,13 @@ namespace SpAnalyzer.Core.Tests
             _statusCode = statusCode;
         }
 
-        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(System.Net.Http.HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, System.Threading.CancellationToken cancellationToken)
         {
-            var response = new System.Net.Http.HttpResponseMessage(_statusCode)
+            var response = new HttpResponseMessage(_statusCode)
             {
-                Content = new System.Net.Http.StringContent(_responseContent, System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent(_responseContent, System.Text.Encoding.UTF8, "application/json")
             };
             return Task.FromResult(response);
         }
     }
 }
-

@@ -14,7 +14,10 @@
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링 및 Markup.Escape 예외 방지 |
 | | [SessionManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 |
 | **SpAnalyzer.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
-| | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함), 명세서 생성, AI 리뷰(L2), 배치 현대화 설계서 기안, robust한 JSON 추출(`ExtractJson`) |
+| | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함) 및 결과 분석 오케스트레이션. 주입받은 `IAiClient`를 사용해 AI API 호출 수행, robust한 JSON 추출(`ExtractJson`) |
+| | [IAiClient](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IAiClient.cs) | AI 모델 간의 공통 텍스트 통신 계약 정의 |
+| | [Clients (OpenAi, Claude, Gemini, Ollama)](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/) | 각 프로바이더(OpenAI, Claude, Gemini, Ollama)의 네이티브 REST 규격에 맞춰 제작된 HttpClient 통신 모듈 |
+| | [AiClientFactory](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/AiClientFactory.cs) | 제공자 문자열에 맞춰 적절한 `IAiClient` 구현체를 생성하여 반환하는 팩토리 클래스 |
 | | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석(IsConsolidated 분기 검증) 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
 | | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 제어 |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
@@ -48,6 +51,15 @@
 ### 5. 안전한 AI 응답 처리 및 비동기 작업 취소 메커니즘 (Robustness & Cancel-safety)
 * **안전한 JSON 추출 알고리즘 (`ExtractJson`)**: AI가 교차 리뷰 등에서 JSON 결과를 반환할 때, 마크다운 코드 블록(```json)으로 감싸거나 외부에 설명 텍스트를 함께 제공하면 기존 Json 파서는 에러가 발생합니다. 이를 위해 문자열 전체를 분석해 마크다운 블록을 무시하고, 가장 바깥쪽의 `{`와 `}` 한 쌍을 인덱스로 추적해 순수 JSON만 정밀 추출하는 견고한 문자열 전처리 엔진을 `AiService`에 탑재했습니다.
 * **비동기 파이프라인의 CancellationToken 전파**: 대량의 SP 데이터 수집이나 원격 AI 응답 대기가 장시간 블로킹되거나 무한 대기가 발생하는 것을 방지합니다. `Program`의 메인 컨트롤러부터 `VerificationPipelineOrchestrator`, `AiService`, `DbMetadataService` 등 모든 비동기 호출 경로로 `CancellationToken`을 전파하였고, CLI 환경에서 `Ctrl+C` 입력 감지 시 `CancellationTokenSource`를 즉시 취소하여 안전하게 예외를 격리하고 메인 루프를 복구합니다.
+
+### 6. 다중 AI 프로바이더 지원을 위한 추상화 아키텍처 (IAiClient)
+* **결합도 분리(Decoupling)**: 기존에 `AiService` 내부에서 직접 HTTP Client를 구성하여 OpenAI 규격만을 강제해 사용하던 아키텍처를 전면 리팩토링하여, 구체적인 모델 통신 세부 사항을 `IAiClient` 인터페이스 뒤로 감췄습니다.
+* **프로바이더별 전용 클라이언트 독립화**:
+  * **OpenAiClient**: OpenAI 공식 채팅 엔드포인트에 대응.
+  * **ClaudeClient**: Anthropic Messages API 형식에 맞춘 System Instruction 및 페이로드 구성.
+  * **GeminiClient**: Google AI Studio 규격에 적합한 URI Query API Key 주입 및 SystemInstruction 구조 대응.
+  * **OllamaClient**: 로컬 Ollama 환경이 제공하는 OpenAI 호환 API 엔드포인트에 맞춰 `OpenAiClient`를 대리자로 활용.
+* **설정 파일 기반의 동적 다형성**: `appsettings.json` 내에 신설된 `Providers` 하위 설정들(ApiKey 및 Endpoint)을 기반으로, `AiClientFactory`가 지정된 활성 제공자(`Provider`)에 최적화된 `IAiClient` 인스턴스를 동적으로 생성하여 `AiService`에 주입(Dependency Injection)합니다.
 
 
 ---

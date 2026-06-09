@@ -33,7 +33,7 @@
   - **Level 1 (기계적 정적 검증)**: 마크다운 구조(AST) 파서인 **`Markdig`**을 이용하여 필수 섹션 헤더 누락 여부를 구조적으로 정밀 확인하고, 설정된 `UseMermaidCli` 옵션에 따라 **실시간 `mermaid-cli` 컴파일 테스트** 또는 기존 괄호 마스킹 규칙을 적용하여 Mermaid 다이어그램 구문을 린팅합니다. 통합 배치 계획서의 L1 검증 실패 시 교정 템플릿(`SuggestedPromptFix`)이 개별 명세서용으로 제안되던 버그를 구조적으로 분리하여 통합 계획서 전용 헤더 템플릿을 제안하도록 완성도를 높였습니다.
   - **Level 2 (AI 교차 검증 및 자가 보완)**: 1차 작성이 끝나면 검토관(Reviewer) 에이전트가 비즈니스 로직 및 통합 배치 흐름의 결함과 왜곡을 검증해 설정에 지정된 횟수(또는 검증 완료까지 무제한) 동안 자가 수정(`Self-Correction`) 보완 루프를 실행합니다. AI의 JSON 응답 파싱 시 마크다운 백틱 및 추가 설명 래핑으로 인한 파싱 예외를 원천 방지하기 위해 중괄호 `{ }` 추적 기반의 정교한 JSON 추출 알고리즘을 도입했습니다.
   - **Level 3 (인간 개입 피드백 루프)**: TUI 대화형 화면에서 개발자가 생성된 산출물의 전체 내용을 실시간 미리보기(Preview)로 확인한 후 최종 승인(`Approve`)하거나, 직접 자연어 보완 의견(`Feedback`)을 기재하여 즉시 재생성할 수 있습니다. 피드백 반영 후 다시 완성된 문서 역시 한 번 더 화면에 렌더링되며 만족할 때까지 다회차에 걸쳐 반복 검증할 수 있는 직관적인 인터랙티브 흐름을 제공합니다. (무인 배치 모드에서는 자동으로 생략)
-- **다양한 AI 공급자 지원**: OpenAI(GPT) 및 로컬 환경에서 실행되는 Ollama(Llama 3 등)를 유연하게 연결 및 전환하여 사용할 수 있습니다.
+- **다양한 AI 공급자 지원**: OpenAI(GPT) 외에도 Anthropic Claude, Google Gemini, 그리고 로컬 환경에서 실행되는 Ollama 등을 추상화 계층(`IAiClient`)을 통해 제약 없이 유연하게 연결 및 전환하여 사용할 수 있습니다.
 - **커스터마이징 가능한 지침**: 외부 `instructions.md` 파일의 내용을 프롬프트에 자동으로 주입하여, 원하는 명세서 형식 및 분석 규칙을 텍스트 에디터로 간편하게 커스텀할 수 있습니다.
 - **인터랙티브 TUI 제공**: 
   - **보안 로그인**: 직전 성공 계정을 로컬 세션 파일(`.session.json`)에 기억하여 재입력을 최소화하며, 비밀번호는 입력 시 화면에 마스킹(`Secret()`)되어 안전합니다.
@@ -77,20 +77,35 @@ SP-Reverse-Engineering/
 {
   "DatabaseSettings": {
     "Server": "localhost",          // SQL Server 주소
-    "Database": "master",           // 대상 데이터베이스 이름
+    "Database": "Northwind",        // 대상 데이터베이스 이름
     "MaxDependencyDepth": 3         // 재귀적 의존성 탐색의 최대 깊이 (기본값: 3)
   },
   "AiSettings": {
-    "Provider": "OpenAI",          // "OpenAI" | "Claude" | "Gemini" | "Ollama" 중 선택
+    "Provider": "OpenAI",          // 활성화할 AI 제공자 ("OpenAI" | "Gemini" | "Claude" | "Ollama")
     "ModelName": "gpt-4o",         // 사용할 LLM 모델명
-    "ApiKey": "",                  // 보안을 위해 공용 설정에서는 비워둡니다 (로컬 설정 권장)
-    "Endpoint": "https://api.openai.com/v1", // API 엔드포인트 주소 (Ollama의 경우 http://localhost:11434/v1 등)
-    "Temperature": 0.2,             // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
-    "MaxL2Attempts": 1             // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
+    "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
+    "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
+    "Providers": {
+      "OpenAI": {
+        "ApiKey": "",              // OpenAI API 키
+        "Endpoint": "https://api.openai.com/v1"
+      },
+      "Gemini": {
+        "ApiKey": "",              // Gemini API 키 (Google AI Studio)
+        "Endpoint": "https://generativelanguage.googleapis.com"
+      },
+      "Claude": {
+        "ApiKey": "",              // Claude API 키 (Anthropic Console)
+        "Endpoint": "https://api.anthropic.com"
+      },
+      "Ollama": {
+        "Endpoint": "http://localhost:11434" // 로컬 Ollama 엔드포인트
+      }
+    }
   },
   "OutputSettings": {
     "Directory": "./output",       // 명세서 파일이 저장될 출력 디렉터리
-    "InstructionsFile": "instructions.md", // 분석 규칙 지침 파일 명칭
+    "InstructionsFile": "./instructions.md", // 분석 규칙 지침 파일 명칭
     "SaveRawJson": true,           // [설정] SpDefinition JSON 파일 저장 여부
     "SaveRawContext": true,        // [설정] 조립된 프롬프트 텍스트 원문 저장 여부
     "SaveRawFiles": true           // [설정] 의존성 개별 객체 파일/폴더 분산 덤프 여부
@@ -100,7 +115,7 @@ SP-Reverse-Engineering/
     "TargetLanguage": "C#"         // [설정] 제안할 신규 시스템의 배치 프레임워크 언어 (C# | Java 등)
   },
   "ValidationSettings": {
-    "UseMermaidCli": false         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false, 사용 시 node.js 환경 및 mermaid-cli 설치 필요)
+    "UseMermaidCli": false         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false)
   }
 }
 ```
@@ -113,7 +128,17 @@ SP-Reverse-Engineering/
    ```json
    {
      "AiSettings": {
-       "ApiKey": "여기에_새로_발급받은_API키_입력"
+       "Providers": {
+         "OpenAI": {
+           "ApiKey": "여기에_새로_발급받은_API키_입력"
+         },
+         "Gemini": {
+           "ApiKey": "여기에_새로_발급받은_API키_입력"
+         },
+         "Claude": {
+           "ApiKey": "여기에_새로_발급받은_API키_입력"
+         }
+       }
      }
    }
    ```

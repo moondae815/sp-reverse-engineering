@@ -82,8 +82,11 @@ namespace SpAnalyzer.Cli
             // 3. 서비스 구성 변수 준비
             var provider = configuration["AiSettings:Provider"] ?? "OpenAI";
             var modelName = configuration["AiSettings:ModelName"] ?? "gpt-4o";
-            var apiKey = configuration["AiSettings:ApiKey"] ?? string.Empty;
-            var endpoint = configuration["AiSettings:Endpoint"] ?? string.Empty;
+            
+            // 프로바이더별 ApiKey와 Endpoint 로드
+            var apiKey = configuration[$"AiSettings:Providers:{provider}:ApiKey"] ?? string.Empty;
+            var endpoint = configuration[$"AiSettings:Providers:{provider}:Endpoint"] ?? string.Empty;
+            
             var tempStr = configuration["AiSettings:Temperature"] ?? "0.2";
             float.TryParse(tempStr, out float temp);
 
@@ -230,7 +233,8 @@ namespace SpAnalyzer.Cli
 
             // 4. 서비스 구성
             IDbMetadataService dbService = new DbMetadataService();
-            IAiService aiService = new AiService(provider, modelName, apiKey, endpoint, temp);
+            IAiClient aiClient = SpAnalyzer.Core.Services.Clients.AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint);
+            IAiService aiService = new AiService(aiClient, temp);
             IMetadataExporter metadataExporter = new MetadataExporter();
             bool.TryParse(configuration["ValidationSettings:UseMermaidCli"] ?? "false", out bool useMermaidCli);
             var validator = new MechanicalValidator(useMermaidCli);
