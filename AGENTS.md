@@ -40,6 +40,20 @@
 ### 3. 단위 테스트: [SpAnalyzer.Core.Tests](file:///home/moondae/git-root/sp-reverse-engineering/tests/SpAnalyzer.Core.Tests)
 - 핵심 DB 메타데이터 파싱, 예외 상황 대응, AI 연동, 3단계 검증기 단위 테스트가 작성되어 있습니다.
 
+### 4. 코드 검증 Core 라이브러리: [SpAnalyzer.Validator.Core](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core)
+- **추상화 및 도메인 모델 ([Abstractions](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Abstractions), [Models](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models))**
+  - [IValidatorPlugin.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Abstractions/IValidatorPlugin.cs): C#, Java 등 언어별 L1 정적 구조 및 명칭 검증을 구현하는 플러그인 인터페이스.
+  - [ValidationResult.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/ValidationResult.cs): 검증 대상의 L1/L2/L3 전체 상태를 관리하는 데이터 모델.
+  - [GapReport.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/GapReport.cs): AI가 분석한 로직, 입출력, 예외 처리의 불일치(Gap) 명세 및 해결 가이드 모델.
+- **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services), [Plugins](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins))**
+  - [FileMappingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스. 상대경로 중복 접두사 자동 보정 기능 포함.
+  - [ValidatorAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
+  - [CodeVerificationOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/CodeVerificationOrchestrator.cs): L1(정적) -> L2(AI Gap분석) -> L3(사용자 승인) 흐름 제어 및 `validation_summary.md` 결과 마크다운 Export 서비스.
+
+### 5. 코드 검증 CLI 실행 엔트리: [SpAnalyzer.Validator.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli)
+- [Program.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/Program.cs): 검증기 CLI 진입점. 취소 바인딩, 동적 디렉토리 자동완성 Choices 로직 및 기밀 파일 다중 경로 대체 스캔 탑재.
+- [ConsoleUserInteraction.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/ConsoleUserInteraction.cs): TUI 경로 입력 대화창(ShowChoices(false) 설정) 및 Gap 분석 결과 패널 렌더링.
+
 ---
 
 ## 🛠 아키텍처 및 작업 흐름 (Workflow)
@@ -89,7 +103,12 @@ graph TD
 - 새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
 
 ### 6. 단위 테스트 회귀 방지
-- 변경 사항이 발생하면 반드시 `dotnet test` 명령을 활용하여 기존 18개 이상의 단위 테스트([tests/SpAnalyzer.Core.Tests/](file:///home/moondae/git-root/sp-reverse-engineering/tests/SpAnalyzer.Core.Tests))를 수행하고 통과하는지 확인해야 합니다. 신규 기능 추가 시 상응하는 단위 테스트를 추가 작성하십시오.
+- 변경 사항이 발생하면 반드시 `dotnet test` 명령을 활용하여 기존 단위 테스트 및 신규 Validator 단위 테스트([tests/SpAnalyzer.Core.Tests/ValidatorTests.cs](file:///home/moondae/git-root/sp-reverse-engineering/tests/SpAnalyzer.Core.Tests/ValidatorTests.cs))를 모두 통과하는지 확인해야 합니다.
+
+### 7. TUI 디렉토리 입력 피드백 및 이스케이프 준수
+- 프로그램 구동 시 필수 디렉토리 경로가 존재하지 않는다면 무조건 종료(Crash)하기보다, TUI 상에서 사용자에게 올바른 경로를 입력하도록 재요청하는 프롬프트를 반드시 띄우십시오.
+- 입력을 유도하는 프롬프트(Spectre.Console `TextPrompt`) 작성 시, 디렉토리 내 슬래시('/') 문자가 선택지 구분선으로 렌더링되어 지저분해지는 현상을 막기 위해 반드시 **`.ShowChoices(false)`**를 결합하여 화면 노출을 방지하십시오.
+- 경로 계산의 기준점은 항상 현재 실행 중인 쉘 경로인 **`Directory.GetCurrentDirectory()`**로 설정하여 사용자가 `../../` 없이 직관적인 경로를 사용하게 하십시오.
 
 ---
 
@@ -105,6 +124,12 @@ dotnet run --project src/SpAnalyzer.Cli
 
 # CLI 특정 SP 분석 배치 자동화 실행
 dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --sp dbo.CustOrderHist
+
+# 코드 일치성 검증 대화형 TUI 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli
+
+# 코드 일치성 검증 자동화 배치 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src" --batch
 ```
 
 ### 테스트 실행

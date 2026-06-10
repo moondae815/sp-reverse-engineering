@@ -42,6 +42,12 @@
   - **비동기 작업 취소 및 Ctrl+C 연동**: DB 조회나 AI 호출 도중 장시간 블록될 경우 TUI에서 `Ctrl+C` 인터럽트로 파이프라인을 중단하고 메인 메뉴로 복귀할 수 있도록 모든 비동기 핵심 서비스에 `CancellationToken` 연동을 완료했습니다.
 - **테스트 주도 개발(TDD) 기반**: 솔루션 코드가 최종 추가된 검증 케이스를 포함한 18개의 xUnit 단위 테스트 코드를 통해 견고하게 검증되어 있습니다.
 - **문서 이력 및 메타데이터 자동 추적**: 최종 저장되는 명세서 및 계획서 상단에 **생성 일시 및 사용된 AI 정보(Provider, Model)**가 YAML Front Matter 형식의 Alert 블록으로 자동 기입되어 관리 이력 추적이 용이합니다.
+- **코드 일치성 검증 에이전트 (SpAnalyzer.Validator)**:
+  - 역공학으로 추출된 비즈니스 명세서(`*_Spec.md`)와 실제 변환 구현된 타겟 소스코드(C#, Java 등)가 일치하는지 QA 검증하는 에이전트입니다.
+  - **Level 1 (정적 검증)**: 소스코드의 구조적 무결성(중괄호 쌍 분석) 및 명세서 내의 클래스/메소드 명칭 일치성을 플러그인 인터페이스(`IValidatorPlugin`)를 통해 정적으로 린팅합니다.
+  - **Level 2 (AI 논리 검증)**: AI가 입력 파라미터, 출력 데이터셋/DTO, 핵심 비즈니스 연산 분기, 예외 처리 및 트랜잭션을 명세서와 상세 비교하여 불일치점(Gap) 분석 보고서를 작성하고 자가 보완 루프를 실행합니다.
+  - **Level 3 (인간 개입 TUI 검증)**: TUI 모드에서 최종 검증 Gap 리포트를 실시간 확인하고 개발자가 수동 승인(Approve)하거나 반려 후 피드백 의견을 남겨 재생성을 제어할 수 있습니다.
+  - **탭(Tab) 자동완성**: TUI 모드 경로 입력 프롬프트 구동 시 로컬 폴더를 스캔하여 실시간 탭 키 및 화살표 키 자동완성을 지원하므로 편리하게 입력할 수 있습니다.
 
 ---
 
@@ -57,13 +63,19 @@ SP-Reverse-Engineering/
 │   │   ├── Models/                 # SpDefinition, DependencyInfo, ColumnInfo 데이터 모델
 │   │   └── Services/               # DB 조회, AI API 통신 및 메타데이터 내보내기 서비스 구현
 │   │
-│   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI
-│       ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
-│       ├── appsettings.json        # DB/AI 연동 설정 파일
-│       └── instructions.md        # AI 분석 세부 지침 규칙 파일
+│   ├── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI (설계서 생성)
+│   │   ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
+│   │   ├── appsettings.json        # DB/AI 연동 설정 파일
+│   │   └── instructions.md        # AI 분석 세부 지침 규칙 파일
+│   │
+│   ├── SpAnalyzer.Validator.Core/  # [클래스 라이브러리] 소스코드 정적/논리 검증 로직 및 매핑 서비스
+│   │
+│   └── SpAnalyzer.Validator.Cli/   # [콘솔 애플리케이션] Spectre.Console 기반 TUI (코드 일치성 검증)
+│       ├── Program.cs              # 검증기 CLI 진입점 및 제어 흐름
+│       └── appsettings.json        # 검증기용 기본 설정 파일
 │
 └── tests/
-    └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트
+    └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트 (검증 테스트 포함)
 ```
 
 ---
@@ -115,7 +127,11 @@ SP-Reverse-Engineering/
     "TargetLanguage": "C#"         // [설정] 제안할 신규 시스템의 배치 프레임워크 언어 (C# | Java 등)
   },
   "ValidationSettings": {
-    "UseMermaidCli": false         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false)
+    "UseMermaidCli": false,         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false)
+    "SpecDirectory": "./output",          // [설정] 검증에 쓰일 명세서 폴더
+    "SourceCodeDirectory": "./src",       // [설정] 검증에 쓰일 구현 소스코드 폴더
+    "TargetLanguage": "Auto",             // [설정] 검증 대상 언어 ("Auto" | "C#" | "Java")
+    "OutputDirectory": "./output/validation" // [설정] 일치성 Gap 보고서 저장 경로
   }
 }
 ```
@@ -190,6 +206,26 @@ dotnet run --project src/SpAnalyzer.Cli
 
 > [!NOTE]
 > 배치 모드로 대량 실행 중 특정 SP에 대한 메타데이터 조회 실패 또는 AI 통신 에러가 발생하더라도, 해당 SP만 에러 로그가 출력되고 스킵(try-catch 격리)되며 전체 배치 작업은 중단 없이 다음 SP 분석을 계속 수행합니다.
+
+### 3. 코드 일치성 검증 도구 실행 (SpAnalyzer.Validator)
+
+역공학 마이그레이션이 끝난 뒤, 생성된 명세서와 실제 코드가 동일하게 구현되었는지 검증할 때 실행합니다.
+
+*   **대화형 TUI 모드 실행**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Validator.Cli
+    ```
+    *   **사전 유효성 검사**: 설정 파일 상의 디렉토리가 부재할 시 TUI 경고창을 띄우며, 솔루션 루트를 기반으로 계산된 권장 경로를 Default 값으로 제공해 Enter 키로 수월하게 넘어갈 수 있습니다.
+    *   **탭(Tab) 자동완성**: 디렉토리 경로 입력 창에서 `Tab` 키 또는 키보드 방향키(↑/↓)를 이용하여 실제 존재하는 로컬 폴더 경로들을 간편하게 자동 완성으로 입력할 수 있습니다.
+    *   **결과 파일 출력**: 검증 완료 시 `validation_summary.md` 및 개별 상세 Gap 보고서(`[SP이름]_ValidationReport.md`)가 지정된 출력 경로에 마크다운 문서로 자동 저장됩니다.
+
+*   **배치 검증 자동화 모드 실행 (CI/CD 결합용 무인 모드)**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src/Migration" --batch
+    ```
+    *   `--spec`: 마이그레이션 설계서가 저장된 폴더를 직접 지정합니다.
+    *   `--code`: 검증할 소스 코드가 저장된 폴더를 직접 지정합니다.
+    *   `--batch`: 인간 개입(L3) 확인을 생략하고 자동 검증 및 결과 Export만 즉시 수행하고 성공 종료합니다.
 
 ---
 

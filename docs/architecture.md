@@ -21,6 +21,12 @@
 | | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석(IsConsolidated 분기 검증) 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
 | | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 제어 |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
+| **SpAnalyzer.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어 |
+| | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링. 탭(Tab) 자동완성 디렉토리 입력창(`ShowChoices(false)` 제어) 및 Gap 분석 결과 패널 렌더링 |
+| **SpAnalyzer.Validator.Core**<br/>(검증 비즈니스 레이어) | [FileMappingService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs) | 명세서 파일명/YAML Front Matter 기반 구현 소스 매핑 및 경로 중복 자동 보정 |
+| | [IValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Abstractions/IValidatorPlugin.cs) | C#([CsValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins/CsValidatorPlugin.cs)), Java([JavaValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins/JavaValidatorPlugin.cs)) 등 언어별 정적 구조 린터 플러그인 인터페이스 |
+| | [ValidatorAiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs) | AI 공급자(`IAiClient`)를 통해 입출력 및 비즈니스 로직에 대한 의미론적 Gap 분석 요청 및 역직렬화 수행 |
+| | [CodeVerificationOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/CodeVerificationOrchestrator.cs) | L1 정적 검사 -> L2 AI 논리 검증 및 자체 교정 -> L3 개발자 승인 총괄 오케스트레이터 및 결과 보고서 내보내기 |
 
 ---
 
@@ -60,6 +66,20 @@
   * **GeminiClient**: Google AI Studio 규격에 적합한 URI Query API Key 주입 및 SystemInstruction 구조 대응.
   * **OllamaClient**: 로컬 Ollama 환경이 제공하는 OpenAI 호환 API 엔드포인트에 맞춰 `OpenAiClient`를 대리자로 활용.
 * **설정 파일 기반의 동적 다형성**: `appsettings.json` 내에 신설된 `Providers` 하위 설정들(ApiKey 및 Endpoint)을 기반으로, `AiClientFactory`가 지정된 활성 제공자(`Provider`)에 최적화된 `IAiClient` 인스턴스를 동적으로 생성하여 `AiService`에 주입(Dependency Injection)합니다.
+
+### 7. 마이그레이션 소스코드 일치성 검증 메커니즘 (Validator)
+* **스마트 설계서-코드 매핑 (Resolving Mappings)**:
+  - 파일명 매칭 규칙(예: `dbo.CustOrderHist_Spec.md` -> `CustOrderHist.cs` / `CustOrderHist.java`)을 기반으로 연관 관계를 자동 탐색합니다.
+  - 마크다운 설계서 상단에 YAML Front Matter(`TargetCode: ...`)로 명확한 목적 경로가 명시된 경우 우선순위를 부여하며, 실행 경로에 따라 중복된 접두사 경로(예: `src/` 중복)를 자동 슬라이싱해 보정해 주는 장애 방지 로직이 탑재되어 있습니다.
+* **언어별 정적 구문 분석 플러그인 (L1 Linter)**:
+  - `IValidatorPlugin` 인터페이스를 통해 C# 및 Java 구문 검증기를 다형적으로 운영합니다.
+  - 정교한 컴파일러 대신 경량화된 중괄호 쌍 일치 분석 및 Regex 클래스/메소드 식별자 스캔 방식을 채택하여 라이브러리 의존성 충돌 없는 고속 L1 정적 검사를 지원합니다.
+* **AI 의미론적 Gap 분석 (L2 Semantic Check)**:
+  - `ValidatorAiService`가 검토 에이전트를 가동해 입력 파라미터, 출력셋, 핵심 비즈니스 로직, 예외/트랜잭션 세부 처리를 설계서와 비교 검증합니다.
+  - 비교 분석 결과는 사전 약속된 JSON 규격(`GapReport`)으로만 수집하여 파싱 안전성을 확보하였으며, 불일치 식별 시 자체 교정(`MaxL2Attempts`)을 거쳐 최종 결과를 사용자에게 안내합니다.
+* **사용자 친화적 대화형 경로 확보 (TUI UX)**:
+  - 실행 설정된 폴더가 유효하지 않을 경우 `DirectoryNotFoundException`으로 튕기지 않고, TUI 화면에서 사용자에게 유효 경로를 다시 입력하도록 루프형 재요청을 지원합니다.
+  - 탭(Tab) 키 및 화살표 키를 이용해 로컬 디렉토리 후보군을 자동 완성(AutoComplete)하도록 설계했으며, 슬래시(`/`) 구분자 충돌로 인해 지저분하게 렌더링되던 선택지 출력을 `ShowChoices(false)` 옵션을 통해 시각적으로 제어하여 사용성을 향상했습니다.
 
 
 ---
