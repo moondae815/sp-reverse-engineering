@@ -219,5 +219,119 @@ public class CustOrderHistBatch {
             Assert.True(report.HasGaps);
             Assert.Contains("AI 응답 파싱 실패", report.Suggestions);
         }
+
+        [Fact]
+        public void DataComparisonService_ShouldReportSuccess_WhenDataMatches()
+        {
+            // Arrange
+            var service = new DataComparisonService();
+            var legacyJson = @"{
+                ""ProcedureName"": ""dbo.TestProc"",
+                ""ExecutionResults"": [
+                    {
+                        ""CaseId"": ""TC001"",
+                        ""Status"": ""SUCCESS"",
+                        ""ResultSets"": [
+                            [
+                                { ""Col1"": 1, ""Col2"": ""Val1"" },
+                                { ""Col1"": 2, ""Col2"": ""Val2"" }
+                            ]
+                        ]
+                    }
+                ]
+            }";
+            var targetJson = @"{
+                ""ProcedureName"": ""dbo.TestProc"",
+                ""ExecutionResults"": [
+                    {
+                        ""CaseId"": ""TC001"",
+                        ""Status"": ""SUCCESS"",
+                        ""ResultSets"": [
+                            [
+                                { ""Col1"": 1, ""Col2"": ""Val1"" },
+                                { ""Col1"": 2, ""Col2"": ""Val2"" }
+                            ]
+                        ]
+                    }
+                ]
+            }";
+
+            // Act
+            var report = service.CompareOutputs(legacyJson, targetJson);
+
+            // Assert
+            Assert.Contains("100% 일치", report);
+            Assert.Contains("✅", report);
+        }
+
+        [Fact]
+        public void DataComparisonService_ShouldReportMismatch_WhenValuesDiffer()
+        {
+            // Arrange
+            var service = new DataComparisonService();
+            var legacyJson = @"{
+                ""ProcedureName"": ""dbo.TestProc"",
+                ""ExecutionResults"": [
+                    {
+                        ""CaseId"": ""TC001"",
+                        ""Status"": ""SUCCESS"",
+                        ""ResultSets"": [
+                            [
+                                { ""Col1"": 1, ""Col2"": ""Val1"" }
+                            ]
+                        ]
+                    }
+                ]
+            }";
+            var targetJson = @"{
+                ""ProcedureName"": ""dbo.TestProc"",
+                ""ExecutionResults"": [
+                    {
+                        ""CaseId"": ""TC001"",
+                        ""Status"": ""SUCCESS"",
+                        ""ResultSets"": [
+                            [
+                                { ""Col1"": 1, ""Col2"": ""ValChanged"" }
+                            ]
+                        ]
+                    }
+                ]
+            }";
+
+            // Act
+            var report = service.CompareOutputs(legacyJson, targetJson);
+
+            // Assert
+            Assert.Contains("불일치 발생", report);
+            Assert.Contains("❌", report);
+            Assert.Contains("Val1", report);
+            Assert.Contains("ValChanged", report);
+        }
+
+        [Fact]
+        public async Task SpExecutionService_ShouldSoftFail_OnInvalidConnectionString()
+        {
+            // Arrange
+            var service = new SpExecutionService();
+            var invalidConn = "Server=invalid_server_name;Database=invalid;User ID=invalid;Password=invalid;TrustServerCertificate=true;Connection Timeout=1";
+            var inputsJson = @"{
+                ""ProcedureName"": ""dbo.TestProc"",
+                ""TestCases"": [
+                    {
+                        ""CaseId"": ""TC001"",
+                        ""Parameters"": {
+                            ""Param1"": ""Value1""
+                        }
+                    }
+                ]
+            }";
+
+            // Act
+            var resultJson = await service.ExecuteStoredProcedureAsync(invalidConn, inputsJson);
+
+            // Assert
+            Assert.Contains("FAIL", resultJson);
+            Assert.Contains("dbo.TestProc", resultJson);
+        }
     }
 }

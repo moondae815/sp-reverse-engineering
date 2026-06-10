@@ -99,5 +99,58 @@ namespace SpAnalyzer.Validator.Core.Services
                 };
             }
         }
+
+        public async Task<string> GenerateTestParametersAsync(string specContent, string procedureName, CancellationToken cancellationToken = default)
+        {
+            var systemPrompt = @"당신은 데이터베이스 Stored Procedure의 비즈니스 기능 명세서(*_Spec.md)를 분석하여 데이터 정합성 검증용 입력 테스트 케이스 파라미터 세트를 설계하는 전문 QA 테스트 엔지니어입니다.
+
+명세서에 선언된 입력 파라미터명과 데이터 타입을 분석하여 다음 조건을 충족하는 테스트 케이스 세트를 JSON 형식으로 생성해 주세요:
+1. 정상 시나리오 (유효한 값 주입)
+2. 경계값 시나리오 (최소/최대 길이, 특이 경계값)
+3. 예외/오류 시나리오 (빈 문자열, Null, 잘못된 형식 등)
+
+반드시 다음 JSON 규격으로만 응답해 주십시오. 다른 부가적인 텍스트나 코드 블록 기호는 포함하지 마십시오.
+
+{
+  ""ProcedureName"": ""[프로시저 이름]"",
+  ""TestCases"": [
+    {
+      ""CaseId"": ""TC001_Normal_설명"",
+      ""Parameters"": {
+        ""[파라미터명1]"": ""값1"",
+        ""[파라미터명2]"": ""값2""
+      }
+    }
+  ]
+}";
+
+            var userPrompt = $@"대상 프로시저: {procedureName}
+
+[비즈니스 기능 명세서]
+{specContent}
+
+위 명세서를 토대로 테스트 케이스 입력값 JSON을 작성해 주세요.";
+
+            try
+            {
+                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, cancellationToken);
+                
+                // markdown json 블록 정제
+                var cleanJson = response.Trim();
+                if (cleanJson.StartsWith("```"))
+                {
+                    var match = Regex.Match(cleanJson, @"```(?:json)?\s*([\s\S]+?)\s*```");
+                    if (match.Success)
+                    {
+                        cleanJson = match.Groups[1].Value.Trim();
+                    }
+                }
+                return cleanJson;
+            }
+            catch (Exception ex)
+            {
+                return $"{{\"ProcedureName\":\"{procedureName}\", \"TestCases\":[], \"Error\":\"AI를 통한 테스트 파라미터 생성 실패: {ex.Message}\"}}";
+            }
+        }
     }
 }
