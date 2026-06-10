@@ -207,24 +207,39 @@ dotnet run --project src/SpAnalyzer.Cli
 > [!NOTE]
 > 배치 모드로 대량 실행 중 특정 SP에 대한 메타데이터 조회 실패 또는 AI 통신 에러가 발생하더라도, 해당 SP만 에러 로그가 출력되고 스킵(try-catch 격리)되며 전체 배치 작업은 중단 없이 다음 SP 분석을 계속 수행합니다.
 
-### 3. 코드 일치성 검증 도구 실행 (SpAnalyzer.Validator)
+### 3. 코드 일치성 검증 및 데이터 정합성 검증 (SpAnalyzer.Validator)
 
-역공학 마이그레이션이 끝난 뒤, 생성된 명세서와 실제 코드가 동일하게 구현되었는지 검증할 때 실행합니다.
+역공학 마이그레이션이 끝난 뒤, 생성된 명세서와 실제 마이그레이션 소스코드가 동일하게 구현되었는지 검증하고, 레거시 DB와 실제 실행 결과 정합성을 대조할 때 실행합니다.
 
 *   **대화형 TUI 모드 실행**:
     ```bash
     dotnet run --project src/SpAnalyzer.Validator.Cli
     ```
-    *   **사전 유효성 검사**: 설정 파일 상의 디렉토리가 부재할 시 TUI 경고창을 띄우며, 솔루션 루트를 기반으로 계산된 권장 경로를 Default 값으로 제공해 Enter 키로 수월하게 넘어갈 수 있습니다.
-    *   **탭(Tab) 자동완성**: 디렉토리 경로 입력 창에서 `Tab` 키 또는 키보드 방향키(↑/↓)를 이용하여 실제 존재하는 로컬 폴더 경로들을 간편하게 자동 완성으로 입력할 수 있습니다.
-    *   **결과 파일 출력**: 검증 완료 시 `validation_summary.md` 및 개별 상세 Gap 보고서(`[SP이름]_ValidationReport.md`)가 지정된 출력 경로에 마크다운 문서로 자동 저장됩니다.
+    *   **1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)**: C#/Java 소스코드 정적 분석 및 AI 의미론적 Gap 분석, 인간 피드백 루프를 가동하여 검증합니다.
+    *   **2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)**: 설계서(`*_Spec.md`)를 분석해 AI가 정상/경계값/오류 시나리오 테스트 파라미터 JSON(`*_test_inputs.json`)을 생성합니다.
+    *   **3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)**: 생성된 테스트 입력값 JSON을 기반으로 실제 Legacy DB에 접근해 SP를 호출하고, 다중 ResultSet 데이터를 JSON(`*_legacy_results.json`)으로 덤프 수집합니다.
+    *   **4. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
+    *   **기타 기능**: 디렉토리 경로 입력 창에서 `Tab` 키로 로컬 폴더 자동완성이 가능하며, 부재 경로 입력 시 동적 복구 프롬프트를 띄웁니다.
 
 *   **배치 검증 자동화 모드 실행 (CI/CD 결합용 무인 모드)**:
     ```bash
+    # 소스코드 일치성 자동 검증 (L3 인간 개입 생략)
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src/Migration" --batch
+
+    # 데이터 정합성 테스트 파라미터 설계 배치 모드
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-inputs --batch
+
+    # 레거시 DB 실행 결과 덤프 배치 모드
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
+
+    # 레거시 vs 타겟 1:1 데이터 정합성 대조 배치 모드
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --compare-data --batch
     ```
-    *   `--spec`: 마이그레이션 설계서가 저장된 폴더를 직접 지정합니다.
-    *   `--code`: 검증할 소스 코드가 저장된 폴더를 직접 지정합니다.
+    *   `--spec`: 마이그레이션 설계서 및 결과 파일들이 저장될 폴더를 지정합니다.
+    *   `--code`: 검증할 소스 코드가 저장된 폴더를 지정합니다.
+    *   `--gen-inputs`: 테스트 케이스 입력 데이터 설계 작업을 지시합니다.
+    *   `--exec-legacy`: Legacy DB를 대상으로 데이터 수집 처리를 지시합니다 (`--conn` 연결 문자열 동시 제공 필요).
+    *   `--compare-data`: 수집된 레거시 결과와 신규 타겟 결과를 대조 분석하여 보고서를 작성합니다.
     *   `--batch`: 인간 개입(L3) 확인을 생략하고 자동 검증 및 결과 Export만 즉시 수행하고 성공 종료합니다.
 
 ---

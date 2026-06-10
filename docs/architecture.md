@@ -25,7 +25,9 @@
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링. 탭(Tab) 자동완성 디렉토리 입력창(`ShowChoices(false)` 제어) 및 Gap 분석 결과 패널 렌더링 |
 | **SpAnalyzer.Validator.Core**<br/>(검증 비즈니스 레이어) | [FileMappingService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs) | 명세서 파일명/YAML Front Matter 기반 구현 소스 매핑 및 경로 중복 자동 보정 |
 | | [IValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Abstractions/IValidatorPlugin.cs) | C#([CsValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins/CsValidatorPlugin.cs)), Java([JavaValidatorPlugin](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins/JavaValidatorPlugin.cs)) 등 언어별 정적 구조 린터 플러그인 인터페이스 |
-| | [ValidatorAiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs) | AI 공급자(`IAiClient`)를 통해 입출력 및 비즈니스 로직에 대한 의미론적 Gap 분석 요청 및 역직렬화 수행 |
+| | [ValidatorAiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs) | AI 공급자(`IAiClient`)를 통해 입출력 및 비즈니스 로직에 대한 의미론적 Gap 분석 요청 및 역직렬화 수행. 추가로 데이터 정합성 검증용 테스트 파라미터 JSON 생성 기능 탑재 |
+| | [SpExecutionService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/SpExecutionService.cs) | 입력받은 테스트 케이스 파라미터를 활용해 Legacy DB에서 Stored Procedure를 실행하고 결과를 다중 ResultSet 구조의 JSON 문자열로 직렬화하여 반환. Soft Fail 기반 예외 격리 적용 |
+| | [DataComparisonService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/DataComparisonService.cs) | 수집된 레거시 결과 JSON과 신규 타겟 결과 JSON 데이터를 로드해, 행 수, 데이터 타입, 개별 컬럼의 동등성(실수 정밀도 및 날짜 정형화 적용)을 1:1 비교 검증해 상세 보고서 마크다운 생성 |
 | | [CodeVerificationOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/CodeVerificationOrchestrator.cs) | L1 정적 검사 -> L2 AI 논리 검증 및 자체 교정 -> L3 개발자 승인 총괄 오케스트레이터 및 결과 보고서 내보내기 |
 
 ---
@@ -80,6 +82,20 @@
 * **사용자 친화적 대화형 경로 확보 (TUI UX)**:
   - 실행 설정된 폴더가 유효하지 않을 경우 `DirectoryNotFoundException`으로 튕기지 않고, TUI 화면에서 사용자에게 유효 경로를 다시 입력하도록 루프형 재요청을 지원합니다.
   - 탭(Tab) 키 및 화살표 키를 이용해 로컬 디렉토리 후보군을 자동 완성(AutoComplete)하도록 설계했으며, 슬래시(`/`) 구분자 충돌로 인해 지저분하게 렌더링되던 선택지 출력을 `ShowChoices(false)` 옵션을 통해 시각적으로 제어하여 사용성을 향상했습니다.
+
+### 8. 데이터 정합성 검증 엔진 (Data Verification Runner)
+비즈니스 로직에 대한 AI 검토를 마친 뒤, 실제 기존 Stored Procedure와 마이그레이션된 타겟 소스코드를 런타임 상에서 구동해 결과 데이터를 대조하는 검증 메커니즘입니다.
+* **AI 기반 동적 테스트 케이스 설계 (`ValidatorAiService.GenerateTestParametersAsync`)**:
+  - 작성된 기능 명세서(`*_Spec.md`)의 입출력 정보를 AI 분석가에게 제공하여, 정상 호출 조건뿐만 아니라 경계값(Boundary), 예외/오류 유발 조건까지 망라하는 다양한 테스트 케이스와 파라미터 세트를 기획하여 `*_test_inputs.json` 형태로 출력합니다.
+* **레거시 DB 실시간 실행 데이터 수집 (`SpExecutionService`)**:
+  - 수집된 테스트 케이스 JSON을 파싱하여, 실제 SQL Server 데이터베이스에 연결한 뒤 Stored Procedure를 직접 실행합니다.
+  - SP가 반환하는 다중 결과 세트(Multiple Result Sets)를 `SqlDataReader`를 통해 누락 없이 추적하며, DB 상의 Null 값은 JSON 직렬화가 가능하게 안전하게 변환 처리하여 `*_legacy_results.json`으로 물리 덤프합니다.
+  - 데이터베이스의 일시적 장애나 자격 증명 오류가 빌드 전체를 실패시키지 않도록 **연결 및 실행 예외를 격리(Soft Fail)**하여 결과 파일 내부의 각 테스트 케이스에 `FAIL` 상태를 기록하고 정상 리턴합니다.
+* **유연한 1:1 데이터 동등성 비교 알고리즘 (`DataComparisonService`)**:
+  - 레거시 덤프 JSON과 신규 타겟 결과 덤프 JSON(`*_target_results.json`)을 동적으로 역직렬화하여 구조 대조를 실시합니다.
+  - **3차원 대조 매트릭스**: 테스트 케이스 단위 ➔ 결과 세트(Result Set) 인덱스 단위 ➔ 행(Row) 및 컬럼 값 단위까지 계층적으로 1:1 대조합니다.
+  - **데이터 값 포맷 정규화**: 실수의 부동 소수점 자릿수 표현 차이나 날짜/시간(DateTime) 문자 포맷 차이로 인한 미세한 문자열 불일치(False Positives)를 방지하기 위해, 타입 감지 시 `NormalizeValueString`을 통해 정규화 처리를 거친 후 비교를 실행합니다.
+  - 불일치 항목들이 한눈에 파악되도록 불일치율, 행 수 미스매치, 컬럼 값 차이를 비교 요약 표와 상세 목록으로 작성한 검증 보고서 마크다운 `*_CompareReport.md`를 자동으로 출력 디렉토리에 내보냅니다.
 
 
 ---
@@ -178,8 +194,36 @@ graph TD
 
 ---
 
+## ⚙️ 데이터 정합성 검증 실행 흐름 (Data Verification Workflow)
+
+아래 다이어그램은 마이그레이션된 소스코드와 레거시 DB SP 간의 데이터 정합성을 확인하기 위해 설계된 테스트 케이스 기획, 실행 데이터 수집 및 1:1 비교 대조를 수행하는 실행 흐름입니다.
+
+```mermaid
+graph TD
+    %% 입력 자료
+    Spec["비즈니스 기능 명세서<br/>(*_Spec.md)"] --> GenInputs["1. 테스트 케이스 자동 설계 (AI)<br/>(ValidatorAiService)"]
+    
+    %% 테스트 파라미터 파일
+    GenInputs --> InputJson["테스트 파라미터 파일<br/>(*_test_inputs.json)"]
+    
+    %% Legacy 수집
+    InputJson --> ExecLegacy["2. 레거시 DB 실행 (수집)<br/>(SpExecutionService)"]
+    ExecLegacy --> LegacyJson["레거시 결과 덤프<br/>(*_legacy_results.json)"]
+    
+    %% Target 수집
+    InputJson --> ExecTarget["3. 마이그레이션 프로그램 실행<br/>(타겟 배치/클래스 구동)"]
+    ExecTarget --> TargetJson["신규 타겟 결과 덤프<br/>(*_target_results.json / *_new_results.json)"]
+    
+    %% 비교 대조
+    LegacyJson & TargetJson --> CompareData["4. 데이터 1:1 대조 및 요약 표 작성<br/>(DataComparisonService)"]
+    CompareData --> Report["데이터 정합성 보고서 생성<br/>(*_CompareReport.md)"]
+```
+
+---
+
 ## 📈 활용 분야 및 기대 효과
 
 * **레거시 시스템 마이그레이션**: 오랜 기간 정비되지 않은 대규모 레거시 Stored Procedure의 비즈니스 로직을 빠르게 문서화하고 도식화함과 동시에 현대화 마이그레이션 계획을 상세히 수립합니다.
+* **마이그레이션 신뢰성 보장 (회귀 테스트 자동화)**: 단순 코드 로직의 정적/논리적 일치성을 검사하는 수준을 넘어, 실제 데이터베이스에 쿼리를 실행해보고 그 출력값의 정밀도까지 1:1로 비교함으로써 마이그레이션 과정에서의 무결성을 실시간으로 확인하고 보장합니다.
 * **신입 개발자 온보딩**: 복잡한 데이터베이스 의존 관계를 AI 에이전트가 탐색하여 다이어그램과 함께 구조적으로 해설하고 포팅 가이드라인을 제공하므로 개발 지식 전파 비용을 대폭 낮춥니다.
 * **CI/CD 파이프라인 자동화**: 주기적으로 배치 모드를 실행하여 데이터베이스 스키마와 프로시저 변경 이력을 명세서로 자동 추적하고 변경 감지 리포트를 산출할 수 있습니다.

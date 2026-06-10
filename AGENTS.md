@@ -48,6 +48,8 @@
 - **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services), [Plugins](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins))**
   - [FileMappingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스. 상대경로 중복 접두사 자동 보정 기능 포함.
   - [ValidatorAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
+  - [SpExecutionService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/SpExecutionService.cs): SQL Server DB에서 Stored Procedure를 동적으로 실행하고 다중 ResultSet 결과를 JSON으로 덤프하는 서비스.
+  - [DataComparisonService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/DataComparisonService.cs): 레거시 vs 타겟 JSON 데이터의 행 수, 컬럼 타입, 개별 값을 1:1 대조하여 마크다운 리포트 생성하는 서비스.
   - [CodeVerificationOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/CodeVerificationOrchestrator.cs): L1(정적) -> L2(AI Gap분석) -> L3(사용자 승인) 흐름 제어 및 `validation_summary.md` 결과 마크다운 Export 서비스.
 
 ### 5. 코드 검증 CLI 실행 엔트리: [SpAnalyzer.Validator.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli)
@@ -128,8 +130,17 @@ dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=Nor
 # 코드 일치성 검증 대화형 TUI 모드 실행
 dotnet run --project src/SpAnalyzer.Validator.Cli
 
-# 코드 일치성 검증 자동화 배치 모드 실행
+# 소스코드 일치성 검증 자동화 배치 모드 실행
 dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src" --batch
+
+# 데이터 정합성 검증용 테스트 파라미터 설계 배치 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-inputs --batch
+
+# 레거시 DB 결과 데이터 수집 배치 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
+
+# 데이터 정합성 1:1 대조 배치 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli -- --compare-data --batch
 ```
 
 ### 테스트 실행
