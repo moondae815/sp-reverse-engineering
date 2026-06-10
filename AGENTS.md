@@ -112,6 +112,10 @@ graph TD
 - 입력을 유도하는 프롬프트(Spectre.Console `TextPrompt`) 작성 시, 디렉토리 내 슬래시('/') 문자가 선택지 구분선으로 렌더링되어 지저분해지는 현상을 막기 위해 반드시 **`.ShowChoices(false)`**를 결합하여 화면 노출을 방지하십시오.
 - 경로 계산의 기준점은 항상 현재 실행 중인 쉘 경로인 **`Directory.GetCurrentDirectory()`**로 설정하여 사용자가 `../../` 없이 직관적인 경로를 사용하게 하십시오.
 
+### 8. 데이터 정합성 검증 DB 실행의 Soft Fail 정책
+- Stored Procedure 실행 데이터를 Legacy SQL Server에서 수집할 때(`SpExecutionService`), 서버 네트워크 차단이나 패스워드 만료 등으로 데이터베이스 연결(`conn.OpenAsync`)이 실패하더라도 검증 프로그램 전체가 비정상 크래시(Crash)나 예외 중단되게 하지 마십시오.
+- 연결 실패(또는 쿼리 수행 오류) 등은 반드시 `try-catch` 블록으로 안전하게 격리하고, 결과 JSON DTO의 각 테스트 케이스에 상태를 `FAIL`로 전환하고 구체적인 예외 메시지를 `ErrorCode` 필드에 기재하여 Soft Fail 형태로 데이터를 안전하게 직렬화해 내보내야 합니다.
+
 ---
 
 ## 🏃 에이전트 로컬 작업 커맨드

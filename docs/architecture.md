@@ -70,6 +70,10 @@
 * **설정 파일 기반의 동적 다형성**: `appsettings.json` 내에 신설된 `Providers` 하위 설정들(ApiKey 및 Endpoint)을 기반으로, `AiClientFactory`가 지정된 활성 제공자(`Provider`)에 최적화된 `IAiClient` 인스턴스를 동적으로 생성하여 `AiService`에 주입(Dependency Injection)합니다.
 
 ### 7. 마이그레이션 소스코드 일치성 검증 메커니즘 (Validator)
+* **설정 파일 기반 경로 절대화 보정**:
+  - 설정 파일이나 CLI 인자로부터 수신한 상대 경로(`SpecDirectory`, `SourceCodeDirectory`, `OutputDirectory`)는 프로세스 구동 시 `Directory.GetCurrentDirectory()`를 결합하여 즉시 **절대 경로로 전환 보정** 처리됩니다. 이는 실행 시점의 워킹 디렉토리 차이로 발생 가능한 디렉토리 미조회 장애(IO Error)를 사전에 통제합니다.
+* **공통 AI 공급자 클라이언트 다형성 공유**:
+  - `ValidatorAiService` 또한 별도의 검증용 AI 라이브러리를 종속시키지 않고, `SpAnalyzer.Core`가 정의한 `IAiClient` 추상화 계약을 그대로 수신합니다. 이에 따라 `AiClientFactory`를 통해 빌드된 다중 AI 공급자(OpenAI, Claude, Gemini, Ollama) 객체를 다형적으로 재사용하며, 동일한 API 키 관리 전략을 일관되게 공유합니다.
 * **스마트 설계서-코드 매핑 (Resolving Mappings)**:
   - 파일명 매칭 규칙(예: `dbo.CustOrderHist_Spec.md` -> `CustOrderHist.cs` / `CustOrderHist.java`)을 기반으로 연관 관계를 자동 탐색합니다.
   - 마크다운 설계서 상단에 YAML Front Matter(`TargetCode: ...`)로 명확한 목적 경로가 명시된 경우 우선순위를 부여하며, 실행 경로에 따라 중복된 접두사 경로(예: `src/` 중복)를 자동 슬라이싱해 보정해 주는 장애 방지 로직이 탑재되어 있습니다.
