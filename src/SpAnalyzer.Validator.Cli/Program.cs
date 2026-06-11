@@ -19,6 +19,7 @@ namespace SpAnalyzer.Validator.Cli
         public bool IsBatchMode { get; set; }
         public bool GenInputs { get; set; }
         public bool ExecLegacy { get; set; }
+        public bool ExecTarget { get; set; }
         public bool CompareData { get; set; }
         public string? ConnectionString { get; set; }
         public string? TargetSp { get; set; }
@@ -59,6 +60,10 @@ namespace SpAnalyzer.Validator.Cli
                 else if (arg.Equals("--exec-legacy", StringComparison.OrdinalIgnoreCase))
                 {
                     cliArgs.ExecLegacy = true;
+                }
+                else if (arg.Equals("--exec-target", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliArgs.ExecTarget = true;
                 }
                 else if (arg.Equals("--compare-data", StringComparison.OrdinalIgnoreCase))
                 {
@@ -185,6 +190,11 @@ namespace SpAnalyzer.Validator.Cli
                         var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? LoadConnectionStringFromConfig(configuration);
                         await RunBatchExecLegacy(validatorConfig, execService, connStr, cliArgs.TargetSp, globalCts.Token);
                     }
+                    else if (cliArgs.ExecTarget)
+                    {
+                        var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? LoadConnectionStringFromConfig(configuration);
+                        await RunBatchExecTarget(validatorConfig, connStr, cliArgs.TargetSp, globalCts.Token);
+                    }
                     else if (cliArgs.CompareData)
                     {
                         await RunBatchCompareData(validatorConfig, compareService, cliArgs.TargetSp);
@@ -214,11 +224,12 @@ namespace SpAnalyzer.Validator.Cli
                                 "1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)",
                                 "2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)",
                                 "3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)",
-                                "4. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)",
-                                "5. 종료 (Exit)"
+                                "4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)",
+                                "5. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)",
+                                "6. 종료 (Exit)"
                             }));
 
-                    if (choice.StartsWith("5")) break;
+                    if (choice.StartsWith("6")) break;
 
                     try
                     {
@@ -236,6 +247,11 @@ namespace SpAnalyzer.Validator.Cli
                             await RunInteractiveExecLegacy(validatorConfig, execService, connStr, globalCts.Token);
                         }
                         else if (choice.StartsWith("4"))
+                        {
+                            var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? await PromptForConnectionStringAsync(configuration);
+                            await RunInteractiveExecTarget(validatorConfig, connStr, globalCts.Token);
+                        }
+                        else if (choice.StartsWith("5"))
                         {
                             await RunInteractiveCompareData(validatorConfig, compareService);
                         }
@@ -775,6 +791,125 @@ namespace SpAnalyzer.Validator.Cli
                     await File.WriteAllTextAsync(reportPath, reportMarkdown, System.Text.Encoding.UTF8);
 
                     AnsiConsole.MarkupLine($"[green]✔ 정합성 비교 및 보고서 작성 완료:[/] {Markup.Escape(reportPath)}");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]❌ 오류 ({Markup.Escape(spName)}): {Markup.Escape(ex.Message)}[/]");
+                }
+            }
+        }
+
+        // --- Interactive Exec Target ---
+        private static async Task RunInteractiveExecTarget(ValidatorConfig config, string connectionString, CancellationToken cancellationToken)
+        {
+            AnsiConsole.MarkupLine("\n[bold blue]=== 4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System) ===[/]");
+            
+            if (!Directory.Exists(config.OutputDirectory))
+            {
+                AnsiConsole.MarkupLine("[yellow]경고: 출력 디렉토리가 존재하지 않습니다. 먼저 테스트 파라미터를 생성해 주세요.[/]");
+                return;
+            }
+
+            var inputFiles = Directory.GetFiles(config.OutputDirectory, "*_test_inputs.json");
+            if (inputFiles.Length == 0)
+            {
+                AnsiConsole.MarkupLine($"[yellow]경고: '{Markup.Escape(config.OutputDirectory)}'에 '*_test_inputs.json' 파일이 없습니다. 2번 메뉴를 통해 먼저 파라미터를 생성하세요.[/]");
+                return;
+            }
+
+            var fileChoices = inputFiles.Select(f => Path.GetFileName(f)).ToList();
+            var selectedFile = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("실행할 테스트 파라미터 JSON 파일을 선택하세요:")
+                    .PageSize(10)
+                    .AddChoices(fileChoices));
+
+            var fullPath = Path.Combine(config.OutputDirectory, selectedFile);
+            var spName = selectedFile.Replace("_test_inputs.json", "");
+
+            // 매핑되는 소스코드 파일 찾기
+            var mappingService = new FileMappingService();
+            var mappedPairs = mappingService.ResolveMappings(config);
+            var matchedPair = mappedPairs.FirstOrDefault(p => p.MappedName.Equals(spName, StringComparison.OrdinalIgnoreCase));
+
+            if (matchedPair == null || string.IsNullOrEmpty(matchedPair.SourceCodePath))
+            {
+                AnsiConsole.MarkupLine($"[red]에러: '{spName}'에 대칭되는 소스코드 파일을 찾을 수 없습니다. 경로와 파일명을 확인해 주십시오.[/]");
+                return;
+            }
+
+            var extension = Path.GetExtension(matchedPair.SourceCodePath).ToLower();
+            IRuntimeRunner runner = extension == ".cs" 
+                ? new CSharpReflectionRunner() 
+                : (IRuntimeRunner)new JavaProcessRunner();
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"신규 {runner.SupportedLanguage} 타겟 런타임에서 '{spName}' 코드를 실행 중...", async ctx =>
+                {
+                    var testInputsJson = await File.ReadAllTextAsync(fullPath, cancellationToken);
+                    var rawResultsJson = await runner.ExecuteAsync(matchedPair.SourceCodePath, testInputsJson, connectionString, cancellationToken);
+
+                    var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_target_results.json");
+                    await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
+                    
+                    AnsiConsole.MarkupLine($"[green]✔ Target 결과 수집 완료:[/] {Markup.Escape(outputPath)}");
+                });
+        }
+
+        // --- Batch Exec Target ---
+        private static async Task RunBatchExecTarget(ValidatorConfig config, string connectionString, string? targetSp, CancellationToken cancellationToken)
+        {
+            AnsiConsole.MarkupLine("[bold blue]=== [Batch] 신규 타겟 소스코드 실행 데이터 수집 시작 ===[/]");
+
+            if (!Directory.Exists(config.OutputDirectory))
+            {
+                AnsiConsole.MarkupLine("[yellow]경고: 출력 디렉토리가 존재하지 않습니다.[/]");
+                return;
+            }
+
+            var inputFiles = Directory.GetFiles(config.OutputDirectory, "*_test_inputs.json");
+            if (!string.IsNullOrEmpty(targetSp))
+            {
+                inputFiles = inputFiles.Where(f => Path.GetFileName(f).StartsWith(targetSp, StringComparison.OrdinalIgnoreCase)).ToArray();
+            }
+
+            if (inputFiles.Length == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]경고: 대상 '*_test_inputs.json' 파일을 찾을 수 없습니다.[/]");
+                return;
+            }
+
+            var mappingService = new FileMappingService();
+            var mappedPairs = mappingService.ResolveMappings(config);
+
+            foreach (var file in inputFiles)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var spName = Path.GetFileName(file).Replace("_test_inputs.json", "");
+                AnsiConsole.MarkupLine($"Target 실행 중: {Markup.Escape(spName)}");
+
+                var matchedPair = mappedPairs.FirstOrDefault(p => p.MappedName.Equals(spName, StringComparison.OrdinalIgnoreCase));
+                if (matchedPair == null || string.IsNullOrEmpty(matchedPair.SourceCodePath))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]경고: '{spName}'에 대칭되는 소스코드 파일을 찾을 수 없어 건너뜁니다.[/]");
+                    continue;
+                }
+
+                try
+                {
+                    var extension = Path.GetExtension(matchedPair.SourceCodePath).ToLower();
+                    IRuntimeRunner runner = extension == ".cs" 
+                        ? new CSharpReflectionRunner() 
+                        : (IRuntimeRunner)new JavaProcessRunner();
+
+                    var testInputsJson = await File.ReadAllTextAsync(file, cancellationToken);
+                    var rawResultsJson = await runner.ExecuteAsync(matchedPair.SourceCodePath, testInputsJson, connectionString, cancellationToken);
+
+                    var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_target_results.json");
+                    await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
+                    AnsiConsole.MarkupLine($"[green]✔ 완료:[/] {Markup.Escape(outputPath)}");
                 }
                 catch (Exception ex)
                 {

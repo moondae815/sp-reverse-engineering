@@ -108,6 +108,7 @@ namespace SpAnalyzer.Cli
             bool.TryParse(configuration["OutputSettings:SaveRawJson"] ?? "false", out bool saveRawJson);
             bool.TryParse(configuration["OutputSettings:SaveRawContext"] ?? "false", out bool saveRawContext);
             bool.TryParse(configuration["OutputSettings:SaveRawFiles"] ?? "false", out bool saveRawFiles);
+            bool.TryParse(configuration["OutputSettings:EnableCache"] ?? "false", out bool enableCache);
 
             bool.TryParse(configuration["MigrationSettings:Enabled"] ?? "true", out bool migrationEnabled);
             var targetLanguage = configuration["MigrationSettings:TargetLanguage"] ?? "C#";
@@ -326,7 +327,7 @@ namespace SpAnalyzer.Cli
                         var name = parts[1];
 
                         var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, globalCts.Token);
+                            connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, outputDir, enableCache, globalCts.Token);
 
                         if (string.IsNullOrEmpty(specMarkdown))
                         {
@@ -418,7 +419,7 @@ namespace SpAnalyzer.Cli
                         try
                         {
                             var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
-                                connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, activeCts.Token);
+                                connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, outputDir, enableCache, activeCts.Token);
 
                             if (string.IsNullOrEmpty(specMarkdown))
                             {

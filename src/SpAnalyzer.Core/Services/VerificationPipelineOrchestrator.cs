@@ -14,6 +14,7 @@ namespace SpAnalyzer.Core.Services
         private readonly int _maxL2Attempts;
         private readonly int _maxAttempts;
         private readonly string _modelName;
+        private readonly ICacheManager _cacheManager;
 
         public VerificationPipelineOrchestrator(
             IDbMetadataService dbService,
@@ -21,13 +22,15 @@ namespace SpAnalyzer.Core.Services
             MechanicalValidator validator,
             IVerificationUserInteraction userInteraction,
             string maxL2Attempts = "1",
-            string modelName = "")
+            string modelName = "",
+            ICacheManager? cacheManager = null)
         {
             _dbService = dbService;
             _aiService = aiService;
             _validator = validator;
             _userInteraction = userInteraction;
             _modelName = modelName;
+            _cacheManager = cacheManager ?? new CacheManager();
 
             if (string.Equals(maxL2Attempts, "unlimited", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(maxL2Attempts, "검증 완료까지", StringComparison.OrdinalIgnoreCase) ||
@@ -55,6 +58,8 @@ namespace SpAnalyzer.Core.Services
             string provider,
             string instructions,
             bool isBatchMode,
+            string outputDirectory = "./output",
+            bool enableCache = false,
             CancellationToken cancellationToken = default)
         {
             var selectedOption = $"{schema}.{name}";
@@ -78,6 +83,30 @@ namespace SpAnalyzer.Core.Services
             if (spDef.Warnings.Count > 0)
             {
                 _userInteraction.NotifyWarnings(selectedOption, spDef.Warnings);
+            }
+
+            // 캐시 유효성 확인
+            string? compositeHash = null;
+            if (enableCache)
+            {
+                try
+                {
+                    compositeHash = _cacheManager.ComputeCompositeHash(spDef);
+                    if (_cacheManager.IsCacheValid(selectedOption, compositeHash, outputDirectory))
+                    {
+                        _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 캐시가 유효합니다. AI 분석을 건너뛰고 기존 보고서를 사용합니다. (Cache Hit)");
+                        var specFilePath = System.IO.Path.Combine(outputDirectory, $"{selectedOption}_Spec.md");
+                        if (System.IO.File.Exists(specFilePath))
+                        {
+                            var cachedSpec = await System.IO.File.ReadAllTextAsync(specFilePath, cancellationToken);
+                            return (cachedSpec, spDef);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _userInteraction.NotifyStatus($"[yellow]경고: 캐시 확인 중 오류가 발생하여 무시하고 분석을 진행합니다. ({ex.Message})[/]");
+                }
             }
 
             string? feedbackLog = null;
@@ -167,6 +196,12 @@ namespace SpAnalyzer.Core.Services
                 }
             }
 
+            // 배치 모드 성공 완료 시 캐시 업데이트
+            if (isBatchMode && enableCache && !string.IsNullOrEmpty(compositeHash))
+            {
+                _cacheManager.UpdateCache(selectedOption, spDef, compositeHash, outputDirectory);
+            }
+
             // L3: 인간 개입형 승인 (TUI 모드 한정)
             if (!isBatchMode)
             {
@@ -176,6 +211,11 @@ namespace SpAnalyzer.Core.Services
 
                     if (reviewResult.Decision == UserDecision.Approve)
                     {
+                        // 최종 승인 시 캐시 업데이트
+                        if (enableCache && !string.IsNullOrEmpty(compositeHash))
+                        {
+                            _cacheManager.UpdateCache(selectedOption, spDef, compositeHash, outputDirectory);
+                        }
                         return (specificationMarkdown, spDef);
                     }
                     else if (reviewResult.Decision == UserDecision.Cancel)

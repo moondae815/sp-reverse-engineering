@@ -27,6 +27,9 @@
     2. **가공 프롬프트 텍스트**: AI 서비스로 전달된 조립 컨텍스트 원문을 `.txt` 파일로 저장.
     3. **개별 파일/폴더 분산 저장**: 메인 DDL(sql), 개별 테이블 스키마 표(md), 참조 함수/SP 본문(sql)을 계층화된 폴더 트리 구조로 각각 쪼개어 저장.
   - 저장 처리 도중 용량 부족 등으로 에러가 발생하더라도 핵심 명세서 저장은 지속되도록 예외 격리(Soft Fail) 처리를 적용했습니다.
+- **DDL 해시 기반 로컬 증분(Incremental) 캐싱**:
+  - 분석 대상 SP 본문 및 관련된 모든 의존 테이블/뷰/UDF DDL의 SHA-256 해시를 연산한 복합 서명 해시(Composite Signature Hash)를 로컬 인덱스(`.sp_cache_index.json`)에서 관리합니다.
+  - 스키마나 SP 원본에 변경사항이 없을 경우 AI API 분석 단계를 즉시 생략(Cache Hit)하여 LLM 비용을 획기적으로 절감합니다.
 - **비즈니스 흐름 시각화 (Mermaid Diagram)**: 명세서 내에 실행 흐름과 CRUD 제어 시퀀스를 표현하는 Mermaid Flowchart 자동 생성 지침이 내장되어 노드 단위 특수문자 문법 예외 처리까지 완벽히 대응합니다.
 - **3단계 신뢰성 검증 파이프라인 (Verification Pipeline)**:
   - **개별 명세서와 통합 계획서 대칭 검증**: 개별 SP 분석서(`*_Spec.md`)뿐만 아니라, 2단계의 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 작성 완료 시에도 동일한 3단계 검증 루프가 작동합니다.
@@ -121,7 +124,8 @@ SP-Reverse-Engineering/
     "InstructionsFile": "./instructions.md", // 분석 규칙 지침 파일 명칭
     "SaveRawJson": true,           // [설정] SpDefinition JSON 파일 저장 여부
     "SaveRawContext": true,        // [설정] 조립된 프롬프트 텍스트 원문 저장 여부
-    "SaveRawFiles": true           // [설정] 의존성 개별 객체 파일/폴더 분산 덤프 여부
+    "SaveRawFiles": true,          // [설정] 의존성 개별 객체 파일/폴더 분산 덤프 여부
+    "EnableCache": true            // [설정] DDL 해시 기반 로컬 증분 분석 캐싱 활성화 여부
   },
   "MigrationSettings": {
     "Enabled": true,               // [설정] 신규 시스템 현대화 설계서 추가 생성 활성화 여부
@@ -219,7 +223,8 @@ dotnet run --project src/SpAnalyzer.Cli
     *   **1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)**: C#/Java 소스코드 정적 분석 및 AI 의미론적 Gap 분석, 인간 피드백 루프를 가동하여 검증합니다.
     *   **2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)**: 설계서(`*_Spec.md`)를 분석해 AI가 정상/경계값/오류 시나리오 테스트 파라미터 JSON(`*_test_inputs.json`)을 생성합니다.
     *   **3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)**: 생성된 테스트 입력값 JSON을 기반으로 실제 Legacy DB에 접근해 SP를 호출하고, 다중 ResultSet 데이터를 JSON(`*_legacy_results.json`)으로 덤프 수집합니다.
-    *   **4. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
+    *   **4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)**: 마이그레이션된 C#(DLL 리플렉션 로드) 또는 Java(외부 JAR/클래스 프로세스 실행) 코드를 실제로 구동하여 실행 결과 JSON(`*_target_results.json`) 데이터를 수집합니다. (트랜잭션 자동 롤백 적용)
+    *   **5. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
     *   **기타 기능**: 디렉토리 경로 입력 창에서 `Tab` 키로 로컬 폴더 자동완성이 가능하며, 부재 경로 입력 시 동적 복구 프롬프트를 띄웁니다.
 
 *   **배치 검증 자동화 모드 실행 (CI/CD 결합용 무인 모드)**:
@@ -232,6 +237,9 @@ dotnet run --project src/SpAnalyzer.Cli
 
     # 레거시 DB 실행 결과 덤프 배치 모드
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
+
+    # 신규 마이그레이션 타겟 실행 결과 덤프 배치 모드
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-target --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
 
     # 레거시 vs 타겟 1:1 데이터 정합성 대조 배치 모드
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --compare-data --batch

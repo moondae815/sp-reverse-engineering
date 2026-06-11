@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
+using SpAnalyzer.Validator.Core.Models;
 
 namespace SpAnalyzer.Validator.Core.Services
 {
@@ -134,31 +135,6 @@ namespace SpAnalyzer.Validator.Core.Services
             return JsonSerializer.Serialize(outputResult, new JsonSerializerOptions { WriteIndented = true });
         }
 
-        // --- 내부 DTO 모델 구조 ---
-        private class TestInputsDto
-        {
-            public string ProcedureName { get; set; } = string.Empty;
-            public List<TestCaseDto> TestCases { get; set; } = new();
-        }
 
-        private class TestCaseDto
-        {
-            public string CaseId { get; set; } = string.Empty;
-            public Dictionary<string, object?>? Parameters { get; set; }
-        }
-
-        private class ExecutionOutputDto
-        {
-            public string ProcedureName { get; set; } = string.Empty;
-            public List<TestCaseResultDto> ExecutionResults { get; set; } = new();
-        }
-
-        private class TestCaseResultDto
-        {
-            public string CaseId { get; set; } = string.Empty;
-            public string Status { get; set; } = "SUCCESS"; // SUCCESS, FAIL
-            public string? ErrorCode { get; set; }
-            public List<List<Dictionary<string, object>>> ResultSets { get; set; } = new();
-        }
     }
 }
