@@ -53,6 +53,53 @@
   - **데이터 정합성 검증 엔진 (Data Verification Runner)**: 명세서의 사양을 토대로 AI가 테스트 파라미터 케이스 JSON을 설계하고, 실제 Legacy DB에서 SP를 실행해 수집한 다중 결과셋 데이터를 신규 타겟 결과 데이터와 1:1로 비교 대조하여 세밀한 데이터 정합성 보고서(`*_CompareReport.md`)를 생성합니다. (오류 시 Soft Fail 격리 지원)
   - **사용성 편의 기능**: TUI 상에서 로컬 디렉토리 경로 입력 시 `Tab` 키로 실시간 자동완성을 지원하며, 디렉토리 미존재 시 강제 종료 없이 즉시 복구 선택 프롬프트를 제공합니다.
 
+## 📊 핵심 아키텍처 및 워크플로우 (Core Workflow)
+
+### 1. Stored Procedure 역공학 및 3단계 신뢰성 검증 파이프라인
+Stored Procedure를 깊이 우선 탐색(DFS) 방식으로 재귀적 의존성을 분석하여 메타데이터와 DDL을 수집한 뒤, LLM 분석 및 L1~L3 3단계 신뢰성 검증 루프를 거쳐 명세서 및 계획서를 저장합니다. (동일 스펙 변경 감지 시 AI 호출을 건너뛰는 **로컬 캐싱** 적용)
+
+```mermaid
+graph TD
+    A[DB 로그인 및 분석 대상 SP 선택] --> B[DbMetadataService]
+    B -->|DFS 기반 재귀 탐색| C[메타데이터 & DDL 수집]
+    C --> D[CacheManager: 변경 감지 캐시 체크]
+    D -->|Cache Hit| E[기존 마크다운 복원 및 스킵]
+    D -->|Cache Miss| F[AI 리버스 엔지니어링 수행]
+    
+    subgraph "3단계 신뢰성 검증 파이프라인 (L1~L3)"
+        F --> G[Level 1: MechanicalValidator<br/>정적 마크다운 & Mermaid 린팅]
+        G -->|Lint Fail 시 자동 Fix 피드백| F
+        G -->|Pass| H[Level 2: AI Reviewer 교차 검토]
+        H -->|오류 발생 시 Self-Correction| F
+        H -->|Pass| I[Level 3: Human Feedback & Approve]
+    end
+    
+    I -->|인간 피드백 반영 재생성| F
+    I -->|최종 승인 및 배치 완료| J[MetadataExporter & 마크다운 저장]
+    E --> J
+```
+
+### 2. 소스코드 일치성 및 데이터 정합성 검증 흐름 (Validator)
+역공학된 명세서와 현대화 구현 소스코드의 일치성을 검사하고, 레거시 SP 실행 결과와 마이그레이션된 C#/Java 코드의 런타임 실행 결과를 1:1 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 도출합니다.
+
+```mermaid
+graph TD
+    Spec["비즈니스 기능 명세서<br/>(*_Spec.md)"] --> GenInputs["1. 테스트 케이스 자동 설계 (AI)<br/>(ValidatorAiService)"]
+    
+    GenInputs --> InputJson["테스트 파라미터 파일<br/>(*_test_inputs.json)"]
+    
+    subgraph "하이브리드 런타임 결과 수집"
+        InputJson --> ExecLegacy["2. 레거시 DB 실행 데이터 수집<br/>(SpExecutionService)"]
+        ExecLegacy --> LegacyJson["레거시 결과 덤프<br/>(*_legacy_results.json)"]
+        
+        InputJson --> ExecTarget["3. 마이그레이션 프로그램 실행 데이터 수집<br/>(CSharpReflection / JavaProcess Runner)"]
+        ExecTarget --> TargetJson["신규 타겟 결과 덤프<br/>(*_target_results.json)"]
+    end
+    
+    LegacyJson & TargetJson --> CompareData["4. 데이터 1:1 대조 및 요약 표 작성<br/>(DataComparisonService)"]
+    CompareData --> Report["데이터 정합성 보고서 생성<br/>(*_CompareReport.md)"]
+```
+
 ---
 
 ## 📂 프로젝트 구조 (Project Structure)
