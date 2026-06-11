@@ -163,9 +163,16 @@ namespace SpAnalyzer.Cli
                     AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
                     AnsiConsole.WriteLine();
 
-                    AnsiConsole.MarkupLine($"[bold blue]서버:[/] {server}");
-                    AnsiConsole.MarkupLine($"[bold blue]DB:[/] {database}");
-                    AnsiConsole.WriteLine();
+                    // 대화형 DB 서버 및 이름 변경 지원
+                    server = AnsiConsole.Prompt(
+                        new TextPrompt<string>("DB 서버 주소를 입력하세요:")
+                            .DefaultValue(server)
+                    );
+
+                    database = AnsiConsole.Prompt(
+                        new TextPrompt<string>("데이터베이스 이름을 입력하세요:")
+                            .DefaultValue(database)
+                    );
 
                     // 대화형 ID/비밀번호 로그인 처리
                     var lastUserId = SessionManager.LoadLastUsedUserId();
