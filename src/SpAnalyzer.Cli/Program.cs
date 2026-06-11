@@ -488,29 +488,85 @@ namespace SpAnalyzer.Cli
                             continue;
                         }
 
-                        var backOption = "[-- 메인 메뉴로 돌아가기 --]";
-                        var fileChoices = new List<string> { backOption };
+                        var selectedFiles = new List<string>();
+                        var remainingFiles = new List<string>();
                         foreach (var file in specFiles)
                         {
-                            fileChoices.Add(Path.GetFileName(file));
+                            remainingFiles.Add(Path.GetFileName(file));
                         }
 
-                        var selectedFiles = AnsiConsole.Prompt(
-                            new MultiSelectionPrompt<string>()
-                                .Title("통합 배치 Job으로 전환할 [green]명세서 파일들[/]을 스페이스바로 선택하세요:")
-                                .Required()
-                                .PageSize(10)
-                                .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
-                                .UseConverter(x => Markup.Escape(x))
-                                .AddChoices(fileChoices)
-                        );
+                        var isCompleted = false;
+                        var isCancelled = false;
 
-                        if (selectedFiles.Contains(backOption))
+                        // 순차적 단일 선택 루프
+                        while (!isCompleted && !isCancelled)
                         {
-                            continue;
+                            AnsiConsole.Clear();
+                            AnsiConsole.Write(new FigletText("SP Analyzer").Color(Color.Green));
+                            AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
+                            AnsiConsole.WriteLine();
+
+                            // 현재 구성된 배치 순서 시각화
+                            if (selectedFiles.Count > 0)
+                            {
+                                var sequenceStr = string.Join(" [bold green]➔[/] ", selectedFiles.Select(f => $"[yellow]{Markup.Escape(f.Replace("_Spec.md", ""))}[/]"));
+                                AnsiConsole.Write(new Panel(new Markup(sequenceStr))
+                                {
+                                    Header = new PanelHeader(" [bold cyan]현재 구성된 배치 Job 실행 순서[/] "),
+                                    Border = BoxBorder.Rounded
+                                });
+                                AnsiConsole.WriteLine();
+                            }
+                            else
+                            {
+                                AnsiConsole.MarkupLine("[grey](현재 선택된 배치 스텝이 없습니다. 첫 번째로 실행할 SP 명세서를 선택하세요.)[/]");
+                                AnsiConsole.WriteLine();
+                            }
+
+                            // 선택지 빌드
+                            var choices = new List<string>();
+                            var completeOption = "[-- 선택 완료 및 계획 생성 --]";
+                            var cancelOption = "[-- 메인 메뉴로 돌아가기 --]";
+
+                            if (selectedFiles.Count > 0)
+                            {
+                                choices.Add(completeOption);
+                            }
+                            choices.Add(cancelOption);
+                            choices.AddRange(remainingFiles);
+
+                            var selectedChoice = AnsiConsole.Prompt(
+                                new SelectionPrompt<string>()
+                                    .Title($"[green]배치 스텝 #{selectedFiles.Count + 1}[/]로 추가할 명세서를 선택하거나 검색하세요:")
+                                    .PageSize(12)
+                                    .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                    .UseConverter(x => Markup.Escape(x))
+                                    .AddChoices(choices)
+                                    .EnableSearch()
+                            );
+
+                            if (selectedChoice == cancelOption)
+                            {
+                                isCancelled = true;
+                            }
+                            else if (selectedChoice == completeOption)
+                            {
+                                isCompleted = true;
+                            }
+                            else
+                            {
+                                selectedFiles.Add(selectedChoice);
+                                remainingFiles.Remove(selectedChoice);
+
+                                // 더 이상 선택할 파일이 없으면 자동 완료
+                                if (remainingFiles.Count == 0)
+                                {
+                                    isCompleted = true;
+                                }
+                            }
                         }
 
-                        if (selectedFiles.Count == 0)
+                        if (isCancelled || selectedFiles.Count == 0)
                         {
                             continue;
                         }
