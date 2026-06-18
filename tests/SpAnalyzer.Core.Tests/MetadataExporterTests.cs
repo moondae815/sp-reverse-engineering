@@ -197,5 +197,67 @@ namespace SpAnalyzer.Core.Tests
                 Directory.Delete(testOutputDir, true);
             }
         }
+
+        [Fact]
+        public async Task ExportMigrationInstructionsAsync_ShouldCreateInstructionsFile_WithCorrectContent()
+        {
+            // Arrange
+            var testOutputDir = Path.Combine(Directory.GetCurrentDirectory(), "test_output_exporter_instructions");
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+
+            var spDef = new SpDefinition
+            {
+                Schema = "dbo",
+                Name = "USP_TestInstructions",
+                DdlText = "CREATE PROCEDURE dbo.USP_TestInstructions AS SELECT 1;"
+            };
+
+            var tableDep = new DependencyInfo
+            {
+                Schema = "dbo",
+                Name = "TBL_TestDep",
+                Type = "USER_TABLE",
+                DiscoveryDepth = 1,
+                Description = "의존 테이블 설명"
+            };
+            tableDep.Columns.Add(new ColumnInfo
+            {
+                ColumnName = "ID",
+                DataType = "INT",
+                IsNullable = false,
+                IsPrimaryKey = true,
+                Description = "PK 컬럼"
+            });
+            spDef.Dependencies.Add(tableDep);
+
+            var specMarkdown = "# USP_TestInstructions Spec\n- Business Logic Steps...";
+            var migrationPlan = "# USP_TestInstructions Migration Plan\n- Steps to migrate...";
+
+            IMetadataExporter exporter = new MetadataExporter();
+
+            // Act
+            await exporter.ExportMigrationInstructionsAsync(spDef, specMarkdown, migrationPlan, testOutputDir);
+
+            // Assert
+            var expectedPath = Path.Combine(testOutputDir, "dbo.USP_TestInstructions_MigrationInstructions.md");
+            Assert.True(File.Exists(expectedPath));
+
+            var content = await File.ReadAllTextAsync(expectedPath);
+            Assert.Contains("# 🚀 Migration Instructions for Coding Agent (dbo.USP_TestInstructions)", content);
+            Assert.Contains(specMarkdown, content);
+            Assert.Contains(migrationPlan, content);
+            Assert.Contains("CREATE PROCEDURE dbo.USP_TestInstructions AS SELECT 1;", content);
+            Assert.Contains("TBL_TestDep", content);
+            Assert.Contains("의존 테이블 설명", content);
+
+            // Clean up
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+        }
     }
 }

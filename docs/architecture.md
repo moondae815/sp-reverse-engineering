@@ -19,7 +19,7 @@
 | | [Clients (OpenAi, Claude, Gemini, Ollama)](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/) | 각 프로바이더(OpenAI, Claude, Gemini, Ollama)의 네이티브 REST 규격에 맞춰 제작된 HttpClient 통신 모듈 |
 | | [AiClientFactory](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/AiClientFactory.cs) | 제공자 문자열에 맞춰 적절한 `IAiClient` 구현체를 생성하여 반환하는 팩토리 클래스 |
 | | [MechanicalValidator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석(IsConsolidated 분기 검증) 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
-| | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 제어 |
+| | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 및 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 생성 제어 |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
 | | [CacheManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리 |
 | **SpAnalyzer.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어 |
@@ -122,6 +122,11 @@
 ### 12. Multi-SP 전환 계획을 위한 순서 보장형 TUI 수집 메커니즘
 * **물리 선택 순서 보장**: 다중 선택(Multi-select) UI 컴포넌트는 사용자가 스페이스바로 항목을 선택하더라도 최종 선택 반환 결과에서 사용자가 누른 순서(Sequence)를 보장하지 않고 알파벳 순서 등으로 정렬되는 한계가 있습니다.
 * **순차 단일 선택 루프**: 배치 작업 설계 시 각 SP 마이그레이션 스텝의 논리적 실행 순서를 엄격히 반영할 수 있도록, TUI 화면에서 사용자가 목록을 보며 원하는 순서대로 하나씩 SP 명세서를 선택하여 큐(Queue)에 적재하고, 최종 `[-- 완료 및 배치 계획 수립 --]` 메뉴를 선택하여 처리를 마치는 단일 순차 선택 루프 흐름을 제공합니다.
+
+### 13. 외부 코딩 에이전트 연동용 마이그레이션 지시서 번들링 (Migration Instructions Bridge)
+* **단절 없는 개발 경험 제공**: SP 분석 ➔ 명세서 및 계획서 작성 ➔ 코드 마이그레이션 ➔ 코드 검증의 전체 흐름에서, 마이그레이션 소스 코드를 생성하는 주체를 외부의 전문 코딩 에이전트(Claude Code, Antigravity CLI 등)로 위임하되 결합도 및 사용자 단절을 최소화하기 위한 브릿지 구조를 탑재했습니다.
+* **구조화된 컨텍스트 패키징**: 사용자가 직접 DDL이나 여러 설계 문서를 코딩 에이전트에 공급하는 번거로움을 해결하기 위해, 최종 승인된 **비즈니스 명세서(Spec)**, **통합 계획서(Plan)**, **레거시 SP SQL DDL 원본**, 그리고 **참조하는 모든 외부 스키마 및 DDL** 정보를 계층적이고 유기적인 Markdown 구조의 번들 문서(`*_MigrationInstructions.md`)로 빌드하여 자동 추출합니다.
+* **즉시 사용 가능한 프롬프트 내장**: 문서 말단에는 사용자가 복사하여 곧바로 사용할 수 있는 표준화된 마이그레이션 명령 프롬프트 템플릿을 명시해 둠으로써 프롬프팅 누락 및 실수 가능성을 원천 제거합니다.
 
 ---
 

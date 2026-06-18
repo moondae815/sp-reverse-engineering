@@ -29,7 +29,7 @@
   - [Clients/](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients): 다중 AI 공급자(OpenAI, Gemini, Anthropic, Ollama)를 대응하는 [IAiClient.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IAiClient.cs) 인터페이스 및 [AiClientFactory.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/AiClientFactory.cs)를 통한 팩토리 패턴 구현.
   - [MechanicalValidator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs): Markdig 파서 및 Mermaid 린터를 활용해 산출물 뼈대 및 다이어그램 문법을 정적 검증하는 클래스.
   - [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
-  - [MetadataExporter.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 출력 디렉토리에 보존하는 기능 구현체.
+  - [MetadataExporter.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`)을 자동 생성하는 기능 구현체.
   - [CacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ICacheManager.cs) 포함).
 
 ### 2. CLI 실행 엔트리: [SpAnalyzer.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli)
@@ -135,6 +135,11 @@ graph TD
 ### 12. Multi-SP 통합 계획 순서 보장 (물리 선택 순서 보장)
 - 배치 마이그레이션 통합 전환 계획서 수립 시, 계획서 내 배치 스텝의 순서는 사용자가 의도하여 선택한 순서대로 기입되어야 합니다.
 - 이를 달성하기 위해 한 번에 여러 개를 체크하는 다중 선택 대신, 사용자가 원하는 순서대로 하나씩 추가하고 완료 키를 눌러 종료하는 순차 선택 루프 방식으로 수집 흐름을 통제해야 합니다.
+
+### 13. 코딩 에이전트 가이드라인 및 번들 생성 규칙
+- `ExportMigrationInstructionsAsync`는 비즈니스 설계서(`*_Spec.md`)와 배치 전환 계획(`*_BatchMigrationPlan.md`), 원본 SP DDL 및 모든 의존성 스펙을 코딩 에이전트가 완벽히 이해할 수 있도록 마크다운으로 구조화하여 하나로 묶어줘야 합니다.
+- 지시서 하단에 사용자가 복사해서 외부 코딩 에이전트(Claude Code 등)에 즉시 입력할 수 있는 안내 프롬프트를 반드시 명시적으로 포함해야 합니다.
+- 파일 작성 전에 대상 출력 디렉터리(`baseOutputDir`)가 실제 존재하는지 확인하고, 존재하지 않는 경우 자동으로 폴더를 선행 생성하여 디바이스 쓰기 예외를 사전에 격리해 주어야 합니다.
 
 ---
 
