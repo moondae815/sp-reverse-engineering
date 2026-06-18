@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using SpAnalyzer.Core.Services;
 using SpAnalyzer.Core.Services.Clients;
+using SpAnalyzer.Validator.Core.Abstractions;
 using SpAnalyzer.Validator.Core.Models;
 using SpAnalyzer.Validator.Core.Services;
 

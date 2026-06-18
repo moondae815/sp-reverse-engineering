@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Spectre.Console;
+using SpAnalyzer.Core.Models;
 using SpAnalyzer.Core.Services;
 
 namespace SpAnalyzer.Cli
@@ -42,6 +43,14 @@ namespace SpAnalyzer.Cli
                             cliArgs.TargetProcedures.Add(trimmed);
                         }
                     }
+                }
+                else if (arg.Equals("--codegen", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliArgs.EnableCodegen = true;
+                }
+                else if (arg.Equals("--engine", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    cliArgs.Engine = args[++i];
                 }
             }
 
@@ -112,6 +121,13 @@ namespace SpAnalyzer.Cli
 
             bool.TryParse(configuration["MigrationSettings:Enabled"] ?? "true", out bool migrationEnabled);
             var targetLanguage = configuration["MigrationSettings:TargetLanguage"] ?? "C#";
+
+            bool.TryParse(configuration["CodegenSettings:Enabled"] ?? "false", out bool codegenEnabled);
+            var codegenEngine = configuration["CodegenSettings:Engine"] ?? "claude";
+            var targetProjectDir = configuration["CodegenSettings:TargetProjectDirectory"] ?? "./src";
+
+            var isCodegenEnabled = cliArgs.EnableCodegen || codegenEnabled;
+            var selectedEngine = cliArgs.Engine ?? codegenEngine;
 
             string connectionString = string.Empty;
             string? userId = null;
@@ -358,6 +374,15 @@ namespace SpAnalyzer.Cli
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                             schema, name, provider, modelName);
 
+                        await RunCodegenEngineAsync(
+                            spDef, outputDir, schema, name,
+                            isBatchMode: true,
+                            enableCodegen: isCodegenEnabled,
+                            engineName: selectedEngine,
+                            targetProjectDir: targetProjectDir,
+                            configuration: configuration,
+                            cancellationToken: globalCts.Token);
+
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
                     catch (OperationCanceledException)
@@ -446,6 +471,15 @@ namespace SpAnalyzer.Cli
                                 spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                                 metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                                 schema, name, provider, modelName);
+
+                            await RunCodegenEngineAsync(
+                                spDef, outputDir, schema, name,
+                                isBatchMode: false,
+                                enableCodegen: isCodegenEnabled,
+                                engineName: selectedEngine,
+                                targetProjectDir: targetProjectDir,
+                                configuration: configuration,
+                                cancellationToken: activeCts.Token);
 
                             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                             AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -741,6 +775,70 @@ namespace SpAnalyzer.Cli
                 {
                     AnsiConsole.MarkupLine($"[yellow]코딩 에이전트 가이드라인 번들 저장 중 경고:[/] {Markup.Escape(ex.Message)}");
                 }
+            }
+        }
+
+        private static async Task RunCodegenEngineAsync(
+            SpDefinition? spDef,
+            string outputDir,
+            string schema,
+            string name,
+            bool isBatchMode,
+            bool enableCodegen,
+            string? engineName,
+            string targetProjectDir,
+            IConfiguration configuration,
+            CancellationToken cancellationToken)
+        {
+            if (spDef == null) return;
+
+            // CLI 옵션이나 설정파일 중 하나라도 codegen이 활성화되어 있어야 함
+            if (!enableCodegen && isBatchMode)
+            {
+                return; // 배치 모드이고 비활성화 상태면 스킵
+            }
+
+            // 대화형 모드인 경우, codegen 옵션이 꺼져 있어도 사용자에게 기동 여부를 질문할 수 있음
+            if (!isBatchMode)
+            {
+                var runConfirm = AnsiConsole.Confirm($"[yellow]마이그레이션된 소스 코드를 자동 생성하기 위해 외부 코딩 에이전트({engineName})를 기동하시겠습니까?[/]");
+                if (!runConfirm)
+                {
+                    return;
+                }
+            }
+
+            try
+            {
+                AnsiConsole.MarkupLine($"\n[bold blue]=== 외부 코딩 에이전트 기동 ({engineName}) ===[/]");
+                var factory = new CodingEngineFactory(configuration);
+                var engine = factory.CreateEngine(engineName ?? "claude");
+
+                var instructionsPath = Path.Combine(outputDir, $"{schema}.{name}_MigrationInstructions.md");
+                if (!File.Exists(instructionsPath))
+                {
+                    AnsiConsole.MarkupLine("[red]에러: 마이그레이션 지시서 파일(*_MigrationInstructions.md)을 찾을 수 없습니다.[/]");
+                    return;
+                }
+
+                AnsiConsole.MarkupLine($"[grey]지시서 경로: {instructionsPath}[/]");
+                AnsiConsole.MarkupLine($"[grey]타겟 프로젝트 디렉터리: {targetProjectDir}[/]");
+                AnsiConsole.MarkupLine("[yellow]외부 프로세스 기동 중... (종료될 때까지 대기합니다)[/]\n");
+
+                var success = await engine.GenerateCodeAsync(spDef, instructionsPath, targetProjectDir, cancellationToken);
+
+                if (success)
+                {
+                    AnsiConsole.MarkupLine("\n[green]✔ 외부 코딩 에이전트가 코드를 성공적으로 작성하고 프로세스를 정상 종료했습니다.[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("\n[red]❌ 외부 코딩 에이전트 프로세스가 실패 코드(ExitCode != 0)를 반환했습니다.[/]");
+                }
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"\n[red]외부 코딩 에이전트 실행 중 오류 발생:[/] {Markup.Escape(ex.Message)}");
             }
         }
     }
