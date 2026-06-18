@@ -146,6 +146,7 @@ graph TD
 - **외부 코딩 에이전트 CLI 프로세스 기동 규칙**:
   - 외부 에이전트(Claude Code, agy, codex 등) 기동 시, 사용자가 직접 자연어 질의응답 및 승인 등의 흐름을 진행할 수 있도록 **부모 콘솔의 입출력 스트림을 직접 상속 공유(`RedirectStandardInput/Output = false`)**하여 대화형 세션을 원활히 지원해야 합니다.
   - 비동기 작업 취소(`CancellationToken`) 수신 시, 구동 중인 외부 코딩 에이전트 프로세스가 백그라운드에서 좀비 프로세스로 남지 않도록 **강제 종료(`process.Kill(true)`)** 처리를 완벽히 수행해야 합니다.
+  - 외부 코딩 에이전트(Claude Code 등) 호출 시, 띄어쓰기가 포함된 프롬프트 구문 전체가 단일 쿼리 인자로 에이전트에 안전하게 인식될 수 있도록 **인자 템플릿(Arguments) 전체를 쌍따옴표(`\"...\"`)로 감싸서 구성**해야 합니다. (예: `"Arguments": "\"write code using {instructions}\""` 또는 `"Arguments": "\"{instructions}\""`)
 
 ---
 
