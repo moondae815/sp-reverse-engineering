@@ -20,7 +20,7 @@
 
 ### 3. 배치 현대화 설계 및 비용 최적화 (Modernization & Cache)
 * **순차적 배치 현대화 계획 수립**: 분석된 여러 SP들의 명세서를 사용자가 선택한 순서대로 조합하여, 워크플로우 제어, 대용량 페이징, 오류 처리 정책이 설계된 통합 배치 계획서(`*_BatchMigrationPlan.md`)를 작성합니다.
-* **코딩 에이전트 자동 기동 브릿지(CLI Orchestration)**: 설계서 작성이 완료되면 Claude Code, Antigravity CLI 등 지정된 전문 코딩 에이전트를 자식 프로세스로 자동 기동하여 코드 생성을 연쇄적으로 수행합니다. 현재 사용 중인 터미널 콘솔을 그대로 공유하여 대화형 프롬프트를 이어갈 수 있습니다.
+* **코딩 에이전트 자동 기동 브릿지(CLI Orchestration)**: 통합 배치 전환 계획 수립 및 최종 승인이 완료되면 Claude Code, Antigravity CLI 등 지정된 전문 코딩 에이전트를 자식 프로세스로 자동 기동하여 전체 배치 코드를 통합적으로 연쇄 생성합니다. 현재 사용 중인 터미널 콘솔을 그대로 공유하여 대화형 프롬프트를 이어갈 수 있습니다.
 * **동적 SQL 및 Linked Server 대응**: 정적 분석이 까다로운 동적 쿼리(`EXEC`, `sp_executesql`)와 Linked Server 식별자 패턴을 감지하여 안전한 현대화 전환 가이드를 제안합니다.
 * **해시 기반 로컬 증분 캐싱**: SP 및 관련 의존성 DDL의 복합 SHA-256 해시를 체크하여, 변경이 없을 시 AI 분석을 건너뛰고 기존 마크다운을 복원하여 비용과 시간을 혁신적으로 절감합니다.
 
@@ -222,11 +222,12 @@ dotnet run --project src/SpAnalyzer.Cli
 1. DB 계정(ID)과 패스워드를 입력하여 SQL Server에 로그인합니다.
 2. 로그인 성공 시 아래 **메인 메뉴**가 화면에 표시됩니다:
    * **`1. Stored Procedure 개별 분석 명세서 작성`**:
-     SP를 1개 선택하여, 해당 프로시저의 비즈니스 로직과 데이터 입출력 명세서(`*_Spec.md`)를 작성합니다. **(이때 전문 코딩 에이전트에 즉시 입력할 수 있는 지시서 번들 `*_MigrationInstructions.md`도 자동 생성됩니다.)**
+     SP를 1개 선택하여, 해당 프로시저의 비즈니스 로직과 데이터 입출력 명세서(`*_Spec.md`)를 작성합니다. (이때 개별 SP 마이그레이션용 지시서 번들 `*_MigrationInstructions.md`도 자동 생성됩니다. 단, 실제 코드 자동 생성은 통합 배치 계획 수립 단계에서 진행됩니다.)
    * **`2. 기분석 명세서 통합 배치 전환 계획 수립 (Multi-SP)`**:
-     출력 디렉터리에 축적된 `*_Spec.md` 목록 중에서 통합할 대상들을 **스페이스바를 사용해 다중 선택**하고, Job 이름(예: `Daily_Order_Job`)을 입력하여 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`)를 작성합니다.
-     * **이전 메뉴로 돌아가기**: 파일 다중 선택 화면의 최상단에 제공되는 `[-- 메인 메뉴로 돌아가기 --]` 옵션을 선택하여 이전 메인 메뉴로 안전하게 되돌아올 수 있습니다.
+     출력 디렉터리에 축적된 `*_Spec.md` 목록 중에서 통합할 대상들을 **원하는 순서대로 하나씩 선택**하여 배치 단계를 구성하고, Job 이름(예: `Daily_Order_Job`)을 입력하여 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`)를 작성합니다.
+     * **이전 메뉴로 돌아가기**: 파일 선택 화면의 최상단에 제공되는 `[-- 메인 메뉴로 돌아가기 --]` 옵션을 선택하여 이전 메인 메뉴로 안전하게 되돌아올 수 있습니다.
      * **대칭형 검증 적용**: 전환 계획서가 생성된 후에는 1단계와 대칭되는 **3단계 검증 파이프라인(L1 린터 -> L2 AI 리뷰 -> L3 사용자 피드백 반영 및 컨펌)**을 수행하며, 최종 승인 시에만 파일로 저장됩니다.
+     * **통합 소스 코드 자동 생성 및 에이전트 기동**: 최종 컨펌 및 저장이 완료되면, 복원된 SP 메타데이터들을 바탕으로 통합 마이그레이션 지시서 (`{JobName}_MigrationInstructions.md`)를 저장하고 외부 코딩 에이전트(Claude Code 등)를 자동/선택 기동하여 전체 코드를 생성합니다.
    * **`3. 종료 (Exit)`**: 도구를 완전히 종료합니다.
 
 ### 2. 배치 모드 및 CLI 자동화 실행 (Batch Mode)
@@ -236,19 +237,11 @@ dotnet run --project src/SpAnalyzer.Cli
   - `--conn <연결문자열>`: 분석용 데이터베이스 연결 문자열을 직접 지정합니다. (생략 시 `SP_ANALYZER_CONN_STR` 환경 변수 값을 조회합니다.)
   - `--all`: 데이터베이스 내의 모든 Stored Procedure를 일괄 분석합니다.
   - `--sp <SP이름1,SP이름2,...>`: 특정 Stored Procedure들만 지정하여 분석합니다. 쉼표(`,`)로 구분하며 스키마명을 포함(`dbo.USP_1`)하거나 생략(`USP_1`)할 수 있습니다.
-  - `--codegen`: 분석이 완료된 후, 자동으로 코딩 에이전트 브릿지 프로세스를 기동하여 마이그레이션 소스 코드를 생성합니다.
+  - `--codegen`: (TUI 전용) 통합 배치 전환 계획 수립 최종 승인 완료 후, 자동으로 코딩 에이전트 브릿지 프로세스를 기동하여 소스 코드를 생성하도록 설정합니다. (개별 SP 분석 단계 및 무인 배치 모드 개별 분석 시에는 기동되지 않습니다.)
   - `--engine <엔진명>`: 코딩 에이전트 종류를 명시적으로 지정합니다. (`claude` | `agy` | `codex`)
   
 - **배치 실행 예시**:
-  - **특정 SP 지정 및 외부 코딩 에이전트(Claude) 연동 코드 자동 생성**:
-    ```bash
-    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers --codegen --engine claude
-    ```
-  - **특정 SP 지정 및 Antigravity CLI(agy) 연동 코드 자동 생성**:
-    ```bash
-    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers --codegen --engine agy
-    ```
-  - **특정 SP 지정 분석**:
+  - **특정 SP 지정 분석 (비즈니스 명세서 및 개별 지시서 생성)**:
     ```bash
     dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder
     ```
