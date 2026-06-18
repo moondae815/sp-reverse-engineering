@@ -30,7 +30,7 @@ namespace SpAnalyzer.Validator.Core.Services
 당신의 분석 결과는 반드시 다음 JSON 형식으로만 응답해야 합니다. 다른 텍스트나 서론, 결론은 절대 포함하지 마십시오.
 
 {
-  ""OverallStatus"": ""MATCH"" | ""MISMATCH"" | ""PARTIAL"",
+  ""OverallStatus"": ""MATCH"" | ""MISMATCH"" | ""PARTIAL"" (반드시 세 값 중 하나로만 지정하며, 다른 텍스트 추가 금지),
   ""InputParametersGap"": ""입력 인자 불일치 내용 기술 (없으면 빈 문자열)"",
   ""OutputResultSetsGap"": ""출력 컬럼/DTO 필드 불일치 내용 기술 (없으면 빈 문자열)"",
   ""BusinessLogicGap"": ""비즈니스 로직 및 쿼리 조건 불일치 내용 기술 (없으면 빈 문자열)"",
