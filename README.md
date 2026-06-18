@@ -168,7 +168,7 @@ SP-Reverse-Engineering/
     "Engines": {
       "claude": {
         "Command": "claude",              // 실행할 Claude CLI 명령어
-        "Arguments": "write code using {instructions}" // 인자 양식 ({instructions}에 지시서 절대 경로가 자동 바인딩)
+        "Arguments": "\"write code using {instructions}\"" // 인자 양식 ({instructions}에 지시서 절대 경로가 자동 바인딩)
       },
       "agy": {
         "Command": "agy",                 // Antigravity CLI 명령어 (https://antigravity.google/docs/cli-overview)
