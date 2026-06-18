@@ -243,7 +243,9 @@ namespace SpAnalyzer.Core.Tests
 
             // Assert
             var expectedPath = Path.Combine(testOutputDir, "dbo.USP_TestInstructions_MigrationInstructions.md");
+            var expectedTodoPath = Path.Combine(testOutputDir, "dbo.USP_TestInstructions_todo.md");
             Assert.True(File.Exists(expectedPath));
+            Assert.True(File.Exists(expectedTodoPath));
 
             var content = await File.ReadAllTextAsync(expectedPath);
             Assert.Contains("# 🚀 Migration Instructions for Coding Agent (dbo.USP_TestInstructions)", content);
@@ -252,6 +254,10 @@ namespace SpAnalyzer.Core.Tests
             Assert.Contains("CREATE PROCEDURE dbo.USP_TestInstructions AS SELECT 1;", content);
             Assert.Contains("TBL_TestDep", content);
             Assert.Contains("의존 테이블 설명", content);
+            Assert.Contains("dbo.USP_TestInstructions_todo.md", content);
+
+            var todoContent = await File.ReadAllTextAsync(expectedTodoPath);
+            Assert.Contains("# 📋 dbo.USP_TestInstructions 마이그레이션 구현 체크리스트", todoContent);
 
             // Clean up
             if (Directory.Exists(testOutputDir))
@@ -314,7 +320,9 @@ namespace SpAnalyzer.Core.Tests
 
             // Assert
             var expectedPath = Path.Combine(testOutputDir, $"{jobName}_MigrationInstructions.md");
+            var expectedTodoPath = Path.Combine(testOutputDir, $"{jobName}_todo.md");
             Assert.True(File.Exists(expectedPath));
+            Assert.True(File.Exists(expectedTodoPath));
 
             var content = await File.ReadAllTextAsync(expectedPath);
             Assert.Contains($"# 🚀 Consolidated Migration Instructions for Coding Agent ({jobName})", content);
@@ -323,6 +331,10 @@ namespace SpAnalyzer.Core.Tests
             Assert.Contains("CREATE PROCEDURE dbo.USP_Sp2 AS SELECT 2;", content);
             Assert.Contains("TBL_TestDep", content);
             Assert.Contains("의존 테이블 설명", content);
+            Assert.Contains($"{jobName}_todo.md", content);
+
+            var todoContent = await File.ReadAllTextAsync(expectedTodoPath);
+            Assert.Contains($"# 📋 {jobName} 통합 배치 마이그레이션 구현 체크리스트", todoContent);
 
             // Clean up
             if (Directory.Exists(testOutputDir))

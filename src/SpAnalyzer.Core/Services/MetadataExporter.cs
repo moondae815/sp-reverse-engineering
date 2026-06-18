@@ -177,12 +177,27 @@ namespace SpAnalyzer.Core.Services
             sb.AppendLine("코딩 에이전트(Claude Code 등)에 입력할 때 아래 텍스트를 그대로 복사하여 사용하십시오:");
             sb.AppendLine();
             sb.AppendLine($"> \"이 파일(`{cleanSpName}_MigrationInstructions.md`)에 기술된 비즈니스 명세와 레거시 SQL DDL을 분석하여 현대화된 배치 소스 코드를 생성해줘.");
-            sb.AppendLine("> 1. 설계서의 입출력 규격 및 비즈니스 로직 단계를 그대로 구현할 것.");
+            sb.AppendLine($"> 단, 한 번에 모든 코드를 작성하려고 시도하지 말고, 함께 제공된 체크리스트 파일(`{cleanSpName}_todo.md`)의 각 단계를 점진적으로 이행하면서 완료될 때마다 상태를 [x]로 업데이트하고 승인 받아줘.");
+            sb.AppendLine("> 1. 설계서의 입출력 규격 및 비즈니스 로직 단계를 만족할 것.");
             sb.AppendLine("> 2. 생성할 파일 경로는 프로젝트 아키텍처 규칙에 맞춰 작성해줘.");
             sb.AppendLine("> 3. 구현이 완료되면 빌드가 통과하는지 검증하고 완료 메시지를 보여줘.\"");
             sb.AppendLine();
 
             await File.WriteAllTextAsync(instructionsPath, sb.ToString(), Encoding.UTF8);
+
+            // _todo.md 생성
+            var todoPath = Path.Combine(baseOutputDir, $"{cleanSpName}_todo.md");
+            var todoSb = new StringBuilder();
+            todoSb.AppendLine($"# 📋 {cleanSpName} 마이그레이션 구현 체크리스트");
+            todoSb.AppendLine();
+            todoSb.AppendLine("AI 코딩 에이전트는 아래 체크박스를 한 번에 하나씩 확인하여 상태를 `[x]`로 변경해가며 점진적으로 구현하십시오.");
+            todoSb.AppendLine();
+            todoSb.AppendLine("- [ ] 1. 프로젝트 폴더 구조 및 뼈대 코드 생성");
+            todoSb.AppendLine("- [ ] 2. 관련 DDL 반영 및 데이터 액세스(Repository/DAO) 레이어 빌드 검증");
+            todoSb.AppendLine("- [ ] 3. 비즈니스 로직 단계별 구현 및 유효성 검증");
+            todoSb.AppendLine("- [ ] 4. 예외 처리, 트랜잭션 격리 및 리소스 누수 방지 로직 보완");
+            todoSb.AppendLine("- [ ] 5. 전체 솔루션 빌드 확인 및 완료 보고");
+            await File.WriteAllTextAsync(todoPath, todoSb.ToString(), Encoding.UTF8);
         }
 
         public async Task ExportConsolidatedMigrationInstructionsAsync(
@@ -266,12 +281,29 @@ namespace SpAnalyzer.Core.Services
             sb.AppendLine("코딩 에이전트(Claude Code 등)에 입력할 때 아래 텍스트를 그대로 복사하여 사용하십시오:");
             sb.AppendLine();
             sb.AppendLine($"> \"이 파일(`{jobName}_MigrationInstructions.md`)에 기술된 통합 배치 전환 계획과 레거시 SQL DDL들을 분석하여 현대화된 배치 소스 코드를 생성해줘.");
+            sb.AppendLine($"> 단, 한 번에 모든 코드를 작성하려고 시도하지 말고, 함께 제공된 체크리스트 파일(`{jobName}_todo.md`)의 각 단계를 점진적으로 이행하면서 완료될 때마다 상태를 [x]로 업데이트하고 승인 받아줘.");
             sb.AppendLine("> 1. 전환 계획의 배치 단계 및 공통 모듈 설계 규칙을 그대로 준수할 것.");
             sb.AppendLine("> 2. 생성할 파일 경로는 프로젝트 아키텍처 규칙에 맞춰 작성해줘.");
             sb.AppendLine("> 3. 구현이 완료되면 빌드가 통과하는지 검증하고 완료 메시지를 보여줘.\"");
             sb.AppendLine();
 
             await File.WriteAllTextAsync(instructionsPath, sb.ToString(), Encoding.UTF8);
+
+            // _todo.md 생성
+            var todoPath = Path.Combine(baseOutputDir, $"{jobName}_todo.md");
+            var todoSb = new StringBuilder();
+            todoSb.AppendLine($"# 📋 {jobName} 통합 배치 마이그레이션 구현 체크리스트");
+            todoSb.AppendLine();
+            todoSb.AppendLine("AI 코딩 에이전트는 아래 체크박스를 한 번에 하나씩 확인하여 상태를 `[x]`로 변경해가며 점진적으로 구현하십시오.");
+            todoSb.AppendLine();
+            todoSb.AppendLine("- [ ] 1. 통합 배치 프로젝트 폴더 구조 및 뼈대 코드 생성");
+            todoSb.AppendLine("- [ ] 2. 관련 데이터베이스 스냅샷/집계 DDL 테이블 적용 및 Repository/DAO 빌드 검증");
+            todoSb.AppendLine("- [ ] 3. Step 0: Run 초기화 Tasklet 구현");
+            todoSb.AppendLine("- [ ] 4. Step 1: 개별 배치 스냅샷 생성 Chunk Step 구현");
+            todoSb.AppendLine("- [ ] 5. Step 2: 통합 고객 상품 집계 Chunk Step 구현");
+            todoSb.AppendLine("- [ ] 6. Step 3 & 4: 검증/게시 및 최종 종료 처리 Tasklet 구현");
+            todoSb.AppendLine("- [ ] 7. 전체 솔루션 빌드 확인 및 최종 완료 보고");
+            await File.WriteAllTextAsync(todoPath, todoSb.ToString(), Encoding.UTF8);
         }
 
         private string FormatTableSchemaToMarkdown(DependencyInfo dep)
