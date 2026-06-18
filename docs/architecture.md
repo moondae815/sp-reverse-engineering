@@ -13,6 +13,7 @@
 | **SpAnalyzer.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/Program.cs) | CLI 아규먼트 파싱, DI 구성, 대화형 및 배치 실행 모드 제어, Multi-SP 물리 선택 순서 보장 순차 선택 루프 흐름 및 CancellationTokenSource 연동 |
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링 및 Markup.Escape 예외 방지 |
 | | [SessionManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 및 즉각적인 연결 정보(서버, DB명) 수정 기능 제공 |
+| | [CodingEngineFactory](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/CodingEngineFactory.cs) | 설정 파일에 기반해 다형적 외부 코딩 에이전트(`ICodingEngine`)를 구성하고 생성하는 팩토리 클래스 |
 | **SpAnalyzer.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
 | | [AiService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함) 및 결과 분석 오케스트레이션. 주입받은 `IAiClient`를 사용해 AI API 호출 수행, robust한 JSON 추출(`ExtractJson`) |
 | | [IAiClient](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IAiClient.cs) | AI 모델 간의 공통 텍스트 통신 계약 정의 |
@@ -22,6 +23,8 @@
 | | [MetadataExporter](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 및 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 생성 제어 |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
 | | [CacheManager](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리 |
+| | [ICodingEngine](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ICodingEngine.cs) | 외부 코딩 에이전트 연동용 마이그레이션 생성기 추상 인터페이스 |
+| | [ExternalCliCodingEngine](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 에이전트 프로세스(Claude, Antigravity 등) 기동 및 콘솔 상속 연동 구현체 |
 | **SpAnalyzer.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어 |
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링. 탭(Tab) 자동완성 디렉토리 입력창(`ShowChoices(false)` 제어) 및 Gap 분석 결과 패널 렌더링 |
 | **SpAnalyzer.Validator.Core**<br/>(검증 비즈니스 레이어) | [FileMappingService](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs) | 명세서 파일명/YAML Front Matter 기반 구현 소스 매핑 및 경로 중복 자동 보정 |
@@ -123,10 +126,16 @@
 * **물리 선택 순서 보장**: 다중 선택(Multi-select) UI 컴포넌트는 사용자가 스페이스바로 항목을 선택하더라도 최종 선택 반환 결과에서 사용자가 누른 순서(Sequence)를 보장하지 않고 알파벳 순서 등으로 정렬되는 한계가 있습니다.
 * **순차 단일 선택 루프**: 배치 작업 설계 시 각 SP 마이그레이션 스텝의 논리적 실행 순서를 엄격히 반영할 수 있도록, TUI 화면에서 사용자가 목록을 보며 원하는 순서대로 하나씩 SP 명세서를 선택하여 큐(Queue)에 적재하고, 최종 `[-- 완료 및 배치 계획 수립 --]` 메뉴를 선택하여 처리를 마치는 단일 순차 선택 루프 흐름을 제공합니다.
 
-### 13. 외부 코딩 에이전트 연동용 마이그레이션 지시서 번들링 (Migration Instructions Bridge)
+### 13. 외부 코딩 에이전트 연동용 마이그레이션 지시서 번들링 및 자동 기동 브릿지 (Migration Instructions & Codegen Bridge)
 * **단절 없는 개발 경험 제공**: SP 분석 ➔ 명세서 및 계획서 작성 ➔ 코드 마이그레이션 ➔ 코드 검증의 전체 흐름에서, 마이그레이션 소스 코드를 생성하는 주체를 외부의 전문 코딩 에이전트(Claude Code, Antigravity CLI 등)로 위임하되 결합도 및 사용자 단절을 최소화하기 위한 브릿지 구조를 탑재했습니다.
 * **구조화된 컨텍스트 패키징**: 사용자가 직접 DDL이나 여러 설계 문서를 코딩 에이전트에 공급하는 번거로움을 해결하기 위해, 최종 승인된 **비즈니스 명세서(Spec)**, **통합 계획서(Plan)**, **레거시 SP SQL DDL 원본**, 그리고 **참조하는 모든 외부 스키마 및 DDL** 정보를 계층적이고 유기적인 Markdown 구조의 번들 문서(`*_MigrationInstructions.md`)로 빌드하여 자동 추출합니다.
 * **즉시 사용 가능한 프롬프트 내장**: 문서 말단에는 사용자가 복사하여 곧바로 사용할 수 있는 표준화된 마이그레이션 명령 프롬프트 템플릿을 명시해 둠으로써 프롬프팅 누락 및 실수 가능성을 원천 제거합니다.
+* **대화형 콘솔 상속 및 양방향 제어 (Terminal Stream Sharing)**:
+  - CLI 연동 구동 시 자식 프로세스의 입출력 스트림을 리다이렉션하여 가두지 않고, 현재 작동 중인 부모 콘솔 스트림을 직접 상속 공유(`RedirectStandardInput/Output = false`)하도록 구현했습니다.
+  - 이를 통해 Claude Code 등 대화형 에이전트가 실행되는 도중 발생할 수 있는 사용자의 수동 승인 요청(Y/N)이나 자연어 질의응답 등의 양방향 인터랙션을 동일한 콘솔에서 매끄럽게 처리할 수 있습니다.
+* **취소 안전성 및 프로세스 격리 (Cancellation Safety & Process Isolation)**:
+  - 마이그레이션 전체 파이프라인에서 전파되는 `CancellationToken`과 외부 기동 프로세스의 수명 주기를 연결했습니다.
+  - CLI 상에서 사용자가 `Ctrl+C` 등을 통해 마이그레이션 분석 프로세스를 중단시키면, 토큰 해제 이벤트 핸들러가 가동 중인 하위 코딩 에이전트 프로세스 트리 전체를 강제 종료(`process.Kill(true)`)하여 유령 백그라운드 프로세스가 리소스를 유점하는 좀비 현상을 예방합니다.
 
 ---
 

@@ -20,7 +20,7 @@
 
 ### 3. 배치 현대화 설계 및 비용 최적화 (Modernization & Cache)
 * **순차적 배치 현대화 계획 수립**: 분석된 여러 SP들의 명세서를 사용자가 선택한 순서대로 조합하여, 워크플로우 제어, 대용량 페이징, 오류 처리 정책이 설계된 통합 배치 계획서(`*_BatchMigrationPlan.md`)를 작성합니다.
-* **코딩 에이전트용 마이그레이션 지시서 번들링**: 설계서 작성이 완료되면 Claude Code, Antigravity CLI 등 전문 코딩 에이전트에 즉시 입력하여 마이그레이션을 자동 수행할 수 있는 프롬프트 템플릿과 메타데이터 번들(`*_MigrationInstructions.md`)을 함께 자동 생성합니다.
+* **코딩 에이전트 자동 기동 브릿지(CLI Orchestration)**: 설계서 작성이 완료되면 Claude Code, Antigravity CLI 등 지정된 전문 코딩 에이전트를 자식 프로세스로 자동 기동하여 코드 생성을 연쇄적으로 수행합니다. 현재 사용 중인 터미널 콘솔을 그대로 공유하여 대화형 프롬프트를 이어갈 수 있습니다.
 * **동적 SQL 및 Linked Server 대응**: 정적 분석이 까다로운 동적 쿼리(`EXEC`, `sp_executesql`)와 Linked Server 식별자 패턴을 감지하여 안전한 현대화 전환 가이드를 제안합니다.
 * **해시 기반 로컬 증분 캐싱**: SP 및 관련 의존성 DDL의 복합 SHA-256 해시를 체크하여, 변경이 없을 시 AI 분석을 건너뛰고 기존 마크다운을 복원하여 비용과 시간을 혁신적으로 절감합니다.
 
@@ -160,6 +160,21 @@ SP-Reverse-Engineering/
     "SourceCodeDirectory": "./src",       // [설정] 검증에 쓰일 구현 소스코드 폴더
     "TargetLanguage": "Auto",             // [설정] 검증 대상 언어 ("Auto" | "C#" | "Java")
     "OutputDirectory": "./output/validation" // [설정] 일치성 Gap 보고서 저장 경로
+  },
+  "CodegenSettings": {
+    "Enabled": false,                     // [설정] 분석 완료 후 코딩 에이전트 브릿지 자동 실행 활성화 여부
+    "Engine": "claude",                   // [설정] 기본 코딩 엔진 ("claude" | "antigravity")
+    "TargetProjectDirectory": "./src",    // [설정] 마이그레이션 코드가 저장될 대상 프로젝트 절대/상대 경로
+    "Engines": {
+      "claude": {
+        "Command": "claude",              // 실행할 Claude CLI 명령어
+        "Arguments": "write code using {instructions}" // 인자 양식 ({instructions}에 지시서 절대 경로가 자동 바인딩)
+      },
+      "antigravity": {
+        "Command": "antigravity",
+        "Arguments": "run {instructions}"
+      }
+    }
   }
 }
 ```
@@ -216,8 +231,14 @@ dotnet run --project src/SpAnalyzer.Cli
   - `--conn <연결문자열>`: 분석용 데이터베이스 연결 문자열을 직접 지정합니다. (생략 시 `SP_ANALYZER_CONN_STR` 환경 변수 값을 조회합니다.)
   - `--all`: 데이터베이스 내의 모든 Stored Procedure를 일괄 분석합니다.
   - `--sp <SP이름1,SP이름2,...>`: 특정 Stored Procedure들만 지정하여 분석합니다. 쉼표(`,`)로 구분하며 스키마명을 포함(`dbo.USP_1`)하거나 생략(`USP_1`)할 수 있습니다.
+  - `--codegen`: 분석이 완료된 후, 자동으로 코딩 에이전트 브릿지 프로세스를 기동하여 마이그레이션 소스 코드를 생성합니다.
+  - `--engine <엔진명>`: 코딩 에이전트 종류를 명시적으로 지정합니다. (`claude` | `antigravity`)
   
 - **배치 실행 예시**:
+  - **특정 SP 지정 및 외부 코딩 에이전트(Claude) 연동 코드 자동 생성**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers --codegen --engine claude
+    ```
   - **특정 SP 지정 분석**:
     ```bash
     dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder

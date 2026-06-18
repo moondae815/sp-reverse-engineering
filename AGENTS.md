@@ -31,10 +31,13 @@
   - [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
   - [MetadataExporter.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`)을 자동 생성하는 기능 구현체.
   - [CacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ICacheManager.cs) 포함).
+  - [ICodingEngine.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ICodingEngine.cs): 외부 코딩 에이전트 연동용 마이그레이션 생성기 추상 인터페이스.
+  - [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, Antigravity 등) 기동 및 콘솔 상속 연동 구현체.
 
 ### 2. CLI 실행 엔트리: [SpAnalyzer.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli)
 - [Program.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/Program.cs): CLI 진입점이자 Spectre.Console 기반 TUI 메뉴 제어, 사용자 세션 검증, 배치(CLI) 모드 라우팅 및 흐름 오케스트레이션을 담당합니다.
 - [ConsoleUserInteraction.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/ConsoleUserInteraction.cs): TUI와 사용자 간의 인터랙션 콘솔 처리를 정의한 구현체.
+- [CodingEngineFactory.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/CodingEngineFactory.cs): 설정 파일에 기반해 다형적 외부 코딩 에이전트(`ICodingEngine`)를 구성하고 생성하는 팩토리 클래스.
 - [appsettings.json](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/appsettings.json): 데이터베이스 정보 및 AI 설정 정보를 관리하는 구성 파일.
 - [instructions.md](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Cli/instructions.md): AI 프롬프트에 동적으로 바인딩되는 세부 분석 가이드라인 템플릿.
 
@@ -140,6 +143,9 @@ graph TD
 - `ExportMigrationInstructionsAsync`는 비즈니스 설계서(`*_Spec.md`)와 배치 전환 계획(`*_BatchMigrationPlan.md`), 원본 SP DDL 및 모든 의존성 스펙을 코딩 에이전트가 완벽히 이해할 수 있도록 마크다운으로 구조화하여 하나로 묶어줘야 합니다.
 - 지시서 하단에 사용자가 복사해서 외부 코딩 에이전트(Claude Code 등)에 즉시 입력할 수 있는 안내 프롬프트를 반드시 명시적으로 포함해야 합니다.
 - 파일 작성 전에 대상 출력 디렉터리(`baseOutputDir`)가 실제 존재하는지 확인하고, 존재하지 않는 경우 자동으로 폴더를 선행 생성하여 디바이스 쓰기 예외를 사전에 격리해 주어야 합니다.
+- **외부 코딩 에이전트 CLI 프로세스 기동 규칙**:
+  - 외부 에이전트(Claude Code 등) 기동 시, 사용자가 직접 자연어 질의응답 및 승인 등의 흐름을 진행할 수 있도록 **부모 콘솔의 입출력 스트림을 직접 상속 공유(`RedirectStandardInput/Output = false`)**하여 대화형 세션을 원활히 지원해야 합니다.
+  - 비동기 작업 취소(`CancellationToken`) 수신 시, 구동 중인 외부 코딩 에이전트 프로세스가 백그라운드에서 좀비 프로세스로 남지 않도록 **강제 종료(`process.Kill(true)`)** 처리를 완벽히 수행해야 합니다.
 
 ---
 
