@@ -163,16 +163,20 @@ SP-Reverse-Engineering/
   },
   "CodegenSettings": {
     "Enabled": false,                     // [설정] 분석 완료 후 코딩 에이전트 브릿지 자동 실행 활성화 여부
-    "Engine": "claude",                   // [설정] 기본 코딩 엔진 ("claude" | "antigravity")
+    "Engine": "claude",                   // [설정] 기본 코딩 엔진 ("claude" | "agy" | "codex")
     "TargetProjectDirectory": "./src",    // [설정] 마이그레이션 코드가 저장될 대상 프로젝트 절대/상대 경로
     "Engines": {
       "claude": {
         "Command": "claude",              // 실행할 Claude CLI 명령어
         "Arguments": "write code using {instructions}" // 인자 양식 ({instructions}에 지시서 절대 경로가 자동 바인딩)
       },
-      "antigravity": {
-        "Command": "antigravity",
+      "agy": {
+        "Command": "agy",                 // Antigravity CLI 명령어 (https://antigravity.google/docs/cli-overview)
         "Arguments": "run {instructions}"
+      },
+      "codex": {
+        "Command": "codex",               // Codex CLI 명령어 (https://developers.openai.com/codex/cli/features)
+        "Arguments": "\"{instructions}\""
       }
     }
   }
@@ -232,12 +236,16 @@ dotnet run --project src/SpAnalyzer.Cli
   - `--all`: 데이터베이스 내의 모든 Stored Procedure를 일괄 분석합니다.
   - `--sp <SP이름1,SP이름2,...>`: 특정 Stored Procedure들만 지정하여 분석합니다. 쉼표(`,`)로 구분하며 스키마명을 포함(`dbo.USP_1`)하거나 생략(`USP_1`)할 수 있습니다.
   - `--codegen`: 분석이 완료된 후, 자동으로 코딩 에이전트 브릿지 프로세스를 기동하여 마이그레이션 소스 코드를 생성합니다.
-  - `--engine <엔진명>`: 코딩 에이전트 종류를 명시적으로 지정합니다. (`claude` | `antigravity`)
+  - `--engine <엔진명>`: 코딩 에이전트 종류를 명시적으로 지정합니다. (`claude` | `agy` | `codex`)
   
 - **배치 실행 예시**:
   - **특정 SP 지정 및 외부 코딩 에이전트(Claude) 연동 코드 자동 생성**:
     ```bash
     dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers --codegen --engine claude
+    ```
+  - **특정 SP 지정 및 Antigravity CLI(agy) 연동 코드 자동 생성**:
+    ```bash
+    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers --codegen --engine agy
     ```
   - **특정 SP 지정 분석**:
     ```bash
