@@ -88,10 +88,11 @@ SP-Reverse-Engineering/
 ├── src/
 │   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
 │   │   ├── Models/                 # SpDefinition, DependencyInfo, ColumnInfo 데이터 모델
-│   │   └── Services/               # DB 조회, AI API 통신 및 메타데이터 내보내기 서비스 구현
+│   │   └── Services/               # DB 조회, AI API 통신, 메타데이터 익스포트 및 코딩 엔진 인터페이스(ICodingEngine)
 │   │
 │   ├── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI (설계서 생성)
 │   │   ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
+│   │   ├── CodingEngineFactory.cs  # 설정 기반 외부 코딩 에이전트 생성 팩토리
 │   │   ├── appsettings.json        # DB/AI 연동 설정 파일
 │   │   └── instructions.md        # AI 분석 세부 지침 규칙 파일
 │   │
