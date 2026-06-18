@@ -185,6 +185,95 @@ namespace SpAnalyzer.Core.Services
             await File.WriteAllTextAsync(instructionsPath, sb.ToString(), Encoding.UTF8);
         }
 
+        public async Task ExportConsolidatedMigrationInstructionsAsync(
+            System.Collections.Generic.List<SpDefinition> spDefs,
+            string consolidatedPlan,
+            string jobName,
+            string baseOutputDir)
+        {
+            var instructionsPath = Path.Combine(baseOutputDir, $"{jobName}_MigrationInstructions.md");
+
+            if (!Directory.Exists(baseOutputDir))
+            {
+                Directory.CreateDirectory(baseOutputDir);
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"# 🚀 Consolidated Migration Instructions for Coding Agent ({jobName})");
+            sb.AppendLine();
+            sb.AppendLine("본 문서는 복수의 SQL Server Stored Procedure들을 하나의 통합 배치 작업으로 마이그레이션하기 위해 코딩 에이전트(Claude Code, Antigravity CLI 등)에 제공되는 지시서 및 컨텍스트입니다.");
+            sb.AppendLine("아래 통합 배치 전환 계획서(Consolidated Migration Plan)와 개별 SP들의 레거시 SQL DDL 및 의존성을 분석하여 현대화된 배치 소스 코드를 작성해 주십시오.");
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 🗺️ 1. 통합 배치 전환 계획 (Consolidated Migration Plan)");
+            sb.AppendLine("이 계획은 전체 배치의 흐름과 마이그레이션 전략을 다룹니다.");
+            sb.AppendLine();
+            sb.AppendLine(consolidatedPlan);
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 📋 2. 대상 Stored Procedure 목록");
+            foreach (var spDef in spDefs)
+            {
+                sb.AppendLine($"- `{spDef.Schema}.{spDef.Name}`");
+            }
+            sb.AppendLine();
+
+            foreach (var spDef in spDefs)
+            {
+                var cleanSpName = $"{spDef.Schema}.{spDef.Name}";
+                sb.AppendLine("---");
+                sb.AppendLine();
+                sb.AppendLine($"## 📄 3. `{cleanSpName}` 상세 명세");
+                sb.AppendLine();
+                sb.AppendLine($"### 💻 `{cleanSpName}` SQL Server DDL 원본");
+                sb.AppendLine("```sql");
+                sb.AppendLine(spDef.DdlText);
+                sb.AppendLine("```");
+                sb.AppendLine();
+
+                if (spDef.Dependencies.Count > 0)
+                {
+                    sb.AppendLine($"### 📦 `{cleanSpName}` 의존성 주요 참조 스키마 및 소스코드");
+                    sb.AppendLine("SP 내에서 참조하는 테이블, 함수, 또는 하위 SP들의 메타데이터입니다. 소스코드 마이그레이션 시 데이터 엑세스 계층(Repository/DAO) 구현에 참고하십시오.");
+                    sb.AppendLine();
+
+                    foreach (var dep in spDef.Dependencies)
+                    {
+                        sb.AppendLine($"#### 🔹 {dep.Type}: `{dep.Schema}.{dep.Name}`");
+                        
+                        if (dep.Columns.Count > 0)
+                        {
+                            sb.AppendLine(FormatTableSchemaToMarkdown(dep));
+                        }
+                        
+                        if (!string.IsNullOrEmpty(dep.ReferencedDdlText))
+                        {
+                            sb.AppendLine("##### Referenced SQL DDL:");
+                            sb.AppendLine("```sql");
+                            sb.AppendLine(dep.ReferencedDdlText);
+                            sb.AppendLine("```");
+                        }
+                        sb.AppendLine();
+                    }
+                }
+            }
+
+            sb.AppendLine("---");
+            sb.AppendLine();
+            sb.AppendLine("## 🔑 4. 코딩 에이전트 명령 가이드 (Prompt for Agent)");
+            sb.AppendLine("코딩 에이전트(Claude Code 등)에 입력할 때 아래 텍스트를 그대로 복사하여 사용하십시오:");
+            sb.AppendLine();
+            sb.AppendLine($"> \"이 파일(`{jobName}_MigrationInstructions.md`)에 기술된 통합 배치 전환 계획과 레거시 SQL DDL들을 분석하여 현대화된 배치 소스 코드를 생성해줘.");
+            sb.AppendLine("> 1. 전환 계획의 배치 단계 및 공통 모듈 설계 규칙을 그대로 준수할 것.");
+            sb.AppendLine("> 2. 생성할 파일 경로는 프로젝트 아키텍처 규칙에 맞춰 작성해줘.");
+            sb.AppendLine("> 3. 구현이 완료되면 빌드가 통과하는지 검증하고 완료 메시지를 보여줘.\"");
+            sb.AppendLine();
+
+            await File.WriteAllTextAsync(instructionsPath, sb.ToString(), Encoding.UTF8);
+        }
+
         private string FormatTableSchemaToMarkdown(DependencyInfo dep)
         {
             var sb = new StringBuilder();

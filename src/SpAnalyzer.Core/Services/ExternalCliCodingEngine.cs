@@ -22,7 +22,7 @@ namespace SpAnalyzer.Core.Services
         }
 
         public async Task<bool> GenerateCodeAsync(
-            SpDefinition spDef,
+            SpDefinition? spDef,
             string instructionsFilePath,
             string targetProjectDir,
             CancellationToken cancellationToken)

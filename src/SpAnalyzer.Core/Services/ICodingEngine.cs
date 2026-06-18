@@ -17,7 +17,7 @@ namespace SpAnalyzer.Core.Services
         /// <param name="cancellationToken">작업 취소 토큰</param>
         /// <returns>코드 생성 성공 여부</returns>
         Task<bool> GenerateCodeAsync(
-            SpDefinition spDef,
+            SpDefinition? spDef,
             string instructionsFilePath,
             string targetProjectDir,
             CancellationToken cancellationToken);

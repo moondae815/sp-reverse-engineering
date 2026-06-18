@@ -374,15 +374,6 @@ namespace SpAnalyzer.Cli
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                             schema, name, provider, modelName);
 
-                        await RunCodegenEngineAsync(
-                            spDef, outputDir, schema, name,
-                            isBatchMode: true,
-                            enableCodegen: isCodegenEnabled,
-                            engineName: selectedEngine,
-                            targetProjectDir: targetProjectDir,
-                            configuration: configuration,
-                            cancellationToken: globalCts.Token);
-
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
                     catch (OperationCanceledException)
@@ -471,15 +462,6 @@ namespace SpAnalyzer.Cli
                                 spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                                 metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
                                 schema, name, provider, modelName);
-
-                            await RunCodegenEngineAsync(
-                                spDef, outputDir, schema, name,
-                                isBatchMode: false,
-                                enableCodegen: isCodegenEnabled,
-                                engineName: selectedEngine,
-                                targetProjectDir: targetProjectDir,
-                                configuration: configuration,
-                                cancellationToken: activeCts.Token);
 
                             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                             AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -639,6 +621,58 @@ namespace SpAnalyzer.Cli
                                 Border = BoxBorder.Rounded,
                                 Header = new PanelHeader($" {jobName} 통합 마이그레이션 완료 ")
                             });
+
+                            // SpDefinition들 복원 및 통합 마이그레이션 지시서 생성
+                            var spDefs = new List<SpDefinition>();
+                            foreach (var fileName in selectedFiles)
+                            {
+                                var rawFileName = fileName.Replace("_Spec.md", "_Raw.json");
+                                var rawPath = Path.Combine(outputDir, rawFileName);
+                                if (File.Exists(rawPath))
+                                {
+                                    try
+                                    {
+                                        var jsonContent = await File.ReadAllTextAsync(rawPath);
+                                        var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                                        var spDef = System.Text.Json.JsonSerializer.Deserialize<SpDefinition>(jsonContent, options);
+                                        if (spDef != null)
+                                        {
+                                            spDefs.Add(spDef);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        AnsiConsole.MarkupLine($"[yellow]경고: {rawFileName} 파일에서 메타데이터 복원 중 오류:[/] {Markup.Escape(ex.Message)}");
+                                    }
+                                }
+                            }
+
+                            try
+                            {
+                                AnsiConsole.MarkupLine($"\n[yellow]{jobName}[/] - 통합 마이그레이션 지시서 생성 중...");
+                                await metadataExporter.ExportConsolidatedMigrationInstructionsAsync(
+                                    spDefs,
+                                    consolidatedPlan,
+                                    jobName,
+                                    outputDir);
+
+                                var instructionsPath = Path.Combine(outputDir, $"{jobName}_MigrationInstructions.md");
+                                AnsiConsole.MarkupLine($"[green]통합 마이그레이션 지시서 번들이 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(instructionsPath)}");
+
+                                // 외부 코딩 에이전트(Codegen) 기동
+                                await RunCodegenEngineAsync(
+                                    instructionsPath,
+                                    isBatchMode: false,
+                                    enableCodegen: isCodegenEnabled,
+                                    engineName: selectedEngine,
+                                    targetProjectDir: targetProjectDir,
+                                    configuration: configuration,
+                                    cancellationToken: activeCts.Token);
+                            }
+                            catch (Exception ex)
+                            {
+                                AnsiConsole.MarkupLine($"[red]에러:[/] 통합 마이그레이션 지시서 생성 또는 코딩 에이전트 실행 중 오류 발생: {Markup.Escape(ex.Message)}");
+                            }
                         }
                         catch (OperationCanceledException)
                         {
@@ -779,10 +813,7 @@ namespace SpAnalyzer.Cli
         }
 
         private static async Task RunCodegenEngineAsync(
-            SpDefinition? spDef,
-            string outputDir,
-            string schema,
-            string name,
+            string instructionsPath,
             bool isBatchMode,
             bool enableCodegen,
             string? engineName,
@@ -790,8 +821,6 @@ namespace SpAnalyzer.Cli
             IConfiguration configuration,
             CancellationToken cancellationToken)
         {
-            if (spDef == null) return;
-
             // CLI 옵션이나 설정파일 중 하나라도 codegen이 활성화되어 있어야 함
             if (!enableCodegen && isBatchMode)
             {
@@ -814,10 +843,9 @@ namespace SpAnalyzer.Cli
                 var factory = new CodingEngineFactory(configuration);
                 var engine = factory.CreateEngine(engineName ?? "claude");
 
-                var instructionsPath = Path.Combine(outputDir, $"{schema}.{name}_MigrationInstructions.md");
                 if (!File.Exists(instructionsPath))
                 {
-                    AnsiConsole.MarkupLine("[red]에러: 마이그레이션 지시서 파일(*_MigrationInstructions.md)을 찾을 수 없습니다.[/]");
+                    AnsiConsole.MarkupLine($"[red]에러: 마이그레이션 지시서 파일({Path.GetFileName(instructionsPath)})을 찾을 수 없습니다.[/]");
                     return;
                 }
 
@@ -825,7 +853,7 @@ namespace SpAnalyzer.Cli
                 AnsiConsole.MarkupLine($"[grey]타겟 프로젝트 디렉터리: {targetProjectDir}[/]");
                 AnsiConsole.MarkupLine("[yellow]외부 프로세스 기동 중... (종료될 때까지 대기합니다)[/]\n");
 
-                var success = await engine.GenerateCodeAsync(spDef, instructionsPath, targetProjectDir, cancellationToken);
+                var success = await engine.GenerateCodeAsync(null, instructionsPath, targetProjectDir, cancellationToken);
 
                 if (success)
                 {

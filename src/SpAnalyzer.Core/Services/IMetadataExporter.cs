@@ -24,5 +24,14 @@ namespace SpAnalyzer.Core.Services
             string specMarkdown,
             string migrationPlan,
             string baseOutputDir);
+
+        /// <summary>
+        /// 다중 SP와 통합 배치 전환 계획을 기반으로 통합 마이그레이션 지시서 번들을 저장합니다.
+        /// </summary>
+        Task ExportConsolidatedMigrationInstructionsAsync(
+            System.Collections.Generic.List<SpDefinition> spDefs,
+            string consolidatedPlan,
+            string jobName,
+            string baseOutputDir);
     }
 }

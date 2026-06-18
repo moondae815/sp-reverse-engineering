@@ -259,5 +259,76 @@ namespace SpAnalyzer.Core.Tests
                 Directory.Delete(testOutputDir, true);
             }
         }
+
+        [Fact]
+        public async Task ExportConsolidatedMigrationInstructionsAsync_ShouldCreateInstructionsFile_WithCorrectContent()
+        {
+            // Arrange
+            var testOutputDir = Path.Combine(Directory.GetCurrentDirectory(), "test_output_exporter_consolidated");
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+
+            var spDefs = new System.Collections.Generic.List<SpDefinition>
+            {
+                new SpDefinition
+                {
+                    Schema = "dbo",
+                    Name = "USP_Sp1",
+                    DdlText = "CREATE PROCEDURE dbo.USP_Sp1 AS SELECT 1;"
+                },
+                new SpDefinition
+                {
+                    Schema = "dbo",
+                    Name = "USP_Sp2",
+                    DdlText = "CREATE PROCEDURE dbo.USP_Sp2 AS SELECT 2;"
+                }
+            };
+
+            var tableDep = new DependencyInfo
+            {
+                Schema = "dbo",
+                Name = "TBL_TestDep",
+                Type = "USER_TABLE",
+                DiscoveryDepth = 1,
+                Description = "의존 테이블 설명"
+            };
+            tableDep.Columns.Add(new ColumnInfo
+            {
+                ColumnName = "ID",
+                DataType = "INT",
+                IsNullable = false,
+                IsPrimaryKey = true,
+                Description = "PK 컬럼"
+            });
+            spDefs[0].Dependencies.Add(tableDep);
+
+            var consolidatedPlan = "# Consolidated Plan\n- Job steps...";
+            var jobName = "TestConsolidatedJob";
+
+            IMetadataExporter exporter = new MetadataExporter();
+
+            // Act
+            await exporter.ExportConsolidatedMigrationInstructionsAsync(spDefs, consolidatedPlan, jobName, testOutputDir);
+
+            // Assert
+            var expectedPath = Path.Combine(testOutputDir, $"{jobName}_MigrationInstructions.md");
+            Assert.True(File.Exists(expectedPath));
+
+            var content = await File.ReadAllTextAsync(expectedPath);
+            Assert.Contains($"# 🚀 Consolidated Migration Instructions for Coding Agent ({jobName})", content);
+            Assert.Contains(consolidatedPlan, content);
+            Assert.Contains("CREATE PROCEDURE dbo.USP_Sp1 AS SELECT 1;", content);
+            Assert.Contains("CREATE PROCEDURE dbo.USP_Sp2 AS SELECT 2;", content);
+            Assert.Contains("TBL_TestDep", content);
+            Assert.Contains("의존 테이블 설명", content);
+
+            // Clean up
+            if (Directory.Exists(testOutputDir))
+            {
+                Directory.Delete(testOutputDir, true);
+            }
+        }
     }
 }
