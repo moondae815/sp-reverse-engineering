@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 namespace SpAnalyzer.Core.Services.Clients
 {
-    public class GeminiClient : IAiClient
+    public class GoogleClient : IAiClient
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        public GeminiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
+        public GoogleClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
@@ -28,7 +28,7 @@ namespace SpAnalyzer.Core.Services.Clients
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
-                throw new ArgumentException("Gemini API 키가 설정되지 않았습니다.");
+                throw new ArgumentException("Google API 키가 설정되지 않았습니다.");
             }
 
             var requestBody = new
@@ -58,7 +58,7 @@ namespace SpAnalyzer.Core.Services.Clients
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
             
-            // Assembly Gemini Endpoint URI
+            // Assembly Google/Gemini Endpoint URI
             var url = $"{_endpoint.TrimEnd('/')}/v1beta/models/{_modelName}:generateContent?key={_apiKey}";
             
             var request = new HttpRequestMessage(HttpMethod.Post, url)

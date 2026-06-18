@@ -18,8 +18,8 @@ namespace SpAnalyzer.Core.Services.Clients
             {
                 "openai" => new OpenAiClient(client, apiKey, endpoint, modelName),
                 "ollama" => new OllamaClient(client, endpoint, modelName),
-                "claude" => new ClaudeClient(client, apiKey, endpoint, modelName),
-                "gemini" => new GeminiClient(client, apiKey, endpoint, modelName),
+                "anthropic" => new AnthropicClient(client, apiKey, endpoint, modelName),
+                "google" => new GoogleClient(client, apiKey, endpoint, modelName),
                 _ => throw new NotSupportedException($"지원되지 않는 AI Provider입니다: {provider}")
             };
         }

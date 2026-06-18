@@ -27,7 +27,7 @@
 ### 4. 코드 일치성 및 데이터 정합성 검증 (Validator)
 * **설계서 vs 구현 소스코드 일치성**: C#/Java 코드를 정적으로 분석하고 AI Gap 분석을 실행하여, 명세서 대비 입출력 파라미터, 연산 분기, 트랜잭션 구현 불일치점(Gap Report)을 도출합니다.
 * **하이브리드 런타임 수집 & 1:1 대조**: 테스트 케이스 입력을 자동 설계하여 Legacy DB의 SP를 호출하고, 마이그레이션된 소스코드(C# DLL 리플렉션 로드 / Java 외부 프로세스 실행)를 안전하게 트랜잭션 격리(Rollback) 및 타임아웃 하에 구동한 뒤 결과셋 데이터를 1:1로 정밀 비교 대조(`*_CompareReport.md`)합니다.
-* **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Claude, Gemini, 로컬 Ollama를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
+* **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Anthropic, Google, 로컬 Ollama를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
 
 ## 📊 핵심 아키텍처 및 워크플로우 (Core Workflow)
 
@@ -121,7 +121,7 @@ SP-Reverse-Engineering/
     "MaxDependencyDepth": 3         // 재귀적 의존성 탐색의 최대 깊이 (기본값: 3)
   },
   "AiSettings": {
-    "Provider": "OpenAI",          // 활성화할 AI 제공자 ("OpenAI" | "Gemini" | "Claude" | "Ollama")
+    "Provider": "OpenAI",          // 활성화할 AI 제공자 ("OpenAI" | "Google" | "Anthropic" | "Ollama")
     "ModelName": "gpt-4o",         // 사용할 LLM 모델명
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
@@ -130,12 +130,12 @@ SP-Reverse-Engineering/
         "ApiKey": "",              // OpenAI API 키
         "Endpoint": "https://api.openai.com/v1"
       },
-      "Gemini": {
-        "ApiKey": "",              // Gemini API 키 (Google AI Studio)
+      "Google": {
+        "ApiKey": "",              // Google API 키 (Google AI Studio)
         "Endpoint": "https://generativelanguage.googleapis.com"
       },
-      "Claude": {
-        "ApiKey": "",              // Claude API 키 (Anthropic Console)
+      "Anthropic": {
+        "ApiKey": "",              // Anthropic API 키 (Anthropic Console)
         "Endpoint": "https://api.anthropic.com"
       },
       "Ollama": {
@@ -196,10 +196,10 @@ SP-Reverse-Engineering/
          "OpenAI": {
            "ApiKey": "여기에_새로_발급받은_API키_입력"
          },
-         "Gemini": {
+         "Google": {
            "ApiKey": "여기에_새로_발급받은_API키_입력"
          },
-         "Claude": {
+         "Anthropic": {
            "ApiKey": "여기에_새로_발급받은_API키_입력"
          }
        }
