@@ -1,6 +1,11 @@
 # SQL Server Stored Procedure Reverse Engineering Tool (SP Analyzer)
 
-본 프로젝트는 **SQL Server 2022**에 저장된 Stored Procedure(SP)를 분석하여, AI(OpenAI, Ollama 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
+[![.NET 10.0](https://img.shields.io/badge/.NET-10.0-blueviolet.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
+[![SQL Server 2022](https://img.shields.io/badge/SQL%20Server-2022-red.svg)](https://www.microsoft.com/sql-server)
+[![AI Providers](https://img.shields.io/badge/AI--Providers-OpenAI%20%7C%20Anthropic%20%7C%20Google-orange.svg)](#)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](#)
+
+본 프로젝트는 **SQL Server 2022**에 저장된 Stored Procedure(SP)를 심층 분석하여, AI(OpenAI, Ollama, Anthropic, Google Gemini 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
 
 ---
 
@@ -30,6 +35,8 @@
 * **하이브리드 런타임 수집 & 1:1 대조**: 테스트 케이스 입력을 자동 설계하여 Legacy DB의 SP를 호출하고, 마이그레이션된 소스코드(C# DLL 리플렉션 로드 / Java 외부 프로세스 실행)를 안전하게 트랜잭션 격리(Rollback) 및 타임아웃 하에 구동한 뒤 결과셋 데이터를 1:1로 정밀 비교 대조(`*_CompareReport.md`)합니다.
 * **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Anthropic, Google, 로컬 Ollama를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
 
+---
+
 ## 📊 핵심 아키텍처 및 워크플로우 (Core Workflow)
 
 ### 1. Stored Procedure 역공학 및 3단계 신뢰성 검증 파이프라인
@@ -57,7 +64,7 @@ graph TD
 ```
 
 ### 2. 소스코드 일치성 및 데이터 정합성 검증 흐름 (Validator)
-역공학된 명세서와 현대화 구현 소스코드의 일치성을 검사하고, 레거시 SP 실행 결과와 마이그레이션된 C#/Java 코드의 런타임 실행 결과를 1:1 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 도출합니다.
+역공학된 명세서와 현대화 구현 소스코드의 일치성을 검사하고, 레거시 DB SP 실행 결과와 마이그레이션된 C#/Java 코드의 런타임 실행 결과를 1:1 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 도출합니다.
 
 ```mermaid
 graph TD
@@ -79,6 +86,19 @@ graph TD
 
 ---
 
+## 🛠 요구 사항 및 환경 구성 (Prerequisites)
+
+도구를 빌드하고 실행하기 위해서는 아래의 최소 환경 구성이 필요합니다.
+
+*   **.NET SDK 10.0** 이상 설치
+*   **SQL Server 2022** 이상 (메타데이터 쿼리 및 SP 실행용)
+*   **Node.js & npm** (선택사항, Mermaid 다이어그램 이미지 컴파일 및 L1 정적 검사 수행 시 `mermaid-cli` 연동 필요)
+    ```bash
+    npm install -g @mermaid-js/mermaid-cli
+    ```
+
+---
+
 ## 📂 프로젝트 구조 (Project Structure)
 
 ```
@@ -87,24 +107,36 @@ SP-Reverse-Engineering/
 ├── SP-Reverse-Engineering.slnx      # .NET 솔루션 파일
 │
 ├── src/
-│   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
-│   │   ├── Models/                 # SpDefinition, DependencyInfo, ColumnInfo 데이터 모델
-│   │   └── Services/               # DB 조회, AI API 통신, 메타데이터 익스포트 및 코딩 엔진 인터페이스(ICodingEngine)
+│   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직 및 AI 커뮤니케이션
+│   │   ├── Models/                 # SpDefinition, DependencyInfo 데이터 모델
+│   │   └── Services/               # DB 조회, AI API 통신, 캐싱 및 코딩 엔진 연동
 │   │
 │   ├── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI (설계서 생성)
 │   │   ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
 │   │   ├── CodingEngineFactory.cs  # 설정 기반 외부 코딩 에이전트 생성 팩토리
-│   │   ├── appsettings.json        # DB/AI 연동 설정 파일
-│   │   └── instructions.md        # AI 분석 세부 지침 규칙 파일
+│   │   ├── appsettings.json        # 기본 설정 파일
+│   │   └── instructions.md         # AI 분석 세부 마크다운 지침 템플릿
 │   │
-│   ├── SpAnalyzer.Validator.Core/  # [클래스 라이브러리] 소스코드 정적/논리 검사, Legacy DB 런타임 데이터 수집 및 1:1 대조 정합성 검증 서비스
+│   ├── SpAnalyzer.Validator.Core/  # [클래스 라이브러리] 구현 정적/논리 검사 및 데이터 대조 서비스
+│   │   ├── Models/                 # ValidationResult, MockDataDto 모델
+│   │   └── Services/               # FileMapping, SandboxSeeding, DataComparison 서비스
 │   │
-│   └── SpAnalyzer.Validator.Cli/   # [콘솔 애플리케이션] Spectre.Console 기반 TUI 및 배치 모드 (소스코드 및 데이터 정합성 대조 검증기)
-│       ├── Program.cs              # 검증기 CLI 진입점 및 대화형 TUI / 배치 실행 흐름 제어
-│       └── appsettings.json        # 검증기용 기본 설정 파일
+│   └── SpAnalyzer.Validator.Cli/   # [콘솔 애플리케이션] TUI 및 배치 모드 (소스코드 및 데이터 정합성 대조 검증기)
+│       ├── Program.cs              # 검증기 CLI 진입점 및 흐름 제어
+│       └── appsettings.json        # 검증기용 설정 파일
 │
-└── tests/
-    └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트 (검증 테스트 포함)
+├── tests/
+│   └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트
+│
+└── output/                          # [산출물 폴더] 생성된 스펙, 계획서, 모의 데이터 및 정합성 리포트 저장소
+    ├── [SP이름]_Spec.md            # SP 개별 비즈니스 설계 명세서
+    ├── [SP이름]_MigrationInstructions.md # 개별 SP 마이그레이션 지시서 번들
+    ├── [JobName]_BatchMigrationPlan.md   # 통합 배치 전환 계획서
+    ├── [JobName]_MigrationInstructions.md # 통합 마이그레이션 지시서 번들
+    └── validation/                 # 소스코드 정적 검증 및 데이터 정합성 리포트 저장 폴더
+        ├── [SP이름]_CompareReport.md  # 1:1 데이터 정합성 비교 분석 보고서
+        └── mock/
+            └── [SP이름]_mock_data.json # 검증에 활용된 관계형 모의 데이터 캐시
 ```
 
 ---
@@ -208,9 +240,6 @@ SP-Reverse-Engineering/
    }
    ```
 
-### 3. `instructions.md` 설정
-분석된 결과물의 마크다운 포맷 규칙을 정의하는 가이드라인 파일입니다. `src/SpAnalyzer.Cli/instructions.md`에 작성된 텍스트 내용대로 AI가 리버스 엔지니어링 문서를 만듭니다.
-
 ---
 
 ## 🏃 실행 및 사용 방법 (Running the Tool)
@@ -223,7 +252,7 @@ dotnet run --project src/SpAnalyzer.Cli
 1. DB 계정(ID)과 패스워드를 입력하여 SQL Server에 로그인합니다.
 2. 로그인 성공 시 아래 **메인 메뉴**가 화면에 표시됩니다:
    * **`1. Stored Procedure 개별 분석 명세서 작성`**:
-     SP를 1개 선택하여, 해당 프로시저의 비즈니스 로직과 데이터 입출력 명세서(`*_Spec.md`)를 작성합니다. (이때 개별 SP 마이그레이션용 지시서 번들 `*_MigrationInstructions.md`도 자동 생성됩니다. 단, 실제 코드 자동 생성은 통합 배치 계획 수립 단계에서 진행됩니다.)
+     SP를 1개 선택하여, 해당 프로시저의 비즈니스 로직과 데이터 입출력 명세서(`*_Spec.md`)를 작성합니다. (이때 개별 SP 마이그레이션용 지시서 번들 `*_MigrationInstructions.md`도 자동 생성됩니다.)
    * **`2. 기분석 명세서 통합 배치 전환 계획 수립 (Multi-SP)`**:
      출력 디렉터리에 축적된 `*_Spec.md` 목록 중에서 통합할 대상들을 **원하는 순서대로 하나씩 선택**하여 배치 단계를 구성하고, Job 이름(예: `Daily_Order_Job`)을 입력하여 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`)를 작성합니다.
      * **이전 메뉴로 돌아가기**: 파일 선택 화면의 최상단에 제공되는 `[-- 메인 메뉴로 돌아가기 --]` 옵션을 선택하여 이전 메인 메뉴로 안전하게 되돌아올 수 있습니다.
@@ -242,7 +271,7 @@ dotnet run --project src/SpAnalyzer.Cli
   - `--engine <엔진명>`: 코딩 에이전트 종류를 명시적으로 지정합니다. (`claude` | `agy` | `codex`)
   
 - **배치 실행 예시**:
-  - **특정 SP 지정 분석 (비즈니스 명세서 및 개별 지시서 생성)**:
+  - **특정 SP 지정 분석**:
     ```bash
     dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder
     ```
@@ -250,17 +279,11 @@ dotnet run --project src/SpAnalyzer.Cli
     ```bash
     dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --all
     ```
-  - **환경 변수를 활용한 분석**:
-    ```bash
-    export SP_ANALYZER_CONN_STR="Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true"
-    dotnet run --project src/SpAnalyzer.Cli -- --all
-    ```
 
 > [!NOTE]
 > 배치 모드로 대량 실행 중 특정 SP에 대한 메타데이터 조회 실패 또는 AI 통신 에러가 발생하더라도, 해당 SP만 에러 로그가 출력되고 스킵(try-catch 격리)되며 전체 배치 작업은 중단 없이 다음 SP 분석을 계속 수행합니다.
 
 ### 3. 코드 일치성 검증 및 데이터 정합성 검증 (SpAnalyzer.Validator)
-
 역공학 마이그레이션이 끝난 뒤, 생성된 명세서와 실제 마이그레이션 소스코드가 동일하게 구현되었는지 검증하고, 레거시 DB와 실제 실행 결과 정합성을 대조할 때 실행합니다.
 
 *   **대화형 TUI 모드 실행**:
@@ -273,9 +296,8 @@ dotnet run --project src/SpAnalyzer.Cli
     *   **4. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)**: 생성된 테스트 입력값 JSON을 기반으로 실제 Legacy DB에 접근해 SP를 호출하고, 다중 ResultSet 데이터를 JSON(`*_legacy_results.json`)으로 덤프 수집합니다. (모의 데이터가 있을 경우 자동 Seeding 및 Clean-up 실행)
     *   **5. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)**: 마이그레이션된 C#(DLL 리플렉션 로드) 또는 Java(외부 JAR/클래스 프로세스 실행) 코드를 실제로 구동하여 실행 결과 JSON(`*_target_results.json`) 데이터를 수집합니다. (모의 데이터 자동 Seeding/Clean-up 및 트랜잭션 자동 롤백 적용)
     *   **6. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
-    *   **기타 기능**: 디렉토리 경로 입력 창에서 `Tab` 키로 로컬 폴더 자동완성이 가능하며, 부재 경로 입력 시 동적 복구 프롬프트를 띄웁니다.
 
-*   **배치 검증 자동화 모드 실행 (CI/CD 결합용 무인 모드)**:
+*   **배치 검증 자동화 모드 실행 (CI/CD 무인 모드)**:
     ```bash
     # 소스코드 일치성 자동 검증 (L3 인간 개입 생략)
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src/Migration" --batch
@@ -295,13 +317,20 @@ dotnet run --project src/SpAnalyzer.Cli
     # 레거시 vs 타겟 1:1 데이터 정합성 대조 배치 모드
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --compare-data --batch
     ```
-    *   `--spec`: 마이그레이션 설계서 및 결과 파일들이 저장될 폴더를 지정합니다.
-    *   `--code`: 검증할 소스 코드가 저장된 폴더를 지정합니다.
-    *   `--gen-inputs`: 테스트 케이스 입력 데이터 설계 작업을 지시합니다.
-    *   `--gen-mock-data`: 의존 스키마를 만족하는 가상 목업 데이터 생성 작업을 지시합니다.
-    *   `--exec-legacy`: Legacy DB를 대상으로 데이터 수집 처리를 지시합니다 (`--conn` 연결 문자열 동시 제공 필요).
-    *   `--compare-data`: 수집된 레거시 결과와 신규 타겟 결과를 대조 분석하여 보고서를 작성합니다.
-    *   `--batch`: 인간 개입(L3) 확인을 생략하고 자동 검증 및 결과 Export만 즉시 수행하고 성공 종료합니다.
+
+---
+
+## 🛠 트러블슈팅 및 자주 묻는 질문 (Troubleshooting)
+
+> [!TIP]
+> **Q. Mermaid 다이어그램 이미지 컴파일(Level 1 검증) 중에 오류가 납니다.**
+> * **원인**: 시스템에 Node.js 전역 패키지인 `mermaid-cli (mmdc)`가 설치되어 있지 않거나 경로에 등록되지 않았기 때문입니다.
+> * **해결**: `npm install -g @mermaid-js/mermaid-cli` 명령을 통해 설치를 완료하거나, `appsettings.json` 내 `"UseMermaidCli": false`로 설정을 변경하여 텍스트 정적 린팅만 수행하도록 설정을 완화할 수 있습니다.
+
+> [!WARNING]
+> **Q. Stored Procedure 실행 결과 수집 단계에서 데이터베이스 연결 예외가 발생하며 수집이 실패합니다.**
+> * **원인**: 일시적인 DB 네트워크 차단, 잘못된 연결 문자열 또는 계정 권한 부족 등이 원인입니다.
+> * **해결**: 프로그램은 **Soft Fail**을 채택하여 DB 실행 오류가 나더라도 크래시되지 않고 결과 JSON에 `FAIL` 상태를 기록하여 리턴합니다. 연결 대상 데이터베이스가 샌드박스 또는 적절한 테스트 DB에 접근할 수 있도록 `--conn` 파라미터나 `appsettings.local.json` 내 정보를 점검해 주십시오.
 
 ---
 
