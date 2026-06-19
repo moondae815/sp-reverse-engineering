@@ -75,50 +75,58 @@
 4.  **DDL 해시 기반 로컬 증분 캐싱 예외를 격리하십시오.**
     *   분석 대상 SP 정의 문자열과 모든 의존성 스펙 DDL 문자열을 SHA-256 해시 처리하고 키로 정렬하여 Composite Signature Hash를 일관되게 생성해야 합니다.
     *   캐시 인덱스 `.sp_cache_index.json` 파일을 조작하거나 처리할 때의 예외는 반드시 try-catch로 격리(Soft Fail)하여, 캐싱 모듈의 에러로 인해 전체 마이그레이션 파이프라인 분석이 중단되지 않도록 방지해 주십시오.
+5.  **동적 SQL 하이브리드 의존성 탐색 및 예외 격리를 수행하십시오.**
+    *   Stored Procedure DDL 내에서 동적 SQL 실행 패턴(`EXEC`, `sp_executesql`)이 탐색되면, 정적 의존성 수집의 한계를 극복하기 위해 Regex 텍스트 추출과 `sys.objects` 대조를 결합한 하이브리드 기법을 사용하십시오.
+    *   동적 SQL 분석 과정의 쿼리 수행 또는 권한 오류 시 전체 프로세스가 중단되지 않도록 Soft Fail 정책을 적용해 예외를 격리하십시오.
 
 ### 🎨 범주 3. 인터페이스 및 Spectre.Console 예외 회피 (UI/UX)
-5.  **Spectre.Console 렌더링 충돌 예방을 위해 Escape 처리를 준수하십시오.**
+6.  **Spectre.Console 렌더링 충돌 예방을 위해 Escape 처리를 준수하십시오.**
     *   렌더링할 텍스트에 대괄호(`[...]`)가 포함되어 있으면 Spectre.Console은 이를 마크업 태그로 오인하여 `System.InvalidOperationException`을 던집니다.
     *   DB 메타데이터나 AI 분석 원문, 파일 경로 등 대괄호가 포함될 여지가 있는 모든 정보를 TUI에 출력할 때는 반드시 **`Markup.Escape()`** 메소드를 호출하여 출력해야 합니다.
     *   예: `AnsiConsole.MarkupLine($"[green]Analyzed:[/] {Markup.Escape(spName)}")`
-6.  **TUI 디렉토리 입력 피드백 및 이스케이프를 준수하십시오.**
+7.  **TUI 디렉토리 입력 피드백 및 이스케이프를 준수하십시오.**
     *   프로그램 구동 시 필수 디렉토리 경로가 존재하지 않는다면 무조건 종료(Crash)하기보다, TUI 상에서 사용자에게 올바른 경로를 입력하도록 재요청하는 프롬프트를 반드시 띄우십시오.
     *   입력을 유도하는 프롬프트(Spectre.Console `TextPrompt`) 작성 시, 디렉토리 내 슬래시('/') 문자가 선택지 구분선으로 렌더링되어 지저분해지는 현상을 막기 위해 반드시 **`.ShowChoices(false)`**를 결합하여 화면 노출을 방지하십시오.
     *   경로 계산의 기준점은 항상 현재 실행 중인 쉘 경로인 **`Directory.GetCurrentDirectory()`**로 설정하여 사용자가 `../../` 없이 직관적인 경로를 사용하게 하십시오.
-7.  **TUI 로그인 연결 정보 실시간 변경을 지원하십시오.**
+8.  **TUI 로그인 연결 정보 실시간 변경을 지원하십시오.**
     *   로그인 시 로컬 세션 파일(`.session.json`)로부터 정보를 불러온 경우에도, 사용자가 원할 경우 appsettings.json을 수정하지 않고 즉석에서 서버 주소 및 데이터베이스 이름을 수정하여 다른 대상 데이터베이스에 접속할 수 있도록 입력 기회를 제공해야 합니다.
-8.  **Multi-SP 통합 계획 순서 보장 (물리 선택 순서 보장) 루프를 유지하십시오.**
+9.  **Multi-SP 통합 계획 순서 보장 (물리 선택 순서 보장) 루프를 유지하십시오.**
     *   배치 마이그레이션 통합 전환 계획서 수립 시, 계획서 내 배치 스텝의 순서는 사용자가 의도하여 선택한 순서대로 기입되어야 합니다.
     *   이를 달성하기 위해 한 번에 여러 개를 체크하는 다중 선택 대신, 사용자가 원하는 순서대로 하나씩 추가하고 완료 키를 눌러 종료하는 순차 선택 루프 방식으로 수집 흐름을 통제해야 합니다.
 
 ### ⚙️ 범주 4. 검증 오케스트레이션 및 파이프라인 흐름 (Verification Workflow)
-9.  **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
+10. **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
     *   **L1 (정적 검증)**: [MechanicalValidator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 구조적 필수 섹션 헤더 검증과 Mermaid 다이어그램 린팅을 엄격히 수행하십시오. L1 검증 실패 시 즉시 보완 프롬프트 제안을 리턴합니다.
     *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
-    *   **L3 (인간 승인)**: 대화형 CLI 모드에서는 [IVerificationUserInteraction.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IVerificationUserInteraction.cs)의 인터페이스 지침에 맞추어 미리보기를 제공하고 승인 혹은 추가 피드백 입력을 대기시킵니다. 무인 배치 모드에서는 자동으로 승인된 것으로 처리하도록 설계해야 합니다.
-10. **신규 AI 공급자 추가 가이드를 따르십시오.**
+11. **L2 자가 교정 시 이전 피드백 주입 및 무인 배치 우회를 적용하십시오.**
+    *   L2 단계(AI 교차 검토)에서 자가 보완 루프(`Self-Correction`)가 구동될 때, 이전 시도의 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적으로 주입하여 점진적 보완 정확성을 극대화해야 합니다.
+    *   무인 배치 모드(`isBatchMode: true`) 환경에서는 통합 배치 전환 계획서 검증 시 L3 단계(사용자 승인) 프롬프트 대기 단계를 생략하고 자동으로 우회 승인하도록 흐름을 통제하십시오.
+12. **신규 AI 공급자 추가 가이드를 따르십시오.**
     *   새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
 
 ### 🔒 범주 5. 타겟 런타임 격리 및 리소스 정리 (Lifecycle & Sandbox)
-11. **타겟 러너 트랜잭션 격리 및 프로세스 타임아웃을 적용하십시오.**
+13. **타겟 러너 트랜잭션 격리 및 프로세스 타임아웃을 적용하십시오.**
     *   C# 타겟 리플렉션 러너 호출 시 생성되는 `DbTransaction`은 비즈니스 로직 구동 완료 성공/실패 여부를 막론하고 항상 **`Rollback()`** 처리하여 Sandbox DB 상태 변경을 완벽히 격리해야 합니다.
     *   Java 외부 프로세스 타겟 러너 구동 시에는 30초의 타임아웃 제한을 명확히 설정하여 Java 프로그램 오동작 시 전체 검증 CLI가 무한 정지하는 것을 막아야 합니다.
-12. **모의 데이터(Mock Data) 자동 생성 및 적재/소거 수명주기를 준수하십시오.**
+14. **모의 데이터(Mock Data) 자동 생성 및 적재/소거 수명주기를 준수하십시오.**
     *   물리적 FK가 존재하지 않는 레거시 환경에 대비해, AI 분석을 기반으로 관계 데이터 시드(Shared Seed)를 맞춰 생성한 `output/validation/mock/*_mock_data.json` 파일을 활용해야 합니다.
     *   검증기 실행 시 반드시 `SandboxSeedingService`를 이용해 DB에 데이터를 선행 적재(Seed)하고, 실행이 완료되면 트랜잭션 롤백 또는 Truncate/Delete 스크립트를 통해 데이터를 안전하게 원복(Clean-up)하여 DB 상태 격리를 준수하십시오.
 
 ### 🔌 범주 6. 외부 코딩 에이전트 및 프로세스 제어 (External Agent & Codegen)
-13. **코딩 에이전트 가이드라인 및 번들 생성 규칙을 따르십시오.**
+15. **코딩 에이전트 가이드라인 및 번들 생성 규칙을 따르십시오.**
     *   `ExportMigrationInstructionsAsync` 및 `ExportConsolidatedMigrationInstructionsAsync`는 비즈니스 설계서, 통합 배치 전환 계획서, 원본 SP DDL 및 모든 의존성 스펙들을 코딩 에이전트가 완벽히 이해할 수 있도록 마크다운으로 구조화하여 하나로 묶어줘야 합니다.
     *   지시서 하단에 사용자가 복사해서 외부 코딩 에이전트(Claude Code, agy, codex 등)에 즉시 입력할 수 있는 안내 프롬프트를 반드시 명시적으로 포함해야 합니다.
     *   파일 작성 전에 대상 출력 디렉터리(`baseOutputDir`)가 실제 존재하는지 확인하고, 존재하지 않는 경우 자동으로 폴더를 선행 생성하여 디바이스 쓰기 예외를 사전에 격리해 주어야 합니다.
-14. **외부 코딩 에이전트 CLI 프로세스 기동 규칙을 준수하십시오.**
+16. **외부 코딩 에이전트 CLI 프로세스 기동 규칙을 준수하십시오.**
     *   외부 에이전트(Claude Code, agy, codex 등) 기동 시, 사용자가 직접 자연어 질의응답 및 승인 등의 흐름을 진행할 수 있도록 **부모 콘솔의 입출력 스트림을 직접 상속 공유(`RedirectStandardInput/Output = false`)**하여 대화형 세션을 원활히 지원해야 합니다.
     *   비동기 작업 취소(`CancellationToken`) 수신 시, 구동 중인 외부 코딩 에이전트 프로세스가 백그라운드에서 좀비 프로세스로 남지 않도록 **강제 종료(`process.Kill(true)`)** 처리를 완벽히 수행해야 합니다.
     *   외부 코딩 에이전트(Claude Code 등) 호출 시, 띄어쓰기가 포함된 프롬프트 구문 전체가 단일 쿼리 인자로 에이전트에 안전하게 인식될 수 있도록 **인자 템플릿(Arguments) 전체를 쌍따옴표(`\"...\"`)로 감싸서 구성**해야 합니다. (예: `"Arguments": "\"write code using {instructions}\""` 또는 `"Arguments": "\"{instructions}\""`)
-15. **소스 코드 자동 생성(Codegen)의 실행 시점을 제약하십시오.**
+17. **소스 코드 자동 생성(Codegen)의 실행 시점을 제약하십시오.**
     *   소스 코드 생성기(Codegen)는 개별 SP 분석 완료 직후에는 기동되지 않도록 제한해야 합니다.
     *   코드 자동 생성(Codegen) 브릿지는 반드시 복수 개의 SP가 연계된 **통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 수립 및 최종 승인 완료 시점**에, 병합된 통합 마이그레이션 지시서(`{JobName}_MigrationInstructions.md`)를 기반으로 에이전트(Claude Code 등)를 기동시켜야 합니다.
+18. **CLI 무인 배치 통합 계획 수립 및 자동 코딩 에이전트 기동 규칙을 적용하십시오.**
+    *   CLI 배치 모드 실행 시 `--job-name` 인자가 전달되면, 개별 명세서 작성 후 즉시 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 생성, 번들링(`{JobName}_MigrationInstructions.md` 출력), 그리고 연동된 외부 코딩 에이전트(Claude Code 등) 호출까지 사용자의 키 입력 없이 완전 무인으로 일괄 진행되어야 합니다.
+
 
 ---
 
