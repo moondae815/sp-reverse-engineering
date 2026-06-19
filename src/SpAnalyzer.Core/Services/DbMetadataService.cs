@@ -116,6 +116,9 @@ namespace SpAnalyzer.Core.Services
 
             // 2. 중복 방지 방문 해시셋 및 재귀 리스트 생성
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
+
+            // 2.5 메인 SP 내 동적 SQL 의존성 선행 분석
+            await ResolveDynamicSqlDependenciesAsync(connectionString, spDef.DdlText, 1, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
             
             // 3. 재귀 수집 시작
             await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
@@ -178,6 +181,10 @@ namespace SpAnalyzer.Core.Services
                     {
                         depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
                         
+                        // 참조 DDL 내 동적 SQL 의존성 분석 수행
+                        await ResolveDynamicSqlDependenciesAsync(
+                            connectionString, depInfo.ReferencedDdlText, currentDepth, visited, dependencies, warnings, cancellationToken);
+
                         // 하위 재귀 수집 호출
                         await GatherDependenciesRecursiveAsync(
                             connectionString, rawDep.Schema, rawDep.Name, 
@@ -289,6 +296,124 @@ namespace SpAnalyzer.Core.Services
                 // 권한 오류 등 무시
             }
             return string.Empty;
+        }
+
+        // 동적 SQL DDL 텍스트 분석 및 누락된 의존 테이블 수집 헬퍼
+        private async Task ResolveDynamicSqlDependenciesAsync(
+            string connectionString, string ddlText, int currentDepth,
+            HashSet<string> visited, List<DependencyInfo> dependencies,
+            List<string> warnings, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(ddlText)) return;
+
+            // 동적 SQL 감지 여부 파악 (EXEC, EXECUTE, sp_executesql)
+            bool hasDynamicSql = ddlText.Contains("EXEC", StringComparison.OrdinalIgnoreCase) || 
+                                 ddlText.Contains("EXECUTE", StringComparison.OrdinalIgnoreCase) || 
+                                 ddlText.Contains("sp_executesql", StringComparison.OrdinalIgnoreCase);
+
+            if (!hasDynamicSql) return;
+
+            var tablePatterns = new[]
+            {
+                @"FROM\s+([a-zA-Z0-9_\.\[\]]+)",
+                @"JOIN\s+([a-zA-Z0-9_\.\[\]]+)",
+                @"INSERT\s+(?:INTO\s+)?([a-zA-Z0-9_\.\[\]]+)",
+                @"UPDATE\s+([a-zA-Z0-9_\.\[\]]+)",
+                @"MERGE\s+(?:INTO\s+)?([a-zA-Z0-9_\.\[\]]+)"
+            };
+
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var pattern in tablePatterns)
+            {
+                var matches = System.Text.RegularExpressions.Regex.Matches(ddlText, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                foreach (System.Text.RegularExpressions.Match m in matches)
+                {
+                    if (m.Groups.Count > 1 && !string.IsNullOrEmpty(m.Groups[1].Value))
+                    {
+                        var rawName = m.Groups[1].Value.Trim().Replace("[", "").Replace("]", "");
+                        if (!string.IsNullOrEmpty(rawName) && 
+                            !rawName.Equals("SELECT", StringComparison.OrdinalIgnoreCase) && 
+                            !rawName.Equals("INSERT", StringComparison.OrdinalIgnoreCase) && 
+                            !rawName.Equals("UPDATE", StringComparison.OrdinalIgnoreCase))
+                        {
+                            candidates.Add(rawName);
+                        }
+                    }
+                }
+            }
+
+            foreach (var candidate in candidates)
+            {
+                var schema = "dbo";
+                var name = candidate;
+                if (candidate.Contains('.'))
+                {
+                    var parts = candidate.Split('.', 2);
+                    schema = parts[0];
+                    name = parts[1];
+                }
+
+                var fullName = $"{schema}.{name}";
+                if (visited.Contains(fullName)) continue;
+
+                // 데이터베이스 실제 개체 여부 및 타입 조회
+                string? objectType = null;
+                var checkQuery = @"
+                    SELECT type_desc 
+                    FROM sys.objects 
+                    WHERE object_id = OBJECT_ID(@FullName);";
+
+                try
+                {
+                    using (var conn = new SqlConnection(connectionString))
+                    {
+                        await conn.OpenAsync(cancellationToken);
+                        using (var cmd = new SqlCommand(checkQuery, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@FullName", fullName);
+                            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                            if (result != null && result != DBNull.Value)
+                            {
+                                objectType = result.ToString();
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 조회 에러 시 소프트 페일로 스킵
+                }
+
+                if (objectType != null && (objectType.Contains("TABLE") || objectType.Contains("VIEW")))
+                {
+                    visited.Add(fullName);
+
+                    var depInfo = new DependencyInfo
+                    {
+                        Schema = schema,
+                        Name = name,
+                        Type = objectType,
+                        DiscoveryDepth = currentDepth,
+                        Description = "Dynamic SQL Analysis"
+                    };
+
+                    try
+                    {
+                        depInfo.Columns = await GetTableColumnsAsync(connectionString, schema, name, cancellationToken);
+                        depInfo.Description = await GetTableDescriptionAsync(connectionString, schema, name, cancellationToken);
+                        if (string.IsNullOrEmpty(depInfo.Description))
+                        {
+                            depInfo.Description = "Dynamic SQL에 의해 동적 감지된 테이블";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        warnings.Add($"[Dynamic SQL: {fullName}] 테이블 스키마 수집 실패: {ex.Message}");
+                    }
+
+                    dependencies.Add(depInfo);
+                }
+            }
         }
     }
 }
