@@ -152,5 +152,72 @@ namespace SpAnalyzer.Validator.Core.Services
                 return $"{{\"ProcedureName\":\"{procedureName}\", \"TestCases\":[], \"Error\":\"AI를 통한 테스트 파라미터 생성 실패: {ex.Message}\"}}";
             }
         }
+
+        public async Task<string> GenerateMockTableDataAsync(string specContent, string procedureDdl, string dependenciesJson, CancellationToken cancellationToken = default)
+        {
+            var systemPrompt = @"당신은 데이터베이스 Stored Procedure 마이그레이션 후 데이터 정합성을 검증하기 위해 고품질의 모의 테이블 데이터(Mock Data)를 기획하고 설계하는 전문 QA 데이터 엔지니어입니다.
+
+제공되는 SP DDL, 의존하는 테이블들의 컬럼 스펙(및 DDL), 그리고 비즈니스 기능 명세서(*_Spec.md)를 정밀 분석하여 각 테이블에 들어갈 가상 행(Row) 데이터를 JSON 형식으로 설계해 주십시오.
+
+다음 설계 규칙을 반드시 엄격하게 준수하십시오:
+1. [논리 조인 정합성 (가장 중요)]: 
+   SP 소스코드 내에서 두 테이블이 JOIN되거나 연관 조건(예: O.CustomerId = C.CustomerId)을 가질 경우, 생성되는 모의 데이터에서도 해당 조인 컬럼들의 값이 서로 완벽히 일치해야 합니다. (예: Customers의 CustomerId에 'ALFKI'가 있다면, Orders의 CustomerId에도 'ALFKI'를 매칭하여 적재해야 데이터가 정상적으로 조인 조회됩니다.)
+2. [비즈니스 코드 및 날짜 반영]: 
+   명세서 및 DDL에 언급된 주요 하드코딩 코드값(예: STATUS = 'A01', TYPE = '2')이나 일자 범위, 정산 공식 등을 만족하는 적합한 값을 적재하십시오.
+3. [제약조건 및 타입 준수]: 
+   각 컬럼의 데이터 타입(정수, 실수, 날짜/시간, 문자열)과 Null 허용 여부를 준수하십시오. 날짜는 ISO 8601 포맷(예: '2026-06-19T11:00:00')을 준수해야 합니다.
+4. [데이터 볼륨]:
+   의존하는 각 테이블당 의미 있는 비즈니스 케이스를 표현할 수 있도록 최소 5개 ~ 최대 20개의 가상 행(Row) 데이터를 생성해 주십시오.
+
+반드시 다음 JSON 형식으로만 응답해야 합니다. 서론, 결론, 마크다운 코드 블록 기호(```json) 등 다른 텍스트는 절대 포함하지 마십시오.
+
+{
+  ""Tables"": [
+    {
+      ""TableName"": ""[스키마].[테이블명]"",
+      ""Rows"": [
+        {
+          ""[컬럼명1]"": ""값1"",
+          ""[컬럼명2]"": 100,
+          ""[컬럼명3]"": ""2026-06-19T11:00:00""
+        }
+      ]
+    }
+  ]
+}";
+
+            var userPrompt = $@"
+[비즈니스 기능 명세서]
+{specContent}
+
+[대상 프로시저 DDL]
+{procedureDdl}
+
+[의존 테이블 정보 및 컬럼 구조]
+{dependenciesJson}
+
+위 정보를 바탕으로 테이블들의 논리 조인 정합성을 맞춘 가상 모의 데이터 JSON을 설계해 주세요.";
+
+            try
+            {
+                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, cancellationToken);
+                
+                // markdown json 블록 정제
+                var cleanJson = response.Trim();
+                if (cleanJson.StartsWith("```"))
+                {
+                    var match = Regex.Match(cleanJson, @"```(?:json)?\s*([\s\S]+?)\s*```");
+                    if (match.Success)
+                    {
+                        cleanJson = match.Groups[1].Value.Trim();
+                    }
+                }
+                return cleanJson;
+            }
+            catch (Exception ex)
+            {
+                return $"{{\"Tables\":[], \"Error\":\"AI를 통한 모의 데이터 생성 실패: {ex.Message}\"}}";
+            }
+        }
     }
 }

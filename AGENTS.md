@@ -51,10 +51,12 @@
   - [ValidationResult.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/ValidationResult.cs): 검증 대상의 L1/L2/L3 전체 상태를 관리하는 데이터 모델.
   - [GapReport.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/GapReport.cs): AI가 분석한 로직, 입출력, 예외 처리의 불일치(Gap) 명세 및 해결 가이드 모델.
   - [RunnerDtos.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/RunnerDtos.cs): 레거시 및 타겟 런타임 입출력 수집 데이터 구조 정의.
+  - [MockDataDto.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Models/MockDataDto.cs): 기획된 관계형 모의 데이터를 로컬 및 메모리에 들고 있기 위한 데이터 모델.
 - **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services), [Plugins](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Plugins))**
   - [FileMappingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스. 상대경로 중복 접두사 자동 보정 기능 포함.
-  - [ValidatorAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
+  - [ValidatorAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스. 추가로 테스트 파라미터 설계 및 모의 데이터 생성(`GenerateMockTableDataAsync`) 기능 탑재.
   - [SpExecutionService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/SpExecutionService.cs): SQL Server DB에서 Stored Procedure를 동적으로 실행하고 다중 ResultSet 결과를 JSON으로 덤프하는 서비스.
+  - [SandboxSeedingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/SandboxSeedingService.cs): 모의 데이터를 샌드박스 DB에 적재(Insert)하고 실행 후 정리(Delete)하는 수명주기 서비스.
   - [CSharpReflectionRunner.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/CSharpReflectionRunner.cs): 마이그레이션된 C# DLL 리플렉션 로드 및 DbTransaction 롤백 자동 격리 실행기.
   - [JavaProcessRunner.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/JavaProcessRunner.cs): Java 컴파일 JAR/클래스를 외부 프로세스로 기동하여 stdin/stdout 통신을 수행하는 실행기.
   - [DataComparisonService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/SpAnalyzer.Validator.Core/Services/DataComparisonService.cs): 레거시 vs 타겟 JSON 데이터의 행 수, 컬럼 타입, 개별 값을 1:1 대조하여 마크다운 리포트 생성하는 서비스.
@@ -152,6 +154,10 @@ graph TD
 - 소스 코드 생성기(Codegen)는 개별 SP 분석 완료 직후에는 기동되지 않도록 제한해야 합니다.
 - 코드 자동 생성(Codegen) 브릿지는 반드시 복수 개의 SP가 연계된 **통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 수립 및 최종 승인 완료 시점**에, 병합된 통합 마이그레이션 지시서(`{JobName}_MigrationInstructions.md`)를 기반으로 에이전트(Claude Code 등)를 기동시켜야 합니다.
 
+### 15. 모의 데이터(Mock Data) 자동 생성 및 적재/소거 수명주기 준수
+- 물리적 FK가 존재하지 않는 레거시 환경에 대비해, AI 분석을 기반으로 관계 데이터 시드(Shared Seed)를 맞춰 생성한 `output/validation/mock/*_mock_data.json` 파일을 활용해야 합니다.
+- 검증기 실행 시 반드시 `SandboxSeedingService`를 이용해 DB에 데이터를 선행 적재(Seed)하고, 실행이 완료되면 트랜잭션 롤백 또는 Truncate/Delete 스크립트를 통해 데이터를 안전하게 원복(Clean-up)하여 DB 상태 격리를 준수하십시오.
+
 ---
 
 ## 🏃 에이전트 로컬 작업 커맨드
@@ -175,6 +181,9 @@ dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code ".
 
 # 데이터 정합성 검증용 테스트 파라미터 설계 배치 모드 실행
 dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-inputs --batch
+
+# 검증용 모의 테이블 데이터(Mock Data) 자동 생성 배치 모드 실행
+dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-mock-data --batch
 
 # 레거시 DB 결과 데이터 수집 배치 모드 실행
 dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch

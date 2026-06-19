@@ -26,6 +26,7 @@
 
 ### 4. 코드 일치성 및 데이터 정합성 검증 (Validator)
 * **설계서 vs 구현 소스코드 일치성**: C#/Java 코드를 정적으로 분석하고 AI Gap 분석을 실행하여, 명세서 대비 입출력 파라미터, 연산 분기, 트랜잭션 구현 불일치점(Gap Report)을 도출합니다.
+* **관계지향 모의 데이터(Mock Data) 자동 생성 및 격리 적재**: 보안 규정으로 인해 운영 데이터를 활용할 수 없는 상황에 대처하여, AI가 테이블 DDL과 JOIN문을 파싱해 조인 컬럼 시드 값이 연결된 고품질 모의 데이터(`--gen-mock-data`)를 자동 생성하고, 테스트 실행 시 데이터베이스에 임시 Seeding 한 후 완료 시 자동 복구(Clean-up)합니다.
 * **하이브리드 런타임 수집 & 1:1 대조**: 테스트 케이스 입력을 자동 설계하여 Legacy DB의 SP를 호출하고, 마이그레이션된 소스코드(C# DLL 리플렉션 로드 / Java 외부 프로세스 실행)를 안전하게 트랜잭션 격리(Rollback) 및 타임아웃 하에 구동한 뒤 결과셋 데이터를 1:1로 정밀 비교 대조(`*_CompareReport.md`)합니다.
 * **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Anthropic, Google, 로컬 Ollama를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
 
@@ -268,9 +269,10 @@ dotnet run --project src/SpAnalyzer.Cli
     ```
     *   **1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)**: C#/Java 소스코드 정적 분석 및 AI 의미론적 Gap 분석, 인간 피드백 루프를 가동하여 검증합니다.
     *   **2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)**: 설계서(`*_Spec.md`)를 분석해 AI가 정상/경계값/오류 시나리오 테스트 파라미터 JSON(`*_test_inputs.json`)을 생성합니다.
-    *   **3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)**: 생성된 테스트 입력값 JSON을 기반으로 실제 Legacy DB에 접근해 SP를 호출하고, 다중 ResultSet 데이터를 JSON(`*_legacy_results.json`)으로 덤프 수집합니다.
-    *   **4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)**: 마이그레이션된 C#(DLL 리플렉션 로드) 또는 Java(외부 JAR/클래스 프로세스 실행) 코드를 실제로 구동하여 실행 결과 JSON(`*_target_results.json`) 데이터를 수집합니다. (트랜잭션 자동 롤백 적용)
-    *   **5. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
+    *   **3. 검증용 모의 테이블 데이터(Mock Data) 자동 생성 및 캐싱 (AI)**: 원본 메타데이터 및 설계서를 분석해 테이블 간의 조인 키 난수 시드가 일치하는 모의 데이터(`*_mock_data.json`)를 생성하여 캐싱합니다.
+    *   **4. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)**: 생성된 테스트 입력값 JSON을 기반으로 실제 Legacy DB에 접근해 SP를 호출하고, 다중 ResultSet 데이터를 JSON(`*_legacy_results.json`)으로 덤프 수집합니다. (모의 데이터가 있을 경우 자동 Seeding 및 Clean-up 실행)
+    *   **5. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)**: 마이그레이션된 C#(DLL 리플렉션 로드) 또는 Java(외부 JAR/클래스 프로세스 실행) 코드를 실제로 구동하여 실행 결과 JSON(`*_target_results.json`) 데이터를 수집합니다. (모의 데이터 자동 Seeding/Clean-up 및 트랜잭션 자동 롤백 적용)
+    *   **6. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)**: 수집된 레거시 결과와 신규 타겟 결과(`*_target_results.json`)를 상세 1:1 비교 대조하여 데이터 정합성 분석 보고서(`*_CompareReport.md`)를 작성합니다.
     *   **기타 기능**: 디렉토리 경로 입력 창에서 `Tab` 키로 로컬 폴더 자동완성이 가능하며, 부재 경로 입력 시 동적 복구 프롬프트를 띄웁니다.
 
 *   **배치 검증 자동화 모드 실행 (CI/CD 결합용 무인 모드)**:
@@ -280,6 +282,9 @@ dotnet run --project src/SpAnalyzer.Cli
 
     # 데이터 정합성 테스트 파라미터 설계 배치 모드
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-inputs --batch
+
+    # 검증용 모의 테이블 데이터(Mock Data) 자동 생성 배치 모드
+    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-mock-data --batch
 
     # 레거시 DB 실행 결과 덤프 배치 모드
     dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
@@ -293,6 +298,7 @@ dotnet run --project src/SpAnalyzer.Cli
     *   `--spec`: 마이그레이션 설계서 및 결과 파일들이 저장될 폴더를 지정합니다.
     *   `--code`: 검증할 소스 코드가 저장된 폴더를 지정합니다.
     *   `--gen-inputs`: 테스트 케이스 입력 데이터 설계 작업을 지시합니다.
+    *   `--gen-mock-data`: 의존 스키마를 만족하는 가상 목업 데이터 생성 작업을 지시합니다.
     *   `--exec-legacy`: Legacy DB를 대상으로 데이터 수집 처리를 지시합니다 (`--conn` 연결 문자열 동시 제공 필요).
     *   `--compare-data`: 수집된 레거시 결과와 신규 타겟 결과를 대조 분석하여 보고서를 작성합니다.
     *   `--batch`: 인간 개입(L3) 확인을 생략하고 자동 검증 및 결과 Export만 즉시 수행하고 성공 종료합니다.

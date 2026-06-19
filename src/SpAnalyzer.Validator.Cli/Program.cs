@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +20,7 @@ namespace SpAnalyzer.Validator.Cli
         public string? TargetLanguage { get; set; }
         public bool IsBatchMode { get; set; }
         public bool GenInputs { get; set; }
+        public bool GenMockData { get; set; }
         public bool ExecLegacy { get; set; }
         public bool ExecTarget { get; set; }
         public bool CompareData { get; set; }
@@ -57,6 +59,10 @@ namespace SpAnalyzer.Validator.Cli
                 else if (arg.Equals("--gen-inputs", StringComparison.OrdinalIgnoreCase))
                 {
                     cliArgs.GenInputs = true;
+                }
+                else if (arg.Equals("--gen-mock-data", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliArgs.GenMockData = true;
                 }
                 else if (arg.Equals("--exec-legacy", StringComparison.OrdinalIgnoreCase))
                 {
@@ -186,6 +192,10 @@ namespace SpAnalyzer.Validator.Cli
                     {
                         await RunBatchGenInputs(validatorConfig, aiService, cliArgs.TargetSp, globalCts.Token);
                     }
+                    else if (cliArgs.GenMockData)
+                    {
+                        await RunBatchGenMockData(validatorConfig, aiService, cliArgs.TargetSp, globalCts.Token);
+                    }
                     else if (cliArgs.ExecLegacy)
                     {
                         var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? LoadConnectionStringFromConfig(configuration);
@@ -224,13 +234,14 @@ namespace SpAnalyzer.Validator.Cli
                             {
                                 "1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)",
                                 "2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)",
-                                "3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)",
-                                "4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)",
-                                "5. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)",
-                                "6. 종료 (Exit)"
+                                "3. 검증용 모의 테이블 데이터(Mock Data) 자동 생성 및 캐싱 (AI)",
+                                "4. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB)",
+                                "5. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System)",
+                                "6. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare)",
+                                "7. 종료 (Exit)"
                             }));
 
-                    if (choice.StartsWith("6")) break;
+                    if (choice.StartsWith("7")) break;
 
                     try
                     {
@@ -244,15 +255,19 @@ namespace SpAnalyzer.Validator.Cli
                         }
                         else if (choice.StartsWith("3"))
                         {
-                            var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? await PromptForConnectionStringAsync(configuration);
-                            await RunInteractiveExecLegacy(validatorConfig, execService, connStr, globalCts.Token);
+                            await RunInteractiveGenMockData(validatorConfig, aiService, globalCts.Token);
                         }
                         else if (choice.StartsWith("4"))
                         {
                             var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? await PromptForConnectionStringAsync(configuration);
-                            await RunInteractiveExecTarget(validatorConfig, connStr, globalCts.Token);
+                            await RunInteractiveExecLegacy(validatorConfig, execService, connStr, globalCts.Token);
                         }
                         else if (choice.StartsWith("5"))
+                        {
+                            var connStr = cliArgs.ConnectionString ?? Environment.GetEnvironmentVariable("SP_ANALYZER_CONN_STR") ?? await PromptForConnectionStringAsync(configuration);
+                            await RunInteractiveExecTarget(validatorConfig, connStr, globalCts.Token);
+                        }
+                        else if (choice.StartsWith("6"))
                         {
                             await RunInteractiveCompareData(validatorConfig, compareService);
                         }
@@ -598,18 +613,60 @@ namespace SpAnalyzer.Validator.Cli
             var fullPath = Path.Combine(config.OutputDirectory, selectedFile);
             var spName = selectedFile.Replace("_test_inputs.json", "");
 
-            await AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .StartAsync($"Legacy DB에서 '{spName}' 프로시저를 테스트 입력값으로 실행 중...", async ctx =>
-                {
-                    var testInputsJson = await File.ReadAllTextAsync(fullPath, cancellationToken);
-                    var rawResultsJson = await execService.ExecuteStoredProcedureAsync(connectionString, testInputsJson, cancellationToken);
+            var mockPath = Path.Combine(config.OutputDirectory, "mock", $"{spName}_mock_data.json");
+            MockDataDto? mockData = null;
+            var seedingService = new SandboxSeedingService();
 
-                    var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_legacy_results.json");
-                    await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
-                    
-                    AnsiConsole.MarkupLine($"[green]✔ Legacy 결과 수집 완료:[/] {Markup.Escape(outputPath)}");
-                });
+            if (File.Exists(mockPath))
+            {
+                try
+                {
+                    var mockJson = await File.ReadAllTextAsync(mockPath, cancellationToken);
+                    mockData = JsonSerializer.Deserialize<MockDataDto>(mockJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (mockData != null)
+                    {
+                        AnsiConsole.MarkupLine("[grey]모의 테이블 데이터(Mock Data)를 데이터베이스에 적재 중...[/]");
+                        await seedingService.SeedMockDataAsync(connectionString, mockData);
+                        AnsiConsole.MarkupLine("[green]✔ 모의 데이터 적재 완료.[/]");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠️ 경고: 모의 데이터 적재 실패 (테스트가 실패하거나 데이터가 부정합할 수 있음): {Markup.Escape(ex.Message)}[/]");
+                }
+            }
+
+            try
+            {
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync($"Legacy DB에서 '{spName}' 프로시저를 테스트 입력값으로 실행 중...", async ctx =>
+                    {
+                        var testInputsJson = await File.ReadAllTextAsync(fullPath, cancellationToken);
+                        var rawResultsJson = await execService.ExecuteStoredProcedureAsync(connectionString, testInputsJson, cancellationToken);
+
+                        var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_legacy_results.json");
+                        await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
+                        
+                        AnsiConsole.MarkupLine($"[green]✔ Legacy 결과 수집 완료:[/] {Markup.Escape(outputPath)}");
+                    });
+            }
+            finally
+            {
+                if (mockData != null)
+                {
+                    try
+                    {
+                        AnsiConsole.MarkupLine("[grey]모의 테이블 데이터(Mock Data)를 데이터베이스에서 제거 중...[/]");
+                        await seedingService.CleanupMockDataAsync(connectionString, mockData);
+                        AnsiConsole.MarkupLine("[green]✔ 모의 데이터 제거 완료.[/]");
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]❌ 오류: 모의 데이터 제거 실패 (수동 정리가 필요할 수 있음): {Markup.Escape(ex.Message)}[/]");
+                    }
+                }
+            }
         }
 
         // --- Batch Exec Legacy ---
@@ -642,6 +699,28 @@ namespace SpAnalyzer.Validator.Cli
                 var spName = Path.GetFileName(file).Replace("_test_inputs.json", "");
                 AnsiConsole.MarkupLine($"Legacy 실행 중: {Markup.Escape(spName)}");
 
+                var mockPath = Path.Combine(config.OutputDirectory, "mock", $"{spName}_mock_data.json");
+                MockDataDto? mockData = null;
+                var seedingService = new SandboxSeedingService();
+
+                if (File.Exists(mockPath))
+                {
+                    try
+                    {
+                        var mockJson = await File.ReadAllTextAsync(mockPath, cancellationToken);
+                        mockData = JsonSerializer.Deserialize<MockDataDto>(mockJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (mockData != null)
+                        {
+                            await seedingService.SeedMockDataAsync(connectionString, mockData);
+                            AnsiConsole.MarkupLine("[green]✔ 모의 데이터 적재 완료.[/]");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]⚠️ 경고: 모의 데이터 적재 실패 ({spName}): {Markup.Escape(ex.Message)}[/]");
+                    }
+                }
+
                 try
                 {
                     var testInputsJson = await File.ReadAllTextAsync(file, cancellationToken);
@@ -654,6 +733,21 @@ namespace SpAnalyzer.Validator.Cli
                 catch (Exception ex)
                 {
                     AnsiConsole.MarkupLine($"[red]❌ 오류 ({Markup.Escape(spName)}): {Markup.Escape(ex.Message)}[/]");
+                }
+                finally
+                {
+                    if (mockData != null)
+                    {
+                        try
+                        {
+                            await seedingService.CleanupMockDataAsync(connectionString, mockData);
+                            AnsiConsole.MarkupLine("[green]✔ 모의 데이터 제거 완료.[/]");
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine($"[red]❌ 오류 ({spName}): 모의 데이터 제거 실패: {Markup.Escape(ex.Message)}[/]");
+                        }
+                    }
                 }
             }
         }
@@ -844,18 +938,60 @@ namespace SpAnalyzer.Validator.Cli
                 ? new CSharpReflectionRunner() 
                 : (IRuntimeRunner)new JavaProcessRunner();
 
-            await AnsiConsole.Status()
-                .Spinner(Spinner.Known.Dots)
-                .StartAsync($"신규 {runner.SupportedLanguage} 타겟 런타임에서 '{spName}' 코드를 실행 중...", async ctx =>
-                {
-                    var testInputsJson = await File.ReadAllTextAsync(fullPath, cancellationToken);
-                    var rawResultsJson = await runner.ExecuteAsync(matchedPair.SourceCodePath, testInputsJson, connectionString, cancellationToken);
+            var mockPath = Path.Combine(config.OutputDirectory, "mock", $"{spName}_mock_data.json");
+            MockDataDto? mockData = null;
+            var seedingService = new SandboxSeedingService();
 
-                    var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_target_results.json");
-                    await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
-                    
-                    AnsiConsole.MarkupLine($"[green]✔ Target 결과 수집 완료:[/] {Markup.Escape(outputPath)}");
-                });
+            if (File.Exists(mockPath))
+            {
+                try
+                {
+                    var mockJson = await File.ReadAllTextAsync(mockPath, cancellationToken);
+                    mockData = JsonSerializer.Deserialize<MockDataDto>(mockJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    if (mockData != null)
+                    {
+                        AnsiConsole.MarkupLine("[grey]모의 테이블 데이터(Mock Data)를 데이터베이스에 적재 중...[/]");
+                        await seedingService.SeedMockDataAsync(connectionString, mockData);
+                        AnsiConsole.MarkupLine("[green]✔ 모의 데이터 적재 완료.[/]");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]⚠️ 경고: 모의 데이터 적재 실패 (테스트가 실패할 수 있음): {Markup.Escape(ex.Message)}[/]");
+                }
+            }
+
+            try
+            {
+                await AnsiConsole.Status()
+                    .Spinner(Spinner.Known.Dots)
+                    .StartAsync($"신규 {runner.SupportedLanguage} 타겟 런타임에서 '{spName}' 코드를 실행 중...", async ctx =>
+                    {
+                        var testInputsJson = await File.ReadAllTextAsync(fullPath, cancellationToken);
+                        var rawResultsJson = await runner.ExecuteAsync(matchedPair.SourceCodePath, testInputsJson, connectionString, cancellationToken);
+
+                        var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_target_results.json");
+                        await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
+                        
+                        AnsiConsole.MarkupLine($"[green]✔ Target 결과 수집 완료:[/] {Markup.Escape(outputPath)}");
+                    });
+            }
+            finally
+            {
+                if (mockData != null)
+                {
+                    try
+                    {
+                        AnsiConsole.MarkupLine("[grey]모의 테이블 데이터(Mock Data)를 데이터베이스에서 제거 중...[/]");
+                        await seedingService.CleanupMockDataAsync(connectionString, mockData);
+                        AnsiConsole.MarkupLine("[green]✔ 모의 데이터 제거 완료.[/]");
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]❌ 오류: 모의 데이터 제거 실패 (수동 정리가 필요할 수 있음): {Markup.Escape(ex.Message)}[/]");
+                    }
+                }
+            }
         }
 
         // --- Batch Exec Target ---
@@ -898,6 +1034,28 @@ namespace SpAnalyzer.Validator.Cli
                     continue;
                 }
 
+                var mockPath = Path.Combine(config.OutputDirectory, "mock", $"{spName}_mock_data.json");
+                MockDataDto? mockData = null;
+                var seedingService = new SandboxSeedingService();
+
+                if (File.Exists(mockPath))
+                {
+                    try
+                    {
+                        var mockJson = await File.ReadAllTextAsync(mockPath, cancellationToken);
+                        mockData = JsonSerializer.Deserialize<MockDataDto>(mockJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        if (mockData != null)
+                        {
+                            await seedingService.SeedMockDataAsync(connectionString, mockData);
+                            AnsiConsole.MarkupLine("[green]✔ 모의 데이터 적재 완료.[/]");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[yellow]⚠️ 경고: 모의 데이터 적재 실패 ({spName}): {Markup.Escape(ex.Message)}[/]");
+                    }
+                }
+
                 try
                 {
                     var extension = Path.GetExtension(matchedPair.SourceCodePath).ToLower();
@@ -910,6 +1068,147 @@ namespace SpAnalyzer.Validator.Cli
 
                     var outputPath = Path.Combine(config.OutputDirectory, $"{spName}_target_results.json");
                     await File.WriteAllTextAsync(outputPath, rawResultsJson, System.Text.Encoding.UTF8, cancellationToken);
+                    AnsiConsole.MarkupLine($"[green]✔ 완료:[/] {Markup.Escape(outputPath)}");
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[red]❌ 오류 ({Markup.Escape(spName)}): {Markup.Escape(ex.Message)}[/]");
+                }
+                finally
+                {
+                    if (mockData != null)
+                    {
+                        try
+                        {
+                            await seedingService.CleanupMockDataAsync(connectionString, mockData);
+                            AnsiConsole.MarkupLine("[green]✔ 모의 데이터 제거 완료.[/]");
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine($"[red]❌ 오류 ({spName}): 모의 데이터 제거 실패: {Markup.Escape(ex.Message)}[/]");
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Interactive Gen Mock Data ---
+        private static async Task RunInteractiveGenMockData(ValidatorConfig config, ValidatorAiService aiService, CancellationToken cancellationToken)
+        {
+            AnsiConsole.MarkupLine("\n[bold blue]=== 3. 검증용 모의 테이블 데이터(Mock Data) 자동 생성 및 캐싱 (AI) ===[/]");
+            
+            var specFiles = Directory.GetFiles(config.SpecDirectory, "*_Spec.md");
+            if (specFiles.Length == 0)
+            {
+                AnsiConsole.MarkupLine($"[red]에러: 설계서 디렉토리({Markup.Escape(config.SpecDirectory)})에 '*_Spec.md' 파일이 존재하지 않습니다.[/]");
+                return;
+            }
+
+            var fileChoices = specFiles.Select(f => Path.GetFileName(f)).ToList();
+            var selectedFile = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("모의 데이터를 생성할 대상 설계서(*_Spec.md) 파일을 선택하세요:")
+                    .PageSize(10)
+                    .AddChoices(fileChoices));
+
+            var spName = selectedFile.Replace("_Spec.md", "");
+            
+            var rawJsonPath = Path.Combine(config.SpecDirectory, $"{spName}_Raw.json");
+            if (!File.Exists(rawJsonPath))
+            {
+                AnsiConsole.MarkupLine($"[red]에러: '{spName}'의 원본 메타데이터 JSON 파일({Markup.Escape(rawJsonPath)})이 존재하지 않습니다. 먼저 SP 분석을 수행해 주십시오.[/]");
+                return;
+            }
+
+            await AnsiConsole.Status()
+                .Spinner(Spinner.Known.Dots)
+                .StartAsync($"AI가 '{spName}'의 구조와 의존성을 분석하여 모의 테이블 데이터를 생성 중입니다...", async ctx =>
+                {
+                    var specContent = await File.ReadAllTextAsync(Path.Combine(config.SpecDirectory, selectedFile), cancellationToken);
+                    var rawJsonContent = await File.ReadAllTextAsync(rawJsonPath, cancellationToken);
+                    
+                    using var doc = JsonDocument.Parse(rawJsonContent);
+                    var root = doc.RootElement;
+                    var procedureDdl = root.GetProperty("DdlText").GetString() ?? "";
+                    
+                    string dependenciesJson = "";
+                    if (root.TryGetProperty("Dependencies", out var depsProp))
+                    {
+                        dependenciesJson = depsProp.GetRawText();
+                    }
+
+                    var mockDataJson = await aiService.GenerateMockTableDataAsync(specContent, procedureDdl, dependenciesJson, cancellationToken);
+
+                    var mockOutputDir = Path.Combine(config.OutputDirectory, "mock");
+                    if (!Directory.Exists(mockOutputDir))
+                    {
+                        Directory.CreateDirectory(mockOutputDir);
+                    }
+
+                    var outputPath = Path.Combine(mockOutputDir, $"{spName}_mock_data.json");
+                    await File.WriteAllTextAsync(outputPath, mockDataJson, System.Text.Encoding.UTF8, cancellationToken);
+                    
+                    AnsiConsole.MarkupLine($"[green]✔ 모의 테이블 데이터(Mock Data) 캐시 완료:[/] {Markup.Escape(outputPath)}");
+                });
+        }
+
+        // --- Batch Gen Mock Data ---
+        private static async Task RunBatchGenMockData(ValidatorConfig config, ValidatorAiService aiService, string? targetSp, CancellationToken cancellationToken)
+        {
+            AnsiConsole.MarkupLine("[bold blue]=== [Batch] 검증용 모의 테이블 데이터(Mock Data) 자동 생성 시작 ===[/]");
+
+            var specFiles = Directory.GetFiles(config.SpecDirectory, "*_Spec.md");
+            if (!string.IsNullOrEmpty(targetSp))
+            {
+                specFiles = specFiles.Where(f => Path.GetFileName(f).StartsWith(targetSp, StringComparison.OrdinalIgnoreCase)).ToArray();
+            }
+
+            if (specFiles.Length == 0)
+            {
+                AnsiConsole.MarkupLine("[yellow]경고: 대상 설계서 파일을 찾을 수 없습니다.[/]");
+                return;
+            }
+
+            foreach (var file in specFiles)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                var spName = Path.GetFileName(file).Replace("_Spec.md", "");
+                var rawJsonPath = Path.Combine(config.SpecDirectory, $"{spName}_Raw.json");
+
+                if (!File.Exists(rawJsonPath))
+                {
+                    AnsiConsole.MarkupLine($"[yellow]경고 ({spName}): 원본 메타데이터 JSON 파일이 없어 모의 데이터 생성을 건너뜁니다.[/]");
+                    continue;
+                }
+
+                AnsiConsole.MarkupLine($"모의 데이터 기획 중: {Markup.Escape(spName)}");
+                
+                try
+                {
+                    var specContent = await File.ReadAllTextAsync(file, cancellationToken);
+                    var rawJsonContent = await File.ReadAllTextAsync(rawJsonPath, cancellationToken);
+                    
+                    using var doc = JsonDocument.Parse(rawJsonContent);
+                    var root = doc.RootElement;
+                    var procedureDdl = root.GetProperty("DdlText").GetString() ?? "";
+                    
+                    string dependenciesJson = "";
+                    if (root.TryGetProperty("Dependencies", out var depsProp))
+                    {
+                        dependenciesJson = depsProp.GetRawText();
+                    }
+
+                    var mockDataJson = await aiService.GenerateMockTableDataAsync(specContent, procedureDdl, dependenciesJson, cancellationToken);
+
+                    var mockOutputDir = Path.Combine(config.OutputDirectory, "mock");
+                    if (!Directory.Exists(mockOutputDir))
+                    {
+                        Directory.CreateDirectory(mockOutputDir);
+                    }
+
+                    var outputPath = Path.Combine(mockOutputDir, $"{spName}_mock_data.json");
+                    await File.WriteAllTextAsync(outputPath, mockDataJson, System.Text.Encoding.UTF8, cancellationToken);
                     AnsiConsole.MarkupLine($"[green]✔ 완료:[/] {Markup.Escape(outputPath)}");
                 }
                 catch (Exception ex)
