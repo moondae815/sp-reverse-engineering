@@ -82,9 +82,8 @@ namespace SpAnalyzer.Validator.Core.Services
                     _ui?.ShowWarning($"[L1 경고] {pair.MappedName} - 지원 플러그인 없음");
                 }
 
-                // --- Level 2: AI 논리 검증 ---
                 _ui?.ShowInfo(" - Level 2: AI 비즈니스 로직 일치성 분석 요청 중...");
-                var gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, cancellationToken);
+                var gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, null, cancellationToken);
                 
                 // L2 자체 교정 (Self-Correction) 시도 (선택)
                 int attempt = 1;
@@ -92,7 +91,10 @@ namespace SpAnalyzer.Validator.Core.Services
                 {
                     attempt++;
                     _ui?.ShowInfo($"   [L2 자체 교정 루프] AI 재검토 요청 중... (시도 {attempt}/{_config.MaxL2Attempts})");
-                    gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, cancellationToken);
+                    
+                    var feedback = $"- 종합 상태: {gapReport.OverallStatus}\n- 입력 파라미터 불일치: {gapReport.InputParametersGap}\n- 출력 데이터셋 불일치: {gapReport.OutputResultSetsGap}\n- 비즈니스 로직 불일치: {gapReport.BusinessLogicGap}\n- 예외 및 트랜잭션 불일치: {gapReport.ExceptionHandlingGap}\n- 수정 제안: {gapReport.Suggestions}";
+                    
+                    gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, feedback, cancellationToken);
                 }
 
                 pair.GapReport = gapReport;

@@ -52,6 +52,10 @@ namespace SpAnalyzer.Cli
                 {
                     cliArgs.Engine = args[++i];
                 }
+                else if (arg.Equals("--job-name", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    cliArgs.JobName = args[++i];
+                }
             }
 
             return cliArgs;
@@ -340,6 +344,9 @@ namespace SpAnalyzer.Cli
 
                 AnsiConsole.MarkupLine($"[bold blue]총 {targetSps.Count}개의 Stored Procedure 분석 시작...[/]");
 
+                var specsData = new List<(string FileName, string Content)>();
+                var spDefs = new List<SpDefinition>();
+
                 foreach (var selectedOption in targetSps)
                 {
                     // 각 SP 처리 단위 예외 격리
@@ -355,6 +362,14 @@ namespace SpAnalyzer.Cli
                         if (string.IsNullOrEmpty(specMarkdown))
                         {
                             throw new Exception("검증 파이프라인을 통과한 명세서 획득 실패");
+                        }
+
+                        // 수집된 사양서 데이터를 메모리에 보관
+                        var specFileName = $"{schema}.{name}_Spec.md";
+                        specsData.Add((specFileName, specMarkdown));
+                        if (spDef != null)
+                        {
+                            spDefs.Add(spDef);
                         }
 
                         string? migrationPlan = null;
@@ -388,6 +403,59 @@ namespace SpAnalyzer.Cli
                 }
 
                 AnsiConsole.MarkupLine("[bold green]=== 배치 모드 자동 분석 완료 ===[/]");
+
+                // 배치 통합 배치 전환 계획 자동 수립 실행
+                if (!string.IsNullOrEmpty(cliArgs.JobName) && specsData.Count > 0)
+                {
+                    AnsiConsole.MarkupLine($"\n[bold blue]=== 배치 통합 배치 전환 계획 수립 시작 ({cliArgs.JobName}) ===[/]");
+                    using var activeCts = new CancellationTokenSource();
+                    _currentCts = activeCts;
+
+                    try
+                    {
+                        var consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, cliArgs.JobName, provider, isBatchMode: true, activeCts.Token);
+                        if (string.IsNullOrEmpty(consolidatedPlan))
+                        {
+                            AnsiConsole.MarkupLine("[red]에러: 통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");
+                        }
+                        else
+                        {
+                            var planFileName = Path.Combine(outputDir, $"{cliArgs.JobName}_BatchMigrationPlan.md");
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                            await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
+                            AnsiConsole.MarkupLine($"[green]성공: 통합 배치 설계서 생성 완료![/] {Markup.Escape(planFileName)}");
+
+                            // 통합 마이그레이션 지시서 생성
+                            AnsiConsole.MarkupLine($"[yellow]{cliArgs.JobName}[/] - 통합 마이그레이션 지시서 생성 중...");
+                            await metadataExporter.ExportConsolidatedMigrationInstructionsAsync(
+                                spDefs,
+                                consolidatedPlan,
+                                cliArgs.JobName,
+                                outputDir);
+
+                            var instructionsPath = Path.Combine(outputDir, $"{cliArgs.JobName}_MigrationInstructions.md");
+                            AnsiConsole.MarkupLine($"[green]성공: 통합 마이그레이션 지시서 번들 생성 완료![/] {Markup.Escape(instructionsPath)}");
+
+                            // 외부 코딩 에이전트(Codegen) 기동
+                            await RunCodegenEngineAsync(
+                                instructionsPath,
+                                isBatchMode: true,
+                                enableCodegen: isCodegenEnabled,
+                                engineName: selectedEngine,
+                                targetProjectDir: targetProjectDir,
+                                configuration: configuration,
+                                cancellationToken: activeCts.Token);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]에러: 배치 통합 설계서 작성 또는 코딩 에이전트 실행 중 오류 발생: {Markup.Escape(ex.Message)}[/]");
+                    }
+                    finally
+                    {
+                        _currentCts = globalCts; // 전역 CTS 복원
+                    }
+                }
             }
             else
             {
@@ -606,7 +674,7 @@ namespace SpAnalyzer.Cli
 
                         try
                         {
-                            consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider, activeCts.Token);
+                            consolidatedPlan = await orchestrator.RunConsolidatedPipelineAsync(specsData, targetLanguage, jobName, provider, cancellationToken: activeCts.Token);
                             if (string.IsNullOrEmpty(consolidatedPlan))
                             {
                                 AnsiConsole.MarkupLine("[red]통합 배치 설계서 작성이 중단되었거나 실패했습니다.[/]");

@@ -17,7 +17,7 @@ namespace SpAnalyzer.Validator.Core.Services
             _aiClient = aiClient ?? throw new ArgumentNullException(nameof(aiClient));
         }
 
-        public async Task<GapReport> VerifyCodeAsync(string specContent, string sourceCodeContent, string targetLanguage, CancellationToken cancellationToken = default)
+        public async Task<GapReport> VerifyCodeAsync(string specContent, string sourceCodeContent, string targetLanguage, string? previousFeedback = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 데이터베이스 Stored Procedure 역공학 명세서(*_Spec.md)와 이를 마이그레이션하여 구현한 프로그램 코드(C# 또는 Java)를 일대일 비교하여 기능적으로 완벽히 동일하게 구현되었는지 정밀 검증하는 전문 QA 에이전트입니다.
 
@@ -38,13 +38,17 @@ namespace SpAnalyzer.Validator.Core.Services
   ""Suggestions"": ""불일치 해결을 위한 구체적인 코드 수정 가이드라인""
 }";
 
+            var feedbackPart = string.IsNullOrEmpty(previousFeedback)
+                ? ""
+                : $"\n\n[이전 불일치 피드백에 의한 교정 요청]:\n{previousFeedback}\n위에서 제시된 불일치 문제를 해결하기 위해 제시한 수정 사항이 코드에 적절히 반영되었는지, 혹은 여전히 불일치가 존재하는지 다시 평가해 주십시오.";
+
             var userPrompt = $@"검증 대상 언어: {targetLanguage}
 
 [비즈니스 기능 명세서]
 {specContent}
 
 [마이그레이션된 소스 코드]
-{sourceCodeContent}
+{sourceCodeContent}{feedbackPart}
 
 위 명세서와 소스 코드를 면밀히 비교하여 JSON 결과를 작성해 주세요.";
 

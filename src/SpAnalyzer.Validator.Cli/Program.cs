@@ -588,7 +588,7 @@ namespace SpAnalyzer.Validator.Cli
         // --- Interactive Exec Legacy ---
         private static async Task RunInteractiveExecLegacy(ValidatorConfig config, SpExecutionService execService, string connectionString, CancellationToken cancellationToken)
         {
-            AnsiConsole.MarkupLine("\n[bold blue]=== 3. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB) ===[/]");
+            AnsiConsole.MarkupLine("\n[bold blue]=== 4. 원본 Stored Procedure 실행 데이터 수집 (Legacy DB) ===[/]");
             
             if (!Directory.Exists(config.OutputDirectory))
             {
@@ -755,7 +755,7 @@ namespace SpAnalyzer.Validator.Cli
         // --- Interactive Compare Data ---
         private static async Task RunInteractiveCompareData(ValidatorConfig config, DataComparisonService compareService)
         {
-            AnsiConsole.MarkupLine("\n[bold blue]=== 4. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare) ===[/]");
+            AnsiConsole.MarkupLine("\n[bold blue]=== 6. 실행 결과 데이터 정합성 1:1 대조 및 보고서 생성 (Compare) ===[/]");
 
             if (!Directory.Exists(config.OutputDirectory))
             {
@@ -897,7 +897,7 @@ namespace SpAnalyzer.Validator.Cli
         // --- Interactive Exec Target ---
         private static async Task RunInteractiveExecTarget(ValidatorConfig config, string connectionString, CancellationToken cancellationToken)
         {
-            AnsiConsole.MarkupLine("\n[bold blue]=== 4. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System) ===[/]");
+            AnsiConsole.MarkupLine("\n[bold blue]=== 5. 신규 마이그레이션 타겟 소스코드 실행 데이터 수집 (Target System) ===[/]");
             
             if (!Directory.Exists(config.OutputDirectory))
             {

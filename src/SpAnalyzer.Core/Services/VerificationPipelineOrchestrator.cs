@@ -272,6 +272,7 @@ namespace SpAnalyzer.Core.Services
             string targetLanguage,
             string jobName,
             string provider,
+            bool isBatchMode = false,
             CancellationToken cancellationToken = default)
         {
             string? feedbackLog = null;
@@ -367,7 +368,13 @@ namespace SpAnalyzer.Core.Services
                 }
             }
 
-            // L3: 인간 개입형 승인 (TUI 모드 전용)
+            // L3: 인간 개입형 승인 (TUI 모드 전용, 배치 모드 시 즉시 승인 및 반환)
+            if (isBatchMode)
+            {
+                _userInteraction.NotifyStatus($"[green]{jobName}[/] - 배치 모드로 인해 통합 계획서가 자동으로 최종 승인되었습니다.");
+                return consolidatedPlan;
+            }
+
             while (true)
             {
                 var reviewResult = await _userInteraction.RequestHumanReviewAsync(jobName, consolidatedPlan);
