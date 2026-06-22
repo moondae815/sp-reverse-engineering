@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 namespace SpAnalyzer.Core.Services.Clients
 {
-    public class AnthropicClient : IAiClient
+    public class ClaudeClient : IAiClient
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        public AnthropicClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
+        public ClaudeClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
@@ -32,7 +32,7 @@ namespace SpAnalyzer.Core.Services.Clients
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
-                throw new ArgumentException("Anthropic API 키가 설정되지 않았습니다.");
+                throw new ArgumentException("Claude API 키가 설정되지 않았습니다.");
             }
 
             var requestBody = new
