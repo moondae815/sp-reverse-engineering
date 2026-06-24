@@ -1,4 +1,4 @@
-# SQL Server Stored Procedure Reverse Engineering Tool (SP Analyzer)
+# SQL Server Stored Procedure Reverse Engineering Tool (ReSet)
 
 [![.NET 10.0](https://img.shields.io/badge/.NET-10.0-blueviolet.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![SQL Server](https://img.shields.io/badge/SQL%20Server-Database-red.svg)](https://www.microsoft.com/sql-server)
