@@ -8,14 +8,14 @@
 
 3단계 검증 아키텍처는 독립된 각 검사 단계들이 분리된 책임을 가지고 유기적으로 결합되어 동작합니다.
 
-### 1.1 `MechanicalValidator` (신설, `SpAnalyzer.Core` 프로젝트)
+### 1.1 `MechanicalValidator` (신설, `ReSet.Core` 프로젝트)
 * **역할**: AI가 생성한 마크다운 문서의 정적 형식 및 문법 규칙을 정적으로 린팅(Linting)합니다.
 * **주요 기능**:
   * **섹션 구성 검사**: 마크다운 텍스트 내에서 필수 섹션 헤더(`## 개요`, `## 파라미터 목록`, `## CRUD 분석`, `## 로직 흐름 요약`, `## 비즈니스 흐름 시각화 (Mermaid Diagram)`)의 유무를 확인합니다.
   * **Mermaid 간이 Linter (Regex)**: ````mermaid ```` 코드 블록 내에서 괄호(`(`, `)`, `[`, `]`)나 특수문자가 들어간 노드가 문법 에러를 방지하기 위해 큰따옴표(`"`)로 알맞게 래핑되어 있는지 검사합니다.
 * **인터페이스**:
   ```csharp
-  namespace SpAnalyzer.Core.Services
+  namespace ReSet.Core.Services
   {
       public class MechanicalValidator
       {
@@ -31,7 +31,7 @@
   }
   ```
 
-### 1.2 `IAiService` 및 `AiService` (기존 클래스 확장, `SpAnalyzer.Core` 프로젝트)
+### 1.2 `IAiService` 및 `AiService` (기존 클래스 확장, `ReSet.Core` 프로젝트)
 * **역할**: 교차 리뷰어 에이전트 역할을 대행하고, 자가 수정 흐름을 지원합니다.
 * **주요 변경 사양**:
   * **기존 생성 API 확장**: `feedbackLog` 파라미터를 추가 주입받아, 이전 검증 오류나 사용자 피드백을 프롬프트 하단에 덧붙여 재생성을 요청할 수 있도록 지원합니다.
@@ -77,7 +77,7 @@
 
 ## 3. 테스트 및 검증 방안 (Testing & Verification)
 
-### 3.1 단위 테스트 설계 (`tests/SpAnalyzer.Core.Tests/MechanicalValidatorTests.cs` 신설)
+### 3.1 단위 테스트 설계 (`tests/ReSet.Core.Tests/MechanicalValidatorTests.cs` 신설)
 1. **`Validate_WithValidMarkdown_ShouldReturnTrue`**:
    * 모든 필수 헤더가 완벽히 존재하고, Mermaid 노드 내 괄호가 큰따옴표로 올바르게 감싸진 마크다운 전달 시 검증 통과를 검증합니다.
 2. **`Validate_WithMissingHeaders_ShouldReturnFalse`**:

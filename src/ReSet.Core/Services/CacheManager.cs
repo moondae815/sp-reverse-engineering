@@ -1,0 +1,173 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using ReSet.Core.Models;
+
+namespace ReSet.Core.Services
+{
+    public class CacheManager : ICacheManager
+    {
+        private static readonly object FileLock = new object();
+        private const string CacheIndexFileName = ".sp_cache_index.json";
+
+        public string ComputeCompositeHash(SpDefinition spDef)
+        {
+            if (spDef == null) return string.Empty;
+
+            // 1. SP 본문 소스 DDL 해시
+            var sourceHash = ComputeSha256(spDef.DdlText);
+
+            // 2. 의존성 개체들의 해시 수집 및 정렬 (일관된 해시 결합을 위해 SortedDictionary 사용)
+            var depHashes = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (spDef.Dependencies != null)
+            {
+                foreach (var dep in spDef.Dependencies)
+                {
+                    var key = $"{dep.Schema}.{dep.Name}".ToLower();
+                    var ddl = dep.ReferencedDdlText ?? string.Empty;
+                    depHashes[key] = ComputeSha256(ddl);
+                }
+            }
+
+            // 3. 결합 문자열 구성
+            var sb = new StringBuilder();
+            sb.AppendLine($"Source:{sourceHash}");
+            foreach (var kvp in depHashes)
+            {
+                sb.AppendLine($"Dep:{kvp.Key}:{kvp.Value}");
+            }
+
+            return ComputeSha256(sb.ToString());
+        }
+
+        public bool IsCacheValid(string procedureName, string compositeHash, string outputDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(procedureName) || string.IsNullOrWhiteSpace(compositeHash))
+            {
+                return false;
+            }
+
+            // 1. 실제 출력 파일이 존재하는지 검증 (*_Spec.md)
+            var specFilePath = Path.Combine(outputDirectory, $"{procedureName}_Spec.md");
+            if (!File.Exists(specFilePath))
+            {
+                return false;
+            }
+
+            // 2. 캐시 인덱스 파일 로드 및 해시 대조
+            try
+            {
+                var cacheIndex = LoadCacheIndex(outputDirectory);
+                if (cacheIndex != null && cacheIndex.Entries.TryGetValue(procedureName, out var entry))
+                {
+                    return string.Equals(entry.CompositeHash, compositeHash, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch
+            {
+                // 캐시 로드 실패 시 안전하게 Soft Fail (false 반환하여 재분석 진행)
+                return false;
+            }
+
+            return false;
+        }
+
+        public void UpdateCache(string procedureName, SpDefinition spDef, string compositeHash, string outputDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(procedureName) || spDef == null || string.IsNullOrWhiteSpace(compositeHash))
+            {
+                return;
+            }
+
+            try
+            {
+                lock (FileLock)
+                {
+                    var cacheIndex = LoadCacheIndex(outputDirectory) ?? new CacheIndex();
+
+                    // 의존성 개별 해시 구성
+                    var depHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    if (spDef.Dependencies != null)
+                    {
+                        foreach (var dep in spDef.Dependencies)
+                        {
+                            var key = $"{dep.Schema}.{dep.Name}";
+                            var ddl = dep.ReferencedDdlText ?? string.Empty;
+                            depHashes[key] = ComputeSha256(ddl);
+                        }
+                    }
+
+                    var entry = new CacheEntry
+                    {
+                        ProcedureName = procedureName,
+                        LastAnalyzed = DateTime.UtcNow,
+                        SourceHash = ComputeSha256(spDef.DdlText),
+                        DependencyHashes = depHashes,
+                        CompositeHash = compositeHash
+                    };
+
+                    cacheIndex.Entries[procedureName] = entry;
+
+                    SaveCacheIndex(outputDirectory, cacheIndex);
+                }
+            }
+            catch
+            {
+                // 캐시 쓰기 실패 시 예외 격리 (분석은 통과했으므로 로깅 외 무시)
+            }
+        }
+
+        private CacheIndex? LoadCacheIndex(string outputDirectory)
+        {
+            var cacheIndexPath = Path.Combine(outputDirectory, CacheIndexFileName);
+            if (!File.Exists(cacheIndexPath))
+            {
+                return null;
+            }
+
+            lock (FileLock)
+            {
+                var json = File.ReadAllText(cacheIndexPath);
+                return JsonSerializer.Deserialize<CacheIndex>(json);
+            }
+        }
+
+        private void SaveCacheIndex(string outputDirectory, CacheIndex cacheIndex)
+        {
+            if (!Directory.Exists(outputDirectory))
+            {
+                Directory.CreateDirectory(outputDirectory);
+            }
+
+            var cacheIndexPath = Path.Combine(outputDirectory, CacheIndexFileName);
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            var json = JsonSerializer.Serialize(cacheIndex, options);
+
+            lock (FileLock)
+            {
+                File.WriteAllText(cacheIndexPath, json);
+            }
+        }
+
+        private string ComputeSha256(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return string.Empty;
+
+            using (var sha = SHA256.Create())
+            {
+                var bytes = Encoding.UTF8.GetBytes(input);
+                var hashBytes = sha.ComputeHash(bytes);
+                
+                var sb = new StringBuilder();
+                foreach (var b in hashBytes)
+                {
+                    sb.Append(b.ToString("x2"));
+                }
+                return sb.ToString();
+            }
+        }
+    }
+}

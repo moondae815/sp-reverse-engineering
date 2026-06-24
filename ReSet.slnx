@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReSet.Cli/ReSet.Cli.csproj" />
+    <Project Path="src/ReSet.Core/ReSet.Core.csproj" />
+    <Project Path="src/ReSet.Validator.Cli/ReSet.Validator.Cli.csproj" />
+    <Project Path="src/ReSet.Validator.Core/ReSet.Validator.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ReSet.Core.Tests/ReSet.Core.Tests.csproj" />
+  </Folder>
+</Solution>

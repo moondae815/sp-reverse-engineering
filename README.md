@@ -107,26 +107,26 @@ SP-Reverse-Engineering/
 ├── SP-Reverse-Engineering.slnx      # .NET 솔루션 파일
 │
 ├── src/
-│   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직 및 AI 커뮤니케이션
+│   ├── ReSet.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직 및 AI 커뮤니케이션
 │   │   ├── Models/                 # SpDefinition, DependencyInfo 데이터 모델
 │   │   └── Services/               # DB 조회, AI API 통신, 캐싱 및 코딩 엔진 연동
 │   │
-│   ├── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI (설계서 생성)
+│   ├── ReSet.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 TUI (설계서 생성)
 │   │   ├── Program.cs              # CLI 진입점 및 대화형 워크플로우 제어
 │   │   ├── CodingEngineFactory.cs  # 설정 기반 외부 코딩 에이전트 생성 팩토리
 │   │   ├── appsettings.json        # 기본 설정 파일
 │   │   └── instructions.md         # AI 분석 세부 마크다운 지침 템플릿
 │   │
-│   ├── SpAnalyzer.Validator.Core/  # [클래스 라이브러리] 구현 정적/논리 검사 및 데이터 대조 서비스
+│   ├── ReSet.Validator.Core/  # [클래스 라이브러리] 구현 정적/논리 검사 및 데이터 대조 서비스
 │   │   ├── Models/                 # ValidationResult, MockDataDto 모델
 │   │   └── Services/               # FileMapping, SandboxSeeding, DataComparison 서비스
 │   │
-│   └── SpAnalyzer.Validator.Cli/   # [콘솔 애플리케이션] TUI 및 배치 모드 (소스코드 및 데이터 정합성 대조 검증기)
+│   └── ReSet.Validator.Cli/   # [콘솔 애플리케이션] TUI 및 배치 모드 (소스코드 및 데이터 정합성 대조 검증기)
 │       ├── Program.cs              # 검증기 CLI 진입점 및 흐름 제어
 │       └── appsettings.json        # 검증기용 설정 파일
 │
 ├── tests/
-│   └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트
+│   └── ReSet.Core.Tests/      # [단위 테스트 프로젝트] xUnit 기반 단위 테스트
 │
 └── output/                          # [산출물 폴더] 생성된 스펙, 계획서, 모의 데이터 및 정합성 리포트 저장소
     ├── [SP이름]_Spec.md            # SP 개별 비즈니스 설계 명세서
@@ -144,7 +144,7 @@ SP-Reverse-Engineering/
 ## ⚙ 설정 방법 (Configuration)
 
 ### 1. `appsettings.json` 설정
-프로그램 실행 전 `src/SpAnalyzer.Cli/appsettings.json` 파일을 열어 기본적인 데이터베이스 환경 및 출력 설정을 지정합니다. 자격 증명 누출 방지를 위해 이 파일의 `ApiKey`는 비워두는 것을 권장합니다.
+프로그램 실행 전 `src/ReSet.Cli/appsettings.json` 파일을 열어 기본적인 데이터베이스 환경 및 출력 설정을 지정합니다. 자격 증명 누출 방지를 위해 이 파일의 `ApiKey`는 비워두는 것을 권장합니다.
 
 ```json
 {
@@ -220,7 +220,7 @@ SP-Reverse-Engineering/
 ### 2. 보안 가이드: `appsettings.local.json` 설정 (권장)
 보안상 안전하게 AI API Key 정보를 관리하기 위해, Git에 추적되지 않는 로컬 전용 설정 파일을 사용하는 것을 권장합니다.
 
-1. `src/SpAnalyzer.Cli/` 디렉터리에 `appsettings.local.json` 파일을 만듭니다. (이 파일은 `.gitignore`에 무시 대상 파일로 이미 등록되어 안전합니다.)
+1. `src/ReSet.Cli/` 디렉터리에 `appsettings.local.json` 파일을 만듭니다. (이 파일은 `.gitignore`에 무시 대상 파일로 이미 등록되어 안전합니다.)
 2. 생성된 `appsettings.local.json` 파일 내에 다음과 같이 발급받은 API 키 설정을 넣으면 로컬 실행 시 보안 키가 우선적으로 적용됩니다.
    ```json
    {
@@ -247,7 +247,7 @@ SP-Reverse-Engineering/
 ### 1. 대화형 TUI 모드 실행
 기본적으로 아무 아규먼트 없이 실행하면 로그인 정보 입력 및 메인 메뉴 선택이 가능한 TUI 모드로 시작합니다.
 ```bash
-dotnet run --project src/SpAnalyzer.Cli
+dotnet run --project src/ReSet.Cli
 ```
 1. DB 계정(ID)과 패스워드를 입력하여 SQL Server에 로그인합니다.
 2. 로그인 성공 시 아래 **메인 메뉴**가 화면에 표시됩니다:
@@ -274,22 +274,22 @@ dotnet run --project src/SpAnalyzer.Cli
 - **배치 실행 예시**:
   - **특정 SP 지정 분석**:
     ```bash
-    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder
+    dotnet run --project src/ReSet.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --sp dbo.USP_GetUsers,dbo.USP_UpdateOrder
     ```
   - **전체 SP 일괄 분석**:
     ```bash
-    dotnet run --project src/SpAnalyzer.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --all
+    dotnet run --project src/ReSet.Cli -- --conn "Server=localhost;Database=my_db;User ID=sa;Password=my_password;TrustServerCertificate=true" --all
     ```
 
 > [!NOTE]
 > 배치 모드로 대량 실행 중 특정 SP에 대한 메타데이터 조회 실패 또는 AI 통신 에러가 발생하더라도, 해당 SP만 에러 로그가 출력되고 스킵(try-catch 격리)되며 전체 배치 작업은 중단 없이 다음 SP 분석을 계속 수행합니다.
 
-### 3. 코드 일치성 검증 및 데이터 정합성 검증 (SpAnalyzer.Validator)
+### 3. 코드 일치성 검증 및 데이터 정합성 검증 (ReSet.Validator)
 역공학 마이그레이션이 끝난 뒤, 생성된 명세서와 실제 마이그레이션 소스코드가 동일하게 구현되었는지 검증하고, 레거시 DB와 실제 실행 결과 정합성을 대조할 때 실행합니다.
 
 *   **대화형 TUI 모드 실행**:
     ```bash
-    dotnet run --project src/SpAnalyzer.Validator.Cli
+    dotnet run --project src/ReSet.Validator.Cli
     ```
     *   **1. 설계서 vs 마이그레이션 소스코드 일치성 검증 (L1/L2/L3)**: C#/Java 소스코드 정적 분석 및 AI 의미론적 Gap 분석, 인간 피드백 루프를 가동하여 검증합니다.
     *   **2. 데이터 정합성 검증용 테스트 파라미터 설계 (AI)**: 설계서(`*_Spec.md`)를 분석해 AI가 정상/경계값/오류 시나리오 테스트 파라미터 JSON(`*_test_inputs.json`)을 생성합니다.
@@ -301,22 +301,22 @@ dotnet run --project src/SpAnalyzer.Cli
 *   **배치 검증 자동화 모드 실행 (CI/CD 무인 모드)**:
     ```bash
     # 소스코드 일치성 자동 검증 (L3 인간 개입 생략)
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --code "./src/Migration" --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --spec "./output" --code "./src/Migration" --batch
 
     # 데이터 정합성 테스트 파라미터 설계 배치 모드
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-inputs --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --spec "./output" --gen-inputs --batch
 
     # 검증용 모의 테이블 데이터(Mock Data) 자동 생성 배치 모드
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --spec "./output" --gen-mock-data --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --spec "./output" --gen-mock-data --batch
 
     # 레거시 DB 실행 결과 덤프 배치 모드
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --exec-legacy --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
 
     # 신규 마이그레이션 타겟 실행 결과 덤프 배치 모드
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --exec-target --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --exec-target --conn "Server=localhost;Database=Northwind;User ID=sa;Password=your_password;TrustServerCertificate=true" --batch
 
     # 레거시 vs 타겟 1:1 데이터 정합성 대조 배치 모드
-    dotnet run --project src/SpAnalyzer.Validator.Cli -- --compare-data --batch
+    dotnet run --project src/ReSet.Validator.Cli -- --compare-data --batch
     ```
 
 ---

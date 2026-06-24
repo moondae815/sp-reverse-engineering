@@ -18,28 +18,28 @@ SP-Reverse-Engineering/
 ├── SP-Reverse-Engineering.slnx      # .NET 솔루션 파일
 │
 ├── src/
-│   ├── SpAnalyzer.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
+│   ├── ReSet.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직
 │   │   ├── Models/                 # DB 및 AI 통신용 데이터 모델
 │   │   ├── Services/               # DB 조회, AI 처리, 메타데이터 수출 서비스
-│   │   └── SpAnalyzer.Core.csproj
+│   │   └── ReSet.Core.csproj
 │   │
-│   └── SpAnalyzer.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 UI 및 CLI 파서
+│   └── ReSet.Cli/             # [콘솔 애플리케이션] Spectre.Console 기반 UI 및 CLI 파서
 │       ├── Program.cs              # CLI 진입점, 옵션 분기 및 TUI/TUI 흐름 제어
 │       ├── CliArgs.cs              # 명령행 아규먼트 파싱 데이터 모델
 │       ├── appsettings.json        # 시스템 구성 설정 파일
 │       ├── instructions.txt        # 사용자 정의 AI 명세서 작성 규칙 파일
-│       └── SpAnalyzer.Cli.csproj
+│       └── ReSet.Cli.csproj
 │
 └── tests/
-    └── SpAnalyzer.Core.Tests/      # [단위 테스트 프로젝트] 핵심 비즈니스 로직 테스트
-        └── SpAnalyzer.Core.Tests.csproj
+    └── ReSet.Core.Tests/      # [단위 테스트 프로젝트] 핵심 비즈니스 로직 테스트
+        └── ReSet.Core.Tests.csproj
 ```
 
 ### 핵심 프로젝트별 역할 및 의존성
-1. **SpAnalyzer.Core**
+1. **ReSet.Core**
    - 역할: SQL Server 2022 메타데이터 수집, 재귀적 의존성 및 스키마 정보 추적, AI 공급자 연동, 원천 수집 데이터의 덤프 파일 내보내기 처리.
    - 핵심 라이브러리: `Microsoft.Data.SqlClient`, `Microsoft.Extensions.DependencyInjection`, `System.Text.Json`
-2. **SpAnalyzer.Cli**
+2. **ReSet.Cli**
    - 역할: `appsettings.json` 로드, 로그인 계정 기억(세션 보관), 사용자 인터랙티브 입력 처리(자동완성 선택 프롬프트) 및 무인 자동화 배치 명령줄 파싱, 진행률 스피너 제공, 마크다운 파일 저장 및 원천 데이터 덤프 명령 제어.
    - 핵심 라이브러리: `Spectre.Console`, `Microsoft.Extensions.Configuration.Json`, `Microsoft.Extensions.Hosting`
 
@@ -50,7 +50,7 @@ SP-Reverse-Engineering/
 ### 2.1 데이터 모델 (Models)
 
 ```csharp
-namespace SpAnalyzer.Core.Models
+namespace ReSet.Core.Models
 {
     public class SpDefinition
     {
@@ -85,7 +85,7 @@ namespace SpAnalyzer.Core.Models
 
 #### DB 메타데이터 서비스 인터페이스
 ```csharp
-namespace SpAnalyzer.Core.Services
+namespace ReSet.Core.Services
 {
     public interface IDbMetadataService
     {
@@ -97,7 +97,7 @@ namespace SpAnalyzer.Core.Services
 
 #### AI 서비스 인터페이스
 ```csharp
-namespace SpAnalyzer.Core.Services
+namespace ReSet.Core.Services
 {
     public interface IAiService
     {
@@ -108,7 +108,7 @@ namespace SpAnalyzer.Core.Services
 
 #### 원천 데이터 내보내기 서비스 인터페이스 (Exporter)
 ```csharp
-namespace SpAnalyzer.Core.Services
+namespace ReSet.Core.Services
 {
     public interface IMetadataExporter
     {

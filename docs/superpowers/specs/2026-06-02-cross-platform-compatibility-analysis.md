@@ -7,7 +7,7 @@
 
 ## 1. 개요 (Overview)
 
-본 문서는 `SpAnalyzer` 솔루션이 다양한 운영체제(Windows, Linux, macOS) 및 명령줄 도구/셸(cmd, powershell, bash, zsh 등) 환경에서 어떠한 종속성이나 오작동 없이 결과 산출물(Markdown 명세서, JSON 덤프, SQL DDL 등)을 정상적으로 생성할 수 있도록 올바르게 구현되어 있는지 다각도로 분석하고 검증한 결과 보고서입니다.
+본 문서는 `ReSet` 솔루션이 다양한 운영체제(Windows, Linux, macOS) 및 명령줄 도구/셸(cmd, powershell, bash, zsh 등) 환경에서 어떠한 종속성이나 오작동 없이 결과 산출물(Markdown 명세서, JSON 덤프, SQL DDL 등)을 정상적으로 생성할 수 있도록 올바르게 구현되어 있는지 다각도로 분석하고 검증한 결과 보고서입니다.
 
 ---
 

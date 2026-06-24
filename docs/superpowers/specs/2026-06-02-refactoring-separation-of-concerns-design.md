@@ -7,7 +7,7 @@
 
 ## 1. 개요 (Overview)
 
-본 문서는 `SpAnalyzer` 솔루션 내의 핵심 비즈니스 로직(`SpAnalyzer.Core`)과 사용자 콘솔 인터페이스(`SpAnalyzer.Cli`) 간의 강한 결합을 끊어내고 모듈형 아키텍처로 개선하기 위한 상세 설계 사양을 정의합니다.
+본 문서는 `ReSet` 솔루션 내의 핵심 비즈니스 로직(`ReSet.Core`)과 사용자 콘솔 인터페이스(`ReSet.Cli`) 간의 강한 결합을 끊어내고 모듈형 아키텍처로 개선하기 위한 상세 설계 사양을 정의합니다.
 
 기존 구조에서는 터미널 UI 프레임워크인 `Spectre.Console`의 제어 흐름과 로깅 코드가 비즈니스 분석 파이프라인과 결합되어 있어 핵심 로직의 재사용이 불가능하고 테스트 작성이 까다로웠습니다. 이를 해결하기 위해 중계 역할을 담당하는 오케스트레이터를 Core 영역에 두고, UI 상호작용은 인터페이스로 추상화하여 주입하는 설계(DI)를 구현합니다.
 
@@ -21,9 +21,9 @@ Core 프로젝트 내에 화면 출력을 포함하여 사용자와 상호작용
 ```csharp
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using SpAnalyzer.Core.Models;
+using ReSet.Core.Models;
 
-namespace SpAnalyzer.Core.Services
+namespace ReSet.Core.Services
 {
     public interface IVerificationUserInteraction
     {
@@ -50,7 +50,7 @@ namespace SpAnalyzer.Core.Services
 
 ### 2.2. 상호작용 결과 데이터 모델
 ```csharp
-namespace SpAnalyzer.Core.Models
+namespace ReSet.Core.Models
 {
     public enum UserDecision
     {
@@ -72,11 +72,11 @@ namespace SpAnalyzer.Core.Models
 ## 3. 핵심 컴포넌트 설계 (Component Design)
 
 ### 3.1. `VerificationPipelineOrchestrator` 클래스
-`SpAnalyzer.Core`의 `Services` 디렉터리에 새로 추가되며, 전체 검증 파이프라인 흐름을 총괄 오케스트레이션합니다. 
+`ReSet.Core`의 `Services` 디렉터리에 새로 추가되며, 전체 검증 파이프라인 흐름을 총괄 오케스트레이션합니다. 
 기존 `Program.cs` 내의 `RunVerificationPipelineAsync` 로직을 그대로 이전하되, `AnsiConsole` 직접 호출 대신 생성자로 주입된 `IVerificationUserInteraction`의 추상화된 메서드를 사용합니다.
 
 ```csharp
-namespace SpAnalyzer.Core.Services
+namespace ReSet.Core.Services
 {
     public class VerificationPipelineOrchestrator
     {
@@ -120,16 +120,16 @@ namespace SpAnalyzer.Core.Services
 ## 4. 데이터 흐름 및 클래스 통합 (Data Flow & CLI Integration)
 
 ### 4.1. CLI 프레젠테이션 결합 (`ConsoleUserInteraction`)
-`SpAnalyzer.Cli` 프로젝트 내에 `IVerificationUserInteraction` 인터페이스를 상속받는 구체 클래스를 선언합니다.
+`ReSet.Cli` 프로젝트 내에 `IVerificationUserInteraction` 인터페이스를 상속받는 구체 클래스를 선언합니다.
 
 ```csharp
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Spectre.Console;
-using SpAnalyzer.Core.Models;
-using SpAnalyzer.Core.Services;
+using ReSet.Core.Models;
+using ReSet.Core.Services;
 
-namespace SpAnalyzer.Cli
+namespace ReSet.Cli
 {
     public class ConsoleUserInteraction : IVerificationUserInteraction
     {
