@@ -1,4 +1,4 @@
-# 🗺️ ReSet & Validator 프로젝트 로드맵
+# 🗺️ ReSet (REverse engineering SETtlement) & Validator 프로젝트 로드맵
 
 본 문서는 기존 데이터베이스(SQL Server)에 있는 복잡한 비즈니스 로직을 분석하여, 안전하게 새로운 현대식 프로그램(C#, Java 등)으로 변환하고 그 결과가 정확한지 검증하는 **전체 마이그레이션 과정과 일정**을 안내하는 로드맵입니다.
 
