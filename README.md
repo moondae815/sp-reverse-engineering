@@ -1,11 +1,11 @@
 # SQL Server Stored Procedure Reverse Engineering Tool (SP Analyzer)
 
 [![.NET 10.0](https://img.shields.io/badge/.NET-10.0-blueviolet.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
-[![SQL Server 2022](https://img.shields.io/badge/SQL%20Server-2022-red.svg)](https://www.microsoft.com/sql-server)
+[![SQL Server](https://img.shields.io/badge/SQL%20Server-Database-red.svg)](https://www.microsoft.com/sql-server)
 [![AI Providers](https://img.shields.io/badge/AI--Providers-OpenAI%20%7C%20Claude%20%7C%20Google-orange.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#)
 
-본 프로젝트는 **SQL Server 2022**에 저장된 Stored Procedure(SP)를 심층 분석하여, AI(OpenAI, Ollama, Claude, Google Gemini 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
+본 프로젝트는 **SQL Server**에 저장된 Stored Procedure(SP)를 심층 분석하여, AI(OpenAI, Ollama, Claude, Google Gemini 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
 
 ---
 
@@ -91,7 +91,7 @@ graph TD
 도구를 빌드하고 실행하기 위해서는 아래의 최소 환경 구성이 필요합니다.
 
 *   **.NET SDK 10.0** 이상 설치
-*   **SQL Server 2022** 이상 (메타데이터 쿼리 및 SP 실행용)
+*   **SQL Server** (메타데이터 쿼리 및 SP 실행용)
 *   **Node.js & npm** (선택사항, Mermaid 다이어그램 이미지 컴파일 및 L1 정적 검사 수행 시 `mermaid-cli` 연동 필요)
     ```bash
     npm install -g @mermaid-js/mermaid-cli
