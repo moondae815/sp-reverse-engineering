@@ -1,4 +1,4 @@
-# ReSet (REverse engineering SETtlement) 시스템 아키텍처 정의서 (System Architecture Definition)
+# ReSet (**RE**verse engineering **SET**tlement) 시스템 아키텍처 정의서 (System Architecture Definition)
 
 본 문서는 SQL Server Stored Procedure(SP)를 자율적으로 분석하고 신규 시스템으로의 전환 설계서를 도출하는 **ReSet (REverse engineering SETtlement) 에이전트** 프로그램의 모듈 설계, 구성 요소 간의 데이터 흐름, 핵심 알고리즘 및 검증 파이프라인의 구조적 아키텍처를 정의합니다.
 
