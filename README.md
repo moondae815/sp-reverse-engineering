@@ -102,9 +102,9 @@ graph TD
 ## 📂 프로젝트 구조 (Project Structure)
 
 ```
-SP-Reverse-Engineering/
+ReSet/
 │
-├── SP-Reverse-Engineering.slnx      # .NET 솔루션 파일
+├── ReSet.slnx      # .NET 솔루션 파일
 │
 ├── src/
 │   ├── ReSet.Core/            # [클래스 라이브러리] 핵심 비즈니스 로직 및 AI 커뮤니케이션

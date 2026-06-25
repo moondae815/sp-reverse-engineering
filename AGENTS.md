@@ -17,42 +17,42 @@
 
 에이전트는 코드 수정 시 다음 구성 요소를 참조하고 알맞은 디렉토리에 변경사항을 작성해야 합니다. 모든 클래스 참조 시 아래의 직접 링크를 활용하십시오.
 
-### 1. Core 라이브러리: [ReSet.Core](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core)
-*   **도메인 모델 ([Models](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Models))**
-    *   [SpDefinition.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Models/SpDefinition.cs): 분석된 SP 메타데이터(소스코드 DDL, 컬럼, 의존성 등)를 관리하는 루트 데이터 클래스.
-    *   [DependencyInfo.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Models/DependencyInfo.cs): 재귀적으로 수집된 DB 개체(테이블, 뷰, 다른 SP 등) 의존성을 표현하는 모델.
-    *   [ColumnInfo.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보 및 한글 설명을 수집하는 모델.
-*   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services))**
-    *   [DbMetadataService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
-    *   [AiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/IAiService.cs)) 구현체.
-    *   [MechanicalValidator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/MechanicalValidator.cs): Markdig 파서 및 Mermaid 린터를 활용해 산출물 뼈대 및 다이어그램 문법을 정적 검증하는 클래스.
-    *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
-    *   [MetadataExporter.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
-    *   [CacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/ICacheManager.cs) 포함).
-    *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
+### 1. Core 라이브러리: [ReSet.Core](file:///home/moondae/git-root/ReSet/src/ReSet.Core)
+*   **도메인 모델 ([Models](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models))**
+    *   [SpDefinition.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/SpDefinition.cs): 분석된 SP 메타데이터(소스코드 DDL, 컬럼, 의존성 등)를 관리하는 루트 데이터 클래스.
+    *   [DependencyInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/DependencyInfo.cs): 재귀적으로 수집된 DB 개체(테이블, 뷰, 다른 SP 등) 의존성을 표현하는 모델.
+    *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보 및 한글 설명을 수집하는 모델.
+*   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services))**
+    *   [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
+    *   [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiService.cs)) 구현체.
+    *   [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs): Markdig 파서 및 Mermaid 린터를 활용해 산출물 뼈대 및 다이어그램 문법을 정적 검증하는 클래스.
+    *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
+    *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
+    *   [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICacheManager.cs) 포함).
+    *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
 
-### 2. CLI 실행 엔트리: [ReSet.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Cli)
-*   [Program.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Cli/Program.cs): CLI 진입점이자 TUI 메뉴 제어 및 흐름 오케스트레이션을 담당합니다.
-*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Cli/ConsoleUserInteraction.cs): TUI와 사용자 간의 인터랙션 콘솔 처리를 정의한 구현체.
+### 2. CLI 실행 엔트리: [ReSet.Cli](file:///home/moondae/git-root/ReSet/src/ReSet.Cli)
+*   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs): CLI 진입점이자 TUI 메뉴 제어 및 흐름 오케스트레이션을 담당합니다.
+*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs): TUI와 사용자 간의 인터랙션 콘솔 처리를 정의한 구현체.
 
-### 3. 코드 검증 Core 라이브러리: [ReSet.Validator.Core](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core)
-*   **추상화 및 도메인 모델 ([Abstractions](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Abstractions), [Models](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Models))**
-    *   [IValidatorPlugin.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Abstractions/IValidatorPlugin.cs): C#, Java 등 언어별 L1 정적 구조 및 명칭 검증을 구현하는 플러그인 인터페이스.
-    *   [IRuntimeRunner.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Abstractions/IRuntimeRunner.cs): 타겟 런타임 코드 실행을 위한 인터페이스 규격 정의.
-    *   [ValidationResult.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Models/ValidationResult.cs): 검증 대상의 L1/L2/L3 전체 상태를 관리하는 데이터 모델.
-    *   [MockDataDto.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Models/MockDataDto.cs): 기획된 관계형 모의 데이터를 로컬 및 메모리에 들고 있기 위한 데이터 모델.
-*   **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services))**
-    *   [FileMappingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스.
-    *   [ValidatorAiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
-    *   [SpExecutionService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/SpExecutionService.cs): SQL Server DB에서 Stored Procedure를 동적으로 실행하고 결과를 JSON으로 덤프하는 서비스.
-    *   [SandboxSeedingService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/SandboxSeedingService.cs): 모의 데이터를 샌드박스 DB에 적재(Insert)하고 실행 후 정리(Delete)하는 수명주기 서비스.
-    *   [CSharpReflectionRunner.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/CSharpReflectionRunner.cs): 마이그레이션된 C# DLL 리플렉션 로드 및 DbTransaction 롤백 자동 격리 실행기.
-    *   [DataComparisonService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/DataComparisonService.cs): 레거시 vs 타겟 JSON 데이터의 행 수, 컬럼 타입, 개별 값을 1:1 대조하여 마크다운 리포트 생성하는 서비스.
-    *   [CodeVerificationOrchestrator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Core/Services/CodeVerificationOrchestrator.cs): L1(정적) -> L2(AI Gap분석) -> L3(사용자 승인) 흐름 제어 오케스트레이터.
+### 3. 코드 검증 Core 라이브러리: [ReSet.Validator.Core](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core)
+*   **추상화 및 도메인 모델 ([Abstractions](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions), [Models](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models))**
+    *   [IValidatorPlugin.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IValidatorPlugin.cs): C#, Java 등 언어별 L1 정적 구조 및 명칭 검증을 구현하는 플러그인 인터페이스.
+    *   [IRuntimeRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IRuntimeRunner.cs): 타겟 런타임 코드 실행을 위한 인터페이스 규격 정의.
+    *   [ValidationResult.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/ValidationResult.cs): 검증 대상의 L1/L2/L3 전체 상태를 관리하는 데이터 모델.
+    *   [MockDataDto.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/MockDataDto.cs): 기획된 관계형 모의 데이터를 로컬 및 메모리에 들고 있기 위한 데이터 모델.
+*   **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services))**
+    *   [FileMappingService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스.
+    *   [ValidatorAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
+    *   [SpExecutionService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SpExecutionService.cs): SQL Server DB에서 Stored Procedure를 동적으로 실행하고 결과를 JSON으로 덤프하는 서비스.
+    *   [SandboxSeedingService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SandboxSeedingService.cs): 모의 데이터를 샌드박스 DB에 적재(Insert)하고 실행 후 정리(Delete)하는 수명주기 서비스.
+    *   [CSharpReflectionRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CSharpReflectionRunner.cs): 마이그레이션된 C# DLL 리플렉션 로드 및 DbTransaction 롤백 자동 격리 실행기.
+    *   [DataComparisonService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/DataComparisonService.cs): 레거시 vs 타겟 JSON 데이터의 행 수, 컬럼 타입, 개별 값을 1:1 대조하여 마크다운 리포트 생성하는 서비스.
+    *   [CodeVerificationOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CodeVerificationOrchestrator.cs): L1(정적) -> L2(AI Gap분석) -> L3(사용자 승인) 흐름 제어 오케스트레이터.
 
-### 4. 코드 검증 CLI 실행 엔트리: [ReSet.Validator.Cli](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Cli)
-*   [Program.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Cli/Program.cs): 검증기 CLI 진입점.
-*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Validator.Cli/ConsoleUserInteraction.cs): TUI 경로 입력 대화창 및 결과 패널 렌더링.
+### 4. 코드 검증 CLI 실행 엔트리: [ReSet.Validator.Cli](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli)
+*   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/Program.cs): 검증기 CLI 진입점.
+*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/ConsoleUserInteraction.cs): TUI 경로 입력 대화창 및 결과 패널 렌더링.
 
 ---
 
@@ -61,14 +61,14 @@
 모든 작업은 아래 기술된 안전성과 무결성 범주에 맞춰 엄격히 격리되어 진행되어야 합니다.
 
 ### 🛡️ 범주 1. 보안 및 크레덴셜 제약 (Security)
-1.  **절대 비공개 API Key를 소스 코드나 [appsettings.json](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Cli/appsettings.json)에 포함하여 커밋하지 마십시오.**
+1.  **절대 비공개 API Key를 소스 코드나 [appsettings.json](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/appsettings.json)에 포함하여 커밋하지 마십시오.**
     *   로컬 개발용 API Key는 Git 추적 제외 대상인 `src/ReSet.Cli/appsettings.local.json`을 새로 생성하여 관리해야 합니다.
 
 ### ⚡ 범주 2. 예외 처리 및 안정성 (Stability & Soft Fail)
 2.  **안전한 Soft Fail (예외 격리 정책)을 준수하십시오.**
-    *   SQL Server DB 메타데이터 수집([DbMetadataService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/DbMetadataService.cs)) 시, 특정 테이블이나 뷰에 대한 스키마 조회 권한이 없는 경우 전체 프로세스를 크래시(`throw`)하지 마십시오.
+    *   SQL Server DB 메타데이터 수집([DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs)) 시, 특정 테이블이나 뷰에 대한 스키마 조회 권한이 없는 경우 전체 프로세스를 크래시(`throw`)하지 마십시오.
     *   권한 오류가 나면 경고 목록(`Warnings`)에 기록하고 안전하게 소프트 스킵하여, AI 프롬프트 및 TUI 화면에 수집 오류가 명시적으로 고지되도록 설계해야 합니다.
-    *   원천 데이터 파일 덤프([MetadataExporter.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/MetadataExporter.cs)) 과정에서 디스크 쓰기 오류(용량 부족 등)가 발생하더라도 핵심 산출물 저장은 끝까지 완료될 수 있도록 에러 핸들러로 감싸주어야 합니다.
+    *   원천 데이터 파일 덤프([MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs)) 과정에서 디스크 쓰기 오류(용량 부족 등)가 발생하더라도 핵심 산출물 저장은 끝까지 완료될 수 있도록 에러 핸들러로 감싸주어야 합니다.
 3.  **데이터 정합성 검증 DB 실행의 Soft Fail 정책을 따르십시오.**
     *   Stored Procedure 실행 데이터를 Legacy SQL Server에서 수집할 때(`SpExecutionService`), 서버 네트워크 차단이나 패스워드 만료 등으로 데이터베이스 연결(`conn.OpenAsync`)이 실패하더라도 검증 프로그램 전체가 비정상 크래시(Crash)나 예외 중단되게 하지 마십시오.
     *   연결 실패(또는 쿼리 수행 오류) 등은 반드시 `try-catch` 블록으로 안전하게 격리하고, 결과 JSON DTO의 각 테스트 케이스에 상태를 `FAIL`로 전환하고 구체적인 예외 메시지를 `ErrorCode` 필드에 기재하여 Soft Fail 형태로 데이터를 안전하게 직렬화해 내보내야 합니다.
@@ -96,13 +96,13 @@
 
 ### ⚙️ 범주 4. 검증 오케스트레이션 및 파이프라인 흐름 (Verification Workflow)
 10. **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
-    *   **L1 (정적 검증)**: [MechanicalValidator.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 구조적 필수 섹션 헤더 검증과 Mermaid 다이어그램 린팅을 엄격히 수행하십시오. L1 검증 실패 시 즉시 보완 프롬프트 제안을 리턴합니다.
-    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
+    *   **L1 (정적 검증)**: [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 구조적 필수 섹션 헤더 검증과 Mermaid 다이어그램 린팅을 엄격히 수행하십시오. L1 검증 실패 시 즉시 보완 프롬프트 제안을 리턴합니다.
+    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
 11. **L2 자가 교정 시 이전 피드백 주입 및 무인 배치 우회를 적용하십시오.**
     *   L2 단계(AI 교차 검토)에서 자가 보완 루프(`Self-Correction`)가 구동될 때, 이전 시도의 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적으로 주입하여 점진적 보완 정확성을 극대화해야 합니다.
     *   무인 배치 모드(`isBatchMode: true`) 환경에서는 통합 배치 전환 계획서 검증 시 L3 단계(사용자 승인) 프롬프트 대기 단계를 생략하고 자동으로 우회 승인하도록 흐름을 통제하십시오.
 12. **신규 AI 공급자 추가 가이드를 따르십시오.**
-    *   새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/sp-reverse-engineering/src/ReSet.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
+    *   새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
 
 ### 🔒 범주 5. 타겟 런타임 격리 및 리소스 정리 (Lifecycle & Sandbox)
 13. **타겟 러너 트랜잭션 격리 및 프로세스 타임아웃을 적용하십시오.**

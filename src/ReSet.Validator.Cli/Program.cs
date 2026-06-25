@@ -287,7 +287,7 @@ namespace ReSet.Validator.Cli
             var dir = AppContext.BaseDirectory;
             while (!string.IsNullOrEmpty(dir))
             {
-                if (File.Exists(Path.Combine(dir, "SP-Reverse-Engineering.slnx")))
+                if (File.Exists(Path.Combine(dir, "ReSet.slnx")))
                 {
                     return dir;
                 }
@@ -298,7 +298,7 @@ namespace ReSet.Validator.Cli
             dir = Directory.GetCurrentDirectory();
             while (!string.IsNullOrEmpty(dir))
             {
-                if (File.Exists(Path.Combine(dir, "SP-Reverse-Engineering.slnx")))
+                if (File.Exists(Path.Combine(dir, "ReSet.slnx")))
                 {
                     return dir;
                 }
