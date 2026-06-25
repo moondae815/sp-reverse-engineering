@@ -39,18 +39,20 @@ namespace ReSet.Core.Services
         private async Task<string> GetObjectDdlAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
-            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
             var query = $@"
-                SELECT definition 
-                FROM {cleanDb}sys.sql_modules 
-                WHERE object_id = OBJECT_ID(@FullName);";
+                SELECT sm.definition 
+                FROM {cleanDb}sys.sql_modules sm
+                INNER JOIN {cleanDb}sys.objects o ON sm.object_id = o.object_id
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.name = @ObjectName AND s.name = @Schema;";
 
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FullName", fullName);
+                    cmd.Parameters.AddWithValue("@ObjectName", objectName);
+                    cmd.Parameters.AddWithValue("@Schema", schema);
                     var result = await cmd.ExecuteScalarAsync(cancellationToken);
                     if (result != null && result != DBNull.Value)
                     {
@@ -58,6 +60,7 @@ namespace ReSet.Core.Services
                     }
                 }
             }
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
             throw new InvalidOperationException($"'{fullName}'의 DDL 코드를 찾을 수 없습니다.");
         }
 
@@ -66,23 +69,25 @@ namespace ReSet.Core.Services
         {
             var rawDeps = new List<DependencyInfo>();
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
-            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
             var query = $@"
                 SELECT 
                     d.referenced_database_name AS ReferencedDatabase,
-                    COALESCE(d.referenced_schema_name, OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
+                    COALESCE(d.referenced_schema_name, 'dbo') AS ReferencedSchema,
                     d.referenced_entity_name AS ReferencedEntityName,
-                    COALESCE(o.type_desc, 'UNKNOWN') AS ReferencedType
+                    COALESCE(o2.type_desc, 'UNKNOWN') AS ReferencedType
                 FROM {cleanDb}sys.sql_expression_dependencies d
-                LEFT JOIN {cleanDb}sys.objects o ON d.referenced_id = o.object_id
-                WHERE d.referencing_id = OBJECT_ID(@FullName);";
+                INNER JOIN {cleanDb}sys.objects o ON d.referencing_id = o.object_id
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                LEFT JOIN {cleanDb}sys.objects o2 ON d.referenced_id = o2.object_id
+                WHERE o.name = @ObjectName AND s.name = @Schema;";
 
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync(cancellationToken);
                 using (var cmd = new SqlCommand(query, conn))
                 {
-                    cmd.Parameters.AddWithValue("@FullName", fullName);
+                    cmd.Parameters.AddWithValue("@ObjectName", objectName);
+                    cmd.Parameters.AddWithValue("@Schema", schema);
                     using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
                         while (await reader.ReadAsync(cancellationToken))
@@ -220,41 +225,43 @@ namespace ReSet.Core.Services
         {
             var columns = new List<ColumnInfo>();
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
-            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{tableName}" : $"[{database}].[{schema}].[{tableName}]";
             var query = $@"
                 SELECT 
-                    c.COLUMN_NAME,
-                    c.DATA_TYPE + 
-                        CASE 
-                            WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN 
-                                '(' + CASE WHEN c.CHARACTER_MAXIMUM_LENGTH = -1 THEN 'MAX' ELSE CAST(c.CHARACTER_MAXIMUM_LENGTH AS VARCHAR(10)) END + ')'
-                            WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL AND c.DATA_TYPE IN ('decimal', 'numeric') THEN 
-                                '(' + CAST(c.NUMERIC_PRECISION AS VARCHAR(10)) + ',' + CAST(c.NUMERIC_SCALE AS VARCHAR(10)) + ')'
-                            ELSE ''
-                        END AS DataType,
-                    CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IsNullable,
-                    ISNULL((SELECT 1 FROM {cleanDb}INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                            JOIN {cleanDb}INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-                            WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
-                              AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                              AND tc.TABLE_NAME = c.TABLE_NAME 
-                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsPrimaryKey,
-                    ISNULL((SELECT 1 FROM {cleanDb}INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                            JOIN {cleanDb}INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-                            WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
-                              AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
-                              AND tc.TABLE_NAME = c.TABLE_NAME 
-                              AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey,
-                    ISNULL((SELECT CAST(value AS NVARCHAR(1000))
-                            FROM {cleanDb}sys.extended_properties
-                            WHERE major_id = OBJECT_ID(@FullName)
-                              AND minor_id = COLUMNPROPERTY(OBJECT_ID(@FullName), c.COLUMN_NAME, 'ColumnId')
-                              AND class = 1
-                              AND name = 'MS_Description'), '') AS Description
-                FROM {cleanDb}INFORMATION_SCHEMA.COLUMNS c
-                WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
-                ORDER BY c.ORDINAL_POSITION;";
- 
+                    c.name AS ColumnName,
+                    t.name + 
+                    CASE 
+                        WHEN t.name IN ('char', 'varchar', 'binary', 'varbinary') THEN 
+                            '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length AS VARCHAR(10)) END + ')'
+                        WHEN t.name IN ('nchar', 'nvarchar') THEN 
+                            '(' + CASE WHEN c.max_length = -1 THEN 'MAX' ELSE CAST(c.max_length / 2 AS VARCHAR(10)) END + ')'
+                        WHEN t.name IN ('decimal', 'numeric') THEN 
+                            '(' + CAST(c.precision AS VARCHAR(10)) + ',' + CAST(c.scale AS VARCHAR(10)) + ')'
+                        ELSE ''
+                    END AS DataType,
+                    CAST(c.is_nullable AS INT) AS IsNullable,
+                    ISNULL((
+                        SELECT 1 
+                        FROM {cleanDb}sys.index_columns ic
+                        INNER JOIN {cleanDb}sys.indexes idx ON ic.object_id = idx.object_id AND ic.index_id = idx.index_id
+                        WHERE ic.object_id = o.object_id AND ic.column_id = c.column_id AND idx.is_primary_key = 1
+                    ), 0) AS IsPrimaryKey,
+                    ISNULL((
+                        SELECT 1 
+                        FROM {cleanDb}sys.foreign_key_columns fkc
+                        WHERE fkc.parent_object_id = o.object_id AND fkc.parent_column_id = c.column_id
+                    ), 0) AS IsForeignKey,
+                    ISNULL((
+                        SELECT CAST(value AS NVARCHAR(1000))
+                        FROM {cleanDb}sys.extended_properties ep
+                        WHERE ep.major_id = o.object_id AND ep.minor_id = c.column_id AND ep.class = 1 AND ep.name = 'MS_Description'
+                    ), '') AS Description
+                FROM {cleanDb}sys.columns c
+                INNER JOIN {cleanDb}sys.objects o ON c.object_id = o.object_id
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                INNER JOIN {cleanDb}sys.types t ON c.user_type_id = t.user_type_id
+                WHERE s.name = @Schema AND o.name = @TableName
+                ORDER BY c.column_id;";
+
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync(cancellationToken);
@@ -262,7 +269,6 @@ namespace ReSet.Core.Services
                 {
                     cmd.Parameters.AddWithValue("@Schema", schema);
                     cmd.Parameters.AddWithValue("@TableName", tableName);
-                    cmd.Parameters.AddWithValue("@FullName", fullName);
                     using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
                         while (await reader.ReadAsync(cancellationToken))
@@ -282,19 +288,21 @@ namespace ReSet.Core.Services
             }
             return columns;
         }
- 
+
         private async Task<string> GetTableDescriptionAsync(string connectionString, string? database, string schema, string tableName, CancellationToken cancellationToken)
         {
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
-            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{tableName}" : $"[{database}].[{schema}].[{tableName}]";
             var query = $@"
-                SELECT CAST(value AS NVARCHAR(MAX)) 
-                FROM {cleanDb}sys.extended_properties 
-                WHERE major_id = OBJECT_ID(@FullName) 
-                  AND minor_id = 0 
-                  AND class = 1
-                  AND name = 'MS_Description';";
- 
+                SELECT CAST(ep.value AS NVARCHAR(MAX)) 
+                FROM {cleanDb}sys.extended_properties ep
+                INNER JOIN {cleanDb}sys.objects o ON ep.major_id = o.object_id
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.name = @TableName 
+                  AND s.name = @Schema 
+                  AND ep.minor_id = 0 
+                  AND ep.class = 1
+                  AND ep.name = 'MS_Description';";
+
             try
             {
                 using (var conn = new SqlConnection(connectionString))
@@ -302,7 +310,8 @@ namespace ReSet.Core.Services
                     await conn.OpenAsync(cancellationToken);
                     using (var cmd = new SqlCommand(query, conn))
                     {
-                        cmd.Parameters.AddWithValue("@FullName", fullName);
+                        cmd.Parameters.AddWithValue("@TableName", tableName);
+                        cmd.Parameters.AddWithValue("@Schema", schema);
                         var result = await cmd.ExecuteScalarAsync(cancellationToken);
                         if (result != null && result != DBNull.Value)
                         {
@@ -321,11 +330,11 @@ namespace ReSet.Core.Services
         private async Task<string> GetObjectTypeAsync(string connectionString, string database, string schema, string objectName, CancellationToken cancellationToken)
         {
             var cleanDb = $"[{database.Replace("]", "]]")}].";
-            var fullName = $"[{database}].[{schema}].[{objectName}]";
             var query = $@"
-                SELECT type_desc 
-                FROM {cleanDb}sys.objects 
-                WHERE object_id = OBJECT_ID(@FullName);";
+                SELECT o.type_desc 
+                FROM {cleanDb}sys.objects o
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                WHERE o.name = @ObjectName AND s.name = @SchemaName;";
 
             try
             {
@@ -334,7 +343,8 @@ namespace ReSet.Core.Services
                     await conn.OpenAsync(cancellationToken);
                     using (var cmd = new SqlCommand(query, conn))
                     {
-                        cmd.Parameters.AddWithValue("@FullName", fullName);
+                        cmd.Parameters.AddWithValue("@ObjectName", objectName);
+                        cmd.Parameters.AddWithValue("@SchemaName", schema);
                         var result = await cmd.ExecuteScalarAsync(cancellationToken);
                         if (result != null && result != DBNull.Value)
                         {
@@ -349,7 +359,7 @@ namespace ReSet.Core.Services
             }
             return "UNKNOWN";
         }
- 
+
         // 동적 SQL DDL 텍스트 분석 및 누락된 의존 테이블 수집 헬퍼
         private async Task ResolveDynamicSqlDependenciesAsync(
             string connectionString, string? database, string ddlText, int currentDepth,
@@ -357,14 +367,14 @@ namespace ReSet.Core.Services
             List<string> warnings, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(ddlText)) return;
- 
+
             // 동적 SQL 감지 여부 파악 (EXEC, EXECUTE, sp_executesql)
             bool hasDynamicSql = ddlText.Contains("EXEC", StringComparison.OrdinalIgnoreCase) || 
                                  ddlText.Contains("EXECUTE", StringComparison.OrdinalIgnoreCase) || 
                                  ddlText.Contains("sp_executesql", StringComparison.OrdinalIgnoreCase);
- 
+
             if (!hasDynamicSql) return;
- 
+
             var tablePatterns = new[]
             {
                 @"FROM\s+([a-zA-Z0-9_\.\[\]]+)",
@@ -373,7 +383,7 @@ namespace ReSet.Core.Services
                 @"UPDATE\s+([a-zA-Z0-9_\.\[\]]+)",
                 @"MERGE\s+(?:INTO\s+)?([a-zA-Z0-9_\.\[\]]+)"
             };
- 
+
             var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var pattern in tablePatterns)
             {
@@ -393,7 +403,7 @@ namespace ReSet.Core.Services
                     }
                 }
             }
- 
+
             foreach (var candidate in candidates)
             {
                 string? depDb = database;
@@ -414,21 +424,22 @@ namespace ReSet.Core.Services
                         name = parts[1];
                     }
                 }
- 
+
                 var depFullName = string.IsNullOrEmpty(depDb) 
                     ? $"{schema}.{name}" 
                     : $"[{depDb}].[{schema}].[{name}]";
                     
                 if (visited.Contains(depFullName)) continue;
- 
+
                 // 데이터베이스 실제 개체 여부 및 타입 조회
                 string? objectType = null;
                 var cleanDb = string.IsNullOrEmpty(depDb) ? "" : $"[{depDb.Replace("]", "]]")}].";
                 var checkQuery = $@"
-                    SELECT type_desc 
-                    FROM {cleanDb}sys.objects 
-                    WHERE object_id = OBJECT_ID(@FullName);";
- 
+                    SELECT o.type_desc 
+                    FROM {cleanDb}sys.objects o
+                    INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                    WHERE o.name = @ObjectName AND s.name = @Schema;";
+
                 try
                 {
                     using (var conn = new SqlConnection(connectionString))
@@ -436,7 +447,8 @@ namespace ReSet.Core.Services
                         await conn.OpenAsync(cancellationToken);
                         using (var cmd = new SqlCommand(checkQuery, conn))
                         {
-                            cmd.Parameters.AddWithValue("@FullName", depFullName);
+                            cmd.Parameters.AddWithValue("@ObjectName", name);
+                            cmd.Parameters.AddWithValue("@Schema", schema);
                             var result = await cmd.ExecuteScalarAsync(cancellationToken);
                             if (result != null && result != DBNull.Value)
                             {
@@ -449,11 +461,11 @@ namespace ReSet.Core.Services
                 {
                     // 조회 에러 시 소프트 페일로 스킵
                 }
- 
+
                 if (objectType != null && (objectType.Contains("TABLE") || objectType.Contains("VIEW")))
                 {
                     visited.Add(depFullName);
- 
+
                     var depInfo = new DependencyInfo
                     {
                         Database = depDb,
@@ -463,7 +475,7 @@ namespace ReSet.Core.Services
                         DiscoveryDepth = currentDepth,
                         Description = "Dynamic SQL Analysis"
                     };
- 
+
                     try
                     {
                         depInfo.Columns = await GetTableColumnsAsync(connectionString, depDb, schema, name, cancellationToken);
@@ -477,7 +489,7 @@ namespace ReSet.Core.Services
                     {
                         warnings.Add($"[Dynamic SQL: {depFullName}] 테이블 스키마 수집 실패: {ex.Message}");
                     }
- 
+
                     dependencies.Add(depInfo);
                 }
             }
