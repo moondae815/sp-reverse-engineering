@@ -349,7 +349,18 @@ namespace ReSet.Validator.Cli
             config.TargetLanguage = configuration["ValidationSettings:TargetLanguage"] ?? "Auto";
             config.OutputDirectory = configuration["ValidationSettings:OutputDirectory"] ?? "./output/validation";
 
-            int.TryParse(configuration["AiSettings:MaxL2Attempts"] ?? "2", out int maxL2Attempts);
+            var maxL2AttemptsRaw = configuration["AiSettings:MaxL2Attempts"] ?? "2";
+            int maxL2Attempts = 2;
+            if (string.Equals(maxL2AttemptsRaw, "unlimited", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(maxL2AttemptsRaw, "검증 완료까지", StringComparison.OrdinalIgnoreCase) ||
+                maxL2AttemptsRaw == "-1")
+            {
+                maxL2Attempts = -1;
+            }
+            else if (int.TryParse(maxL2AttemptsRaw, out int parsed))
+            {
+                maxL2Attempts = parsed;
+            }
             config.MaxL2Attempts = maxL2Attempts;
 
             // CLI 인자가 있으면 오버라이드

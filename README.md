@@ -144,8 +144,10 @@ SP-Reverse-Engineering/
 ## ⚙ 설정 방법 (Configuration)
 
 ### 1. `appsettings.json` 설정
-프로그램 실행 전 `src/ReSet.Cli/appsettings.json` 파일을 열어 기본적인 데이터베이스 환경 및 출력 설정을 지정합니다. 자격 증명 누출 방지를 위해 이 파일의 `ApiKey`는 비워두는 것을 권장합니다.
+프로그램 실행 전, 분석기(`src/ReSet.Cli/appsettings.json`) 및 검증기(`src/ReSet.Validator.Cli/appsettings.json`)용 설정 파일을 열어 각각의 목적에 맞게 필요한 데이터베이스 환경 및 AI 설정을 지정합니다. 자격 증명 누출 방지를 위해 `ApiKey`는 비워두는 것을 권장합니다.
 
+#### 1) 분석기 설정 (`src/ReSet.Cli/appsettings.json`)
+역공학 및 마이그레이션 설계를 위한 주요 설정 파일입니다.
 ```json
 {
   "DatabaseSettings": {
@@ -189,11 +191,7 @@ SP-Reverse-Engineering/
     "TargetLanguage": "C#"         // [설정] 제안할 신규 시스템의 배치 프레임워크 언어 (C# | Java 등)
   },
   "ValidationSettings": {
-    "UseMermaidCli": false,         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false)
-    "SpecDirectory": "./output",          // [설정] 검증에 쓰일 명세서 폴더
-    "SourceCodeDirectory": "./src",       // [설정] 검증에 쓰일 구현 소스코드 폴더
-    "TargetLanguage": "Auto",             // [설정] 검증 대상 언어 ("Auto" | "C#" | "Java")
-    "OutputDirectory": "./output/validation" // [설정] 일치성 Gap 보고서 저장 경로
+    "UseMermaidCli": false         // [설정] mmdc(mermaid-cli)를 이용한 Mermaid 실시간 렌더링 검사 수행 여부 (기본값: false)
   },
   "CodegenSettings": {
     "Enabled": false,                     // [설정] 분석 완료 후 코딩 에이전트 브릿지 자동 실행 활성화 여부
@@ -213,6 +211,42 @@ SP-Reverse-Engineering/
         "Arguments": "\"{instructions}\""
       }
     }
+  }
+}
+```
+
+#### 2) 검증기 설정 (`src/ReSet.Validator.Cli/appsettings.json`)
+마이그레이션된 소스 코드와 설계서의 일치성을 검증하기 위한 설정 파일입니다.
+```json
+{
+  "AiSettings": {
+    "Provider": "OpenAI",
+    "ModelName": "gpt-4o",
+    "Temperature": 0.1,
+    "MaxL2Attempts": 2,
+    "Providers": {
+      "OpenAI": {
+        "ApiKey": "",
+        "Endpoint": "https://api.openai.com/v1"
+      },
+      "Google": {
+        "ApiKey": "",
+        "Endpoint": "https://generativelanguage.googleapis.com"
+      },
+      "Claude": {
+        "ApiKey": "",
+        "Endpoint": "https://api.anthropic.com"
+      },
+      "Ollama": {
+        "Endpoint": "http://localhost:11434"
+      }
+    }
+  },
+  "ValidationSettings": {
+    "SpecDirectory": "./output",          // [설정] 검증에 쓰일 명세서 폴더
+    "SourceCodeDirectory": "./src",       // [설정] 검증에 쓰일 구현 소스코드 폴더
+    "TargetLanguage": "Auto",             // [설정] 검증 대상 언어 ("Auto" | "C#" | "Java")
+    "OutputDirectory": "./output/validation" // [설정] 일치성 Gap 보고서 저장 경로
   }
 }
 ```

@@ -87,10 +87,11 @@ namespace ReSet.Validator.Core.Services
                 
                 // L2 자체 교정 (Self-Correction) 시도 (선택)
                 int attempt = 1;
-                while (gapReport.OverallStatus != "MATCH" && attempt < _config.MaxL2Attempts)
+                while (gapReport.OverallStatus != "MATCH" && (_config.MaxL2Attempts == -1 || attempt < _config.MaxL2Attempts))
                 {
                     attempt++;
-                    _ui?.ShowInfo($"   [L2 자체 교정 루프] AI 재검토 요청 중... (시도 {attempt}/{_config.MaxL2Attempts})");
+                    var attemptsTotalText = _config.MaxL2Attempts == -1 ? "무제한" : _config.MaxL2Attempts.ToString();
+                    _ui?.ShowInfo($"   [L2 자체 교정 루프] AI 재검토 요청 중... (시도 {attempt}/{attemptsTotalText})");
                     
                     var feedback = $"- 종합 상태: {gapReport.OverallStatus}\n- 입력 파라미터 불일치: {gapReport.InputParametersGap}\n- 출력 데이터셋 불일치: {gapReport.OutputResultSetsGap}\n- 비즈니스 로직 불일치: {gapReport.BusinessLogicGap}\n- 예외 및 트랜잭션 불일치: {gapReport.ExceptionHandlingGap}\n- 수정 제안: {gapReport.Suggestions}";
                     
