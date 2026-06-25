@@ -27,7 +27,7 @@ namespace ReSet.Core.Tests
             var service = new DbMetadataService();
 
             // Act & Assert
-            await Assert.ThrowsAnyAsync<System.Exception>(() => service.GetTableColumnsAsync(invalidConnString, "dbo", "NonExistentTable"));
+            await Assert.ThrowsAnyAsync<System.Exception>(() => service.GetTableColumnsAsync(invalidConnString, null, "dbo", "NonExistentTable"));
         }
     }
 }

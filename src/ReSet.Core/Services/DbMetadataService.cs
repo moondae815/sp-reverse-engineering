@@ -36,12 +36,13 @@ namespace ReSet.Core.Services
         }
 
         // 헬퍼 메서드: 특정 객체의 DDL 원본 텍스트 조회
-        private async Task<string> GetObjectDdlAsync(string connectionString, string schema, string objectName, CancellationToken cancellationToken)
+        private async Task<string> GetObjectDdlAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
-            var fullName = $"{schema}.{objectName}";
-            var query = @"
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
+            var query = $@"
                 SELECT definition 
-                FROM sys.sql_modules 
+                FROM {cleanDb}sys.sql_modules 
                 WHERE object_id = OBJECT_ID(@FullName);";
 
             using (var conn = new SqlConnection(connectionString))
@@ -61,17 +62,19 @@ namespace ReSet.Core.Services
         }
 
         // 헬퍼 메서드: 특정 객체의 1차 의존 정보 목록 수집
-        private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string schema, string objectName, CancellationToken cancellationToken)
+        private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
             var rawDeps = new List<DependencyInfo>();
-            var fullName = $"{schema}.{objectName}";
-            var query = @"
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
+            var query = $@"
                 SELECT 
-                    COALESCE(OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
+                    d.referenced_database_name AS ReferencedDatabase,
+                    COALESCE(d.referenced_schema_name, OBJECT_SCHEMA_NAME(d.referenced_id), 'dbo') AS ReferencedSchema,
                     d.referenced_entity_name AS ReferencedEntityName,
-                    o.type_desc AS ReferencedType
-                FROM sys.sql_expression_dependencies d
-                INNER JOIN sys.objects o ON d.referenced_id = o.object_id
+                    COALESCE(o.type_desc, 'UNKNOWN') AS ReferencedType
+                FROM {cleanDb}sys.sql_expression_dependencies d
+                LEFT JOIN {cleanDb}sys.objects o ON d.referenced_id = o.object_id
                 WHERE d.referencing_id = OBJECT_ID(@FullName);";
 
             using (var conn = new SqlConnection(connectionString))
@@ -86,9 +89,10 @@ namespace ReSet.Core.Services
                         {
                             rawDeps.Add(new DependencyInfo
                             {
-                                Schema = reader.GetString(0),
-                                Name = reader.GetString(1),
-                                Type = reader.GetString(2)
+                                Database = reader.IsDBNull(0) ? null : reader.GetString(0),
+                                Schema = reader.GetString(1),
+                                Name = reader.GetString(2),
+                                Type = reader.GetString(3)
                             });
                         }
                     }
@@ -106,7 +110,7 @@ namespace ReSet.Core.Services
             // 1. 메인 SP의 DDL 조회
             try
             {
-                spDef.DdlText = await GetObjectDdlAsync(connectionString, schema, spName, cancellationToken);
+                spDef.DdlText = await GetObjectDdlAsync(connectionString, null, schema, spName, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -118,17 +122,17 @@ namespace ReSet.Core.Services
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
 
             // 2.5 메인 SP 내 동적 SQL 의존성 선행 분석
-            await ResolveDynamicSqlDependenciesAsync(connectionString, spDef.DdlText, 1, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
+            await ResolveDynamicSqlDependenciesAsync(connectionString, null, spDef.DdlText, 1, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
             
             // 3. 재귀 수집 시작
-            await GatherDependenciesRecursiveAsync(connectionString, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
+            await GatherDependenciesRecursiveAsync(connectionString, null, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
 
             return spDef;
         }
 
         // 재귀 호출 메서드 (DFS)
         private async Task GatherDependenciesRecursiveAsync(
-            string connectionString, string schema, string name, 
+            string connectionString, string? database, string schema, string name, 
             int currentDepth, int maxDepth, 
             HashSet<string> visited, List<DependencyInfo> dependencies,
             List<string> warnings, CancellationToken cancellationToken)
@@ -138,36 +142,48 @@ namespace ReSet.Core.Services
             List<DependencyInfo> rawDeps;
             try
             {
-                rawDeps = await GetRawDependenciesAsync(connectionString, schema, name, cancellationToken);
+                rawDeps = await GetRawDependenciesAsync(connectionString, database, schema, name, cancellationToken);
             }
             catch (Exception ex)
             {
-                warnings.Add($"[{schema}.{name}] 의존 관계 정보 수집 실패: {ex.Message}");
+                var targetName = string.IsNullOrEmpty(database) ? $"{schema}.{name}" : $"[{database}].[{schema}].[{name}]";
+                warnings.Add($"[{targetName}] 의존 관계 정보 수집 실패: {ex.Message}");
                 return; // 수집 실패 시 조용히 스킵 (Soft Fail)
             }
 
             foreach (var rawDep in rawDeps)
             {
-                var depFullName = $"{rawDep.Schema}.{rawDep.Name}";
+                var depFullName = string.IsNullOrEmpty(rawDep.Database) 
+                    ? $"{rawDep.Schema}.{rawDep.Name}" 
+                    : $"[{rawDep.Database}].[{rawDep.Schema}].[{rawDep.Name}]";
+                    
                 if (visited.Contains(depFullName)) continue;
 
                 visited.Add(depFullName);
 
                 var depInfo = new DependencyInfo
                 {
+                    Database = rawDep.Database,
                     Schema = rawDep.Schema,
                     Name = rawDep.Name,
                     Type = rawDep.Type,
                     DiscoveryDepth = currentDepth
                 };
 
+                // 타 DB 개체이고 타입을 알 수 없는 경우 동적 확인
+                if (rawDep.Type == "UNKNOWN" && !string.IsNullOrEmpty(rawDep.Database))
+                {
+                    rawDep.Type = await GetObjectTypeAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
+                    depInfo.Type = rawDep.Type;
+                }
+
                 // 스키마 조회 분기 (테이블, 뷰)
                 if (rawDep.Type.Contains("TABLE") || rawDep.Type.Contains("VIEW"))
                 {
                     try
                     {
-                        depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
-                        depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
+                        depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
+                        depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -179,15 +195,15 @@ namespace ReSet.Core.Services
                 {
                     try
                     {
-                        depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Schema, rawDep.Name, cancellationToken);
+                        depInfo.ReferencedDdlText = await GetObjectDdlAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
                         
                         // 참조 DDL 내 동적 SQL 의존성 분석 수행
                         await ResolveDynamicSqlDependenciesAsync(
-                            connectionString, depInfo.ReferencedDdlText, currentDepth, visited, dependencies, warnings, cancellationToken);
+                            connectionString, rawDep.Database, depInfo.ReferencedDdlText, currentDepth, visited, dependencies, warnings, cancellationToken);
 
                         // 하위 재귀 수집 호출
                         await GatherDependenciesRecursiveAsync(
-                            connectionString, rawDep.Schema, rawDep.Name, 
+                            connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, 
                             currentDepth + 1, maxDepth, visited, dependencies, warnings, cancellationToken);
                     }
                     catch (Exception ex)
@@ -200,10 +216,12 @@ namespace ReSet.Core.Services
             }
         }
 
-        public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string schema, string tableName, CancellationToken cancellationToken = default)
+        public async Task<List<ColumnInfo>> GetTableColumnsAsync(string connectionString, string? database, string schema, string tableName, CancellationToken cancellationToken = default)
         {
             var columns = new List<ColumnInfo>();
-            var query = @"
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{tableName}" : $"[{database}].[{schema}].[{tableName}]";
+            var query = $@"
                 SELECT 
                     c.COLUMN_NAME,
                     c.DATA_TYPE + 
@@ -215,28 +233,28 @@ namespace ReSet.Core.Services
                             ELSE ''
                         END AS DataType,
                     CASE WHEN c.IS_NULLABLE = 'YES' THEN 1 ELSE 0 END AS IsNullable,
-                    ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                    ISNULL((SELECT 1 FROM {cleanDb}INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN {cleanDb}INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
                             WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY' 
                               AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
                               AND tc.TABLE_NAME = c.TABLE_NAME 
                               AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsPrimaryKey,
-                    ISNULL((SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                    ISNULL((SELECT 1 FROM {cleanDb}INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                            JOIN {cleanDb}INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
                             WHERE tc.CONSTRAINT_TYPE = 'FOREIGN KEY' 
                               AND tc.TABLE_SCHEMA = c.TABLE_SCHEMA 
                               AND tc.TABLE_NAME = c.TABLE_NAME 
                               AND kcu.COLUMN_NAME = c.COLUMN_NAME), 0) AS IsForeignKey,
                     ISNULL((SELECT CAST(value AS NVARCHAR(1000))
-                            FROM sys.extended_properties
-                            WHERE major_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME)
-                              AND minor_id = COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), c.COLUMN_NAME, 'ColumnId')
+                            FROM {cleanDb}sys.extended_properties
+                            WHERE major_id = OBJECT_ID(@FullName)
+                              AND minor_id = COLUMNPROPERTY(OBJECT_ID(@FullName), c.COLUMN_NAME, 'ColumnId')
                               AND class = 1
                               AND name = 'MS_Description'), '') AS Description
-                FROM INFORMATION_SCHEMA.COLUMNS c
+                FROM {cleanDb}INFORMATION_SCHEMA.COLUMNS c
                 WHERE c.TABLE_SCHEMA = @Schema AND c.TABLE_NAME = @TableName
                 ORDER BY c.ORDINAL_POSITION;";
-
+ 
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync(cancellationToken);
@@ -244,6 +262,7 @@ namespace ReSet.Core.Services
                 {
                     cmd.Parameters.AddWithValue("@Schema", schema);
                     cmd.Parameters.AddWithValue("@TableName", tableName);
+                    cmd.Parameters.AddWithValue("@FullName", fullName);
                     using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
                     {
                         while (await reader.ReadAsync(cancellationToken))
@@ -263,18 +282,19 @@ namespace ReSet.Core.Services
             }
             return columns;
         }
-
-        private async Task<string> GetTableDescriptionAsync(string connectionString, string schema, string tableName, CancellationToken cancellationToken)
+ 
+        private async Task<string> GetTableDescriptionAsync(string connectionString, string? database, string schema, string tableName, CancellationToken cancellationToken)
         {
-            var fullName = $"{schema}.{tableName}";
-            var query = @"
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{tableName}" : $"[{database}].[{schema}].[{tableName}]";
+            var query = $@"
                 SELECT CAST(value AS NVARCHAR(MAX)) 
-                FROM sys.extended_properties 
+                FROM {cleanDb}sys.extended_properties 
                 WHERE major_id = OBJECT_ID(@FullName) 
                   AND minor_id = 0 
                   AND class = 1
                   AND name = 'MS_Description';";
-
+ 
             try
             {
                 using (var conn = new SqlConnection(connectionString))
@@ -298,21 +318,53 @@ namespace ReSet.Core.Services
             return string.Empty;
         }
 
+        private async Task<string> GetObjectTypeAsync(string connectionString, string database, string schema, string objectName, CancellationToken cancellationToken)
+        {
+            var cleanDb = $"[{database.Replace("]", "]]")}].";
+            var fullName = $"[{database}].[{schema}].[{objectName}]";
+            var query = $@"
+                SELECT type_desc 
+                FROM {cleanDb}sys.objects 
+                WHERE object_id = OBJECT_ID(@FullName);";
+
+            try
+            {
+                using (var conn = new SqlConnection(connectionString))
+                {
+                    await conn.OpenAsync(cancellationToken);
+                    using (var cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@FullName", fullName);
+                        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                        if (result != null && result != DBNull.Value)
+                        {
+                            return result.ToString() ?? "UNKNOWN";
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // 권한 오류 시 소프트 스킵
+            }
+            return "UNKNOWN";
+        }
+ 
         // 동적 SQL DDL 텍스트 분석 및 누락된 의존 테이블 수집 헬퍼
         private async Task ResolveDynamicSqlDependenciesAsync(
-            string connectionString, string ddlText, int currentDepth,
+            string connectionString, string? database, string ddlText, int currentDepth,
             HashSet<string> visited, List<DependencyInfo> dependencies,
             List<string> warnings, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(ddlText)) return;
-
+ 
             // 동적 SQL 감지 여부 파악 (EXEC, EXECUTE, sp_executesql)
             bool hasDynamicSql = ddlText.Contains("EXEC", StringComparison.OrdinalIgnoreCase) || 
                                  ddlText.Contains("EXECUTE", StringComparison.OrdinalIgnoreCase) || 
                                  ddlText.Contains("sp_executesql", StringComparison.OrdinalIgnoreCase);
-
+ 
             if (!hasDynamicSql) return;
-
+ 
             var tablePatterns = new[]
             {
                 @"FROM\s+([a-zA-Z0-9_\.\[\]]+)",
@@ -321,7 +373,7 @@ namespace ReSet.Core.Services
                 @"UPDATE\s+([a-zA-Z0-9_\.\[\]]+)",
                 @"MERGE\s+(?:INTO\s+)?([a-zA-Z0-9_\.\[\]]+)"
             };
-
+ 
             var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var pattern in tablePatterns)
             {
@@ -341,28 +393,42 @@ namespace ReSet.Core.Services
                     }
                 }
             }
-
+ 
             foreach (var candidate in candidates)
             {
+                string? depDb = database;
                 var schema = "dbo";
                 var name = candidate;
                 if (candidate.Contains('.'))
                 {
-                    var parts = candidate.Split('.', 2);
-                    schema = parts[0];
-                    name = parts[1];
+                    var parts = candidate.Split('.');
+                    if (parts.Length == 3)
+                    {
+                        depDb = parts[0];
+                        schema = parts[1];
+                        name = parts[2];
+                    }
+                    else if (parts.Length == 2)
+                    {
+                        schema = parts[0];
+                        name = parts[1];
+                    }
                 }
-
-                var fullName = $"{schema}.{name}";
-                if (visited.Contains(fullName)) continue;
-
+ 
+                var depFullName = string.IsNullOrEmpty(depDb) 
+                    ? $"{schema}.{name}" 
+                    : $"[{depDb}].[{schema}].[{name}]";
+                    
+                if (visited.Contains(depFullName)) continue;
+ 
                 // 데이터베이스 실제 개체 여부 및 타입 조회
                 string? objectType = null;
-                var checkQuery = @"
+                var cleanDb = string.IsNullOrEmpty(depDb) ? "" : $"[{depDb.Replace("]", "]]")}].";
+                var checkQuery = $@"
                     SELECT type_desc 
-                    FROM sys.objects 
+                    FROM {cleanDb}sys.objects 
                     WHERE object_id = OBJECT_ID(@FullName);";
-
+ 
                 try
                 {
                     using (var conn = new SqlConnection(connectionString))
@@ -370,7 +436,7 @@ namespace ReSet.Core.Services
                         await conn.OpenAsync(cancellationToken);
                         using (var cmd = new SqlCommand(checkQuery, conn))
                         {
-                            cmd.Parameters.AddWithValue("@FullName", fullName);
+                            cmd.Parameters.AddWithValue("@FullName", depFullName);
                             var result = await cmd.ExecuteScalarAsync(cancellationToken);
                             if (result != null && result != DBNull.Value)
                             {
@@ -383,24 +449,25 @@ namespace ReSet.Core.Services
                 {
                     // 조회 에러 시 소프트 페일로 스킵
                 }
-
+ 
                 if (objectType != null && (objectType.Contains("TABLE") || objectType.Contains("VIEW")))
                 {
-                    visited.Add(fullName);
-
+                    visited.Add(depFullName);
+ 
                     var depInfo = new DependencyInfo
                     {
+                        Database = depDb,
                         Schema = schema,
                         Name = name,
                         Type = objectType,
                         DiscoveryDepth = currentDepth,
                         Description = "Dynamic SQL Analysis"
                     };
-
+ 
                     try
                     {
-                        depInfo.Columns = await GetTableColumnsAsync(connectionString, schema, name, cancellationToken);
-                        depInfo.Description = await GetTableDescriptionAsync(connectionString, schema, name, cancellationToken);
+                        depInfo.Columns = await GetTableColumnsAsync(connectionString, depDb, schema, name, cancellationToken);
+                        depInfo.Description = await GetTableDescriptionAsync(connectionString, depDb, schema, name, cancellationToken);
                         if (string.IsNullOrEmpty(depInfo.Description))
                         {
                             depInfo.Description = "Dynamic SQL에 의해 동적 감지된 테이블";
@@ -408,9 +475,9 @@ namespace ReSet.Core.Services
                     }
                     catch (Exception ex)
                     {
-                        warnings.Add($"[Dynamic SQL: {fullName}] 테이블 스키마 수집 실패: {ex.Message}");
+                        warnings.Add($"[Dynamic SQL: {depFullName}] 테이블 스키마 수집 실패: {ex.Message}");
                     }
-
+ 
                     dependencies.Add(depInfo);
                 }
             }

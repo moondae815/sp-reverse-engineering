@@ -57,7 +57,9 @@ namespace ReSet.Core.Services
                 // 의존성 순회하여 개별 덤프
                 foreach (var dep in spDef.Dependencies)
                 {
-                    var depFileName = $"{dep.Schema}.{dep.Name}";
+                    var depFileName = string.IsNullOrEmpty(dep.Database)
+                        ? $"{dep.Schema}.{dep.Name}"
+                        : $"{dep.Database}_{dep.Schema}_{dep.Name}";
 
                     // 테이블 스키마 md 저장
                     if (dep.Columns.Count > 0)
@@ -153,7 +155,10 @@ namespace ReSet.Core.Services
 
                 foreach (var dep in spDef.Dependencies)
                 {
-                    sb.AppendLine($"### 🔹 {dep.Type}: `{dep.Schema}.{dep.Name}`");
+                    var depFullName = string.IsNullOrEmpty(dep.Database)
+                        ? $"{dep.Schema}.{dep.Name}"
+                        : $"[{dep.Database}].[{dep.Schema}].[{dep.Name}]";
+                    sb.AppendLine($"### 🔹 {dep.Type}: `{depFullName}`");
                     
                     if (dep.Columns.Count > 0)
                     {
@@ -256,7 +261,10 @@ namespace ReSet.Core.Services
 
                     foreach (var dep in spDef.Dependencies)
                     {
-                        sb.AppendLine($"#### 🔹 {dep.Type}: `{dep.Schema}.{dep.Name}`");
+                        var depFullName = string.IsNullOrEmpty(dep.Database)
+                            ? $"{dep.Schema}.{dep.Name}"
+                            : $"[{dep.Database}].[{dep.Schema}].[{dep.Name}]";
+                        sb.AppendLine($"#### 🔹 {dep.Type}: `{depFullName}`");
                         
                         if (dep.Columns.Count > 0)
                         {
@@ -309,7 +317,10 @@ namespace ReSet.Core.Services
         private string FormatTableSchemaToMarkdown(DependencyInfo dep)
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"# 테이블 스키마: {dep.Schema}.{dep.Name}");
+            var depFullName = string.IsNullOrEmpty(dep.Database)
+                ? $"{dep.Schema}.{dep.Name}"
+                : $"[{dep.Database}].[{dep.Schema}].[{dep.Name}]";
+            sb.AppendLine($"# 테이블 스키마: {depFullName}");
             sb.AppendLine($"* 객체 타입: {dep.Type}");
             sb.AppendLine($"* 발견 깊이: {dep.DiscoveryDepth}단계");
             if (!string.IsNullOrEmpty(dep.Description))
