@@ -43,7 +43,7 @@ namespace ReSet.Core.Services.Clients
                 {
                     new { role = "user", content = userPrompt }
                 },
-                max_tokens = 4096,
+                max_tokens = 64000,
                 temperature = temperature
             };
 
