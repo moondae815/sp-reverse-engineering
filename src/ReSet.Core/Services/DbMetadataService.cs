@@ -60,6 +60,34 @@ namespace ReSet.Core.Services
                     }
                 }
             }
+
+            // Fallback: 스키마가 dbo인 상태로 실패한 경우, 스키마 조건을 완화하여 다른 스키마에 존재하는지 재조회
+            if (schema == "dbo")
+            {
+                var fallbackQuery = $@"
+                    SELECT TOP 1 sm.definition 
+                    FROM {cleanDb}sys.sql_modules sm
+                    INNER JOIN {cleanDb}sys.objects o ON sm.object_id = o.object_id
+                    WHERE o.name = @ObjectName;";
+                try
+                {
+                    using (var conn = new SqlConnection(connectionString))
+                    {
+                        await conn.OpenAsync(cancellationToken);
+                        using (var cmd = new SqlCommand(fallbackQuery, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@ObjectName", objectName);
+                            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                            if (result != null && result != DBNull.Value)
+                            {
+                                return result.ToString() ?? string.Empty;
+                            }
+                        }
+                    }
+                }
+                catch {}
+            }
+
             var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
             throw new InvalidOperationException($"'{fullName}'의 DDL 코드를 찾을 수 없습니다.");
         }
@@ -175,8 +203,8 @@ namespace ReSet.Core.Services
                     DiscoveryDepth = currentDepth
                 };
 
-                // 타 DB 개체이고 타입을 알 수 없는 경우 동적 확인
-                if (rawDep.Type == "UNKNOWN" && !string.IsNullOrEmpty(rawDep.Database))
+                // 동일 DB 또는 타 DB 개체의 타입을 알 수 없는 경우 동적 확인
+                if (rawDep.Type == "UNKNOWN")
                 {
                     rawDep.Type = await GetObjectTypeAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
                     depInfo.Type = rawDep.Type;
@@ -327,9 +355,9 @@ namespace ReSet.Core.Services
             return string.Empty;
         }
 
-        private async Task<string> GetObjectTypeAsync(string connectionString, string database, string schema, string objectName, CancellationToken cancellationToken)
+        private async Task<string> GetObjectTypeAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
-            var cleanDb = $"[{database.Replace("]", "]]")}].";
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
             var query = $@"
                 SELECT o.type_desc 
                 FROM {cleanDb}sys.objects o
@@ -357,6 +385,33 @@ namespace ReSet.Core.Services
             {
                 // 권한 오류 시 소프트 스킵
             }
+
+            // Fallback: 스키마가 dbo인 상태로 실패한 경우, 스키마 조건을 완화하여 이름만으로 객체 타입 조회
+            if (schema == "dbo")
+            {
+                var fallbackQuery = $@"
+                    SELECT TOP 1 o.type_desc 
+                    FROM {cleanDb}sys.objects o
+                    WHERE o.name = @ObjectName;";
+                try
+                {
+                    using (var conn = new SqlConnection(connectionString))
+                    {
+                        await conn.OpenAsync(cancellationToken);
+                        using (var cmd = new SqlCommand(fallbackQuery, conn))
+                        {
+                            cmd.Parameters.AddWithValue("@ObjectName", objectName);
+                            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                            if (result != null && result != DBNull.Value)
+                            {
+                                return result.ToString() ?? "UNKNOWN";
+                            }
+                        }
+                    }
+                }
+                catch {}
+            }
+
             return "UNKNOWN";
         }
 

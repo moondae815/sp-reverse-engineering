@@ -109,6 +109,7 @@ namespace ReSet.Core.Services
                 }
             }
 
+            var feedbackHistory = new System.Collections.Generic.List<string>();
             string? feedbackLog = null;
             string specificationMarkdown = string.Empty;
 
@@ -177,7 +178,9 @@ namespace ReSet.Core.Services
                     bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
                     if (canRetry)
                     {
-                        feedbackLog = $"[L2 AI 리뷰 피드백]: 다음 결함/누락사항이 지적되었습니다. 전면 반영해서 수정해 주십시오.\n{l2Result.FeedbackComment}";
+                        feedbackHistory.Add($"[시도 {attempt} L2 피드백]:\n{l2Result.FeedbackComment}");
+                        feedbackLog = "[L2 AI 리뷰 피드백 히스토리]: 다음 누적 결함/누락사항이 지적되었습니다. 이전의 실수를 반복하지 말고 지적 사항을 전면 반영해서 수정해 주십시오.\n\n" + 
+                                      string.Join("\n\n", feedbackHistory);
                         attempt++;
                         continue;
                     }
