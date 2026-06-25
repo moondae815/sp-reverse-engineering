@@ -181,8 +181,8 @@ namespace ReSet.Cli
                 while (true)
                 {
                     AnsiConsole.Clear();
-                    AnsiConsole.Write(new FigletText("SP Analyzer").Color(Color.Green));
-                    AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
+                    AnsiConsole.Write(new FigletText("ReSet Analyzer").Color(Color.Green));
+                    AnsiConsole.MarkupLine("[bold green]=== REverse engineering SETtlement Analyzer ===[/]");
                     AnsiConsole.WriteLine();
 
                     // 대화형 DB 서버 및 이름 변경 지원
@@ -588,8 +588,8 @@ namespace ReSet.Cli
                         while (!isCompleted && !isCancelled)
                         {
                             AnsiConsole.Clear();
-                            AnsiConsole.Write(new FigletText("SP Analyzer").Color(Color.Green));
-                            AnsiConsole.WriteLine("SQL Server Stored Procedure Reverse Engineering Tool");
+                            AnsiConsole.Write(new FigletText("ReSet Analyzer").Color(Color.Green));
+                            AnsiConsole.MarkupLine("[bold green]=== SQL Server Stored Procedure Reverse Engineering Tool ===[/]");
                             AnsiConsole.WriteLine();
 
                             // 현재 구성된 배치 순서 시각화

@@ -105,11 +105,9 @@ namespace ReSet.Validator.Cli
             using var globalCts = new CancellationTokenSource();
             _currentCts = globalCts;
 
-            AnsiConsole.Write(
-                new FigletText("SP VALIDATOR")
-                    .Color(Color.Blue));
-
-            AnsiConsole.MarkupLine("[bold blue]=== SP Analyzer 코드 일치성 검증 도구 ===[/]");
+            AnsiConsole.Write(new FigletText("ReSet Validator").Color(Color.Green));
+            AnsiConsole.MarkupLine("[bold green]=== REverse engineering SETtlement Validator ===[/]");
+            AnsiConsole.WriteLine();
 
             // 1. CLI 아규먼트 분석
             var cliArgs = ParseCommandLineArgs(args);
