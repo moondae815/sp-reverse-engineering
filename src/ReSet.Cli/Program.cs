@@ -89,8 +89,10 @@ namespace ReSet.Cli
                 .AddEnvironmentVariables()
                 .Build();
 
-            var server = configuration["DatabaseSettings:Server"] ?? "localhost";
-            var database = configuration["DatabaseSettings:Database"] ?? "master";
+            // 세션에서 이전 연결 정보 복원
+            var session = SessionManager.LoadSession();
+            var server = !string.IsNullOrEmpty(session.LastUsedServer) ? session.LastUsedServer : (configuration["DatabaseSettings:Server"] ?? "localhost");
+            var database = !string.IsNullOrEmpty(session.LastUsedDatabase) ? session.LastUsedDatabase : (configuration["DatabaseSettings:Database"] ?? "master");
 
             // 3. 서비스 구성 변수 준비
             var provider = configuration["AiSettings:Provider"] ?? "OpenAI";
@@ -239,9 +241,9 @@ namespace ReSet.Cli
 
                     if (connectionSuccess)
                     {
-                        if (userId != null)
+                        if (userId != null && server != null && database != null)
                         {
-                            SessionManager.SaveLastUsedUserId(userId);
+                            SessionManager.SaveSession(userId, server, database);
                         }
                         break;
                     }
