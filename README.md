@@ -242,6 +242,58 @@ SP-Reverse-Engineering/
 
 ---
 
+## 📦 단일 파일 독립 실행형 배포 (Single File Deployment)
+
+대상 컴퓨터에 .NET SDK나 런타임이 설치되어 있지 않더라도, 실행 파일 하나만 복사해서 바로 실행할 수 있도록 **자가 포함(Self-contained) 단일 파일(Single File)** 형태로 배포할 수 있습니다.
+
+### 1. 운영체제별 배포 명령어
+각 플랫폼(OS)에 맞춰 아래의 배포 명령어를 터미널에서 실행합니다.
+
+*   **Linux (x64)**:
+    ```bash
+    dotnet publish src/ReSet.Cli/ReSet.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Linux/Cli
+    dotnet publish src/ReSet.Validator.Cli/ReSet.Validator.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Linux/Validator
+    ```
+
+*   **macOS (Intel x64)**:
+    ```bash
+    dotnet publish src/ReSet.Cli/ReSet.Cli.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Mac/Cli
+    dotnet publish src/ReSet.Validator.Cli/ReSet.Validator.Cli.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Mac/Validator
+    ```
+
+*   **macOS (Apple Silicon - M1/M2/M3 등 ARM64)**:
+    ```bash
+    dotnet publish src/ReSet.Cli/ReSet.Cli.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Mac_ARM/Cli
+    dotnet publish src/ReSet.Validator.Cli/ReSet.Validator.Cli.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Mac_ARM/Validator
+    ```
+
+*   **Windows (x64)**:
+    ```bash
+    dotnet publish src/ReSet.Cli/ReSet.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Win/Cli
+    dotnet publish src/ReSet.Validator.Cli/ReSet.Validator.Cli.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ~/ReSet/Dist/Win/Validator
+    ```
+
+### 2. 배포된 단일 파일 실행 방법
+배포가 완료된 출력 폴더(예: `~/ReSet/Dist/Linux/Cli`) 내에는 단일 바이너리(실행 파일)가 생성됩니다.
+
+*   **Linux / macOS 환경**:
+    터미널에서 생성된 실행 파일에 실행 권한을 부여한 뒤 실행합니다.
+    ```bash
+    # 1. 실행 권한 부여 (필요한 경우 최초 1회)
+    chmod +x ~/ReSet/Dist/Linux/Cli/ReSet.Cli
+    
+    # 2. 프로그램 실행
+    ~/ReSet/Dist/Linux/Cli/ReSet.Cli
+    ```
+*   **Windows 환경**:
+    명령 프롬프트(cmd) 또는 PowerShell에서 생성된 `ReSet.Cli.exe` 파일을 직접 더블 클릭하거나 CLI 환경에서 구동합니다.
+    ```powershell
+    # PowerShell 실행 예시
+    .\ReSet.Cli.exe
+    ```
+
+---
+
 ## 🏃 실행 및 사용 방법 (Running the Tool)
  
 ### 1. 대화형 TUI 모드 실행
