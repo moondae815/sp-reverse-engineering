@@ -248,7 +248,7 @@ namespace ReSet.Core.Services
                 var trimmedLine = line.Trim();
                 if (trimmedLine.StartsWith("%%")) continue;
 
-                var nodeRegex = new Regex(@"([a-zA-Z0-9_]+)([\[\(\{>])(.*?)([\]\)\}>])");
+                var nodeRegex = new Regex(@"([a-zA-Z0-9_]+)([\[\(\{>]+)(""(?:""""|[^""])*""|.*?)([\]\)\}>]+)");
                 var nodeMatches = nodeRegex.Matches(trimmedLine);
 
                 foreach (Match nodeMatch in nodeMatches)
