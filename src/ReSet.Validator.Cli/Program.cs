@@ -165,10 +165,17 @@ namespace ReSet.Validator.Cli
                 return;
             }
 
+            var timeoutSeconds = 300;
+            if (int.TryParse(configuration["AiSettings:TimeoutSeconds"], out int parsedTimeout) && parsedTimeout > 0)
+            {
+                timeoutSeconds = parsedTimeout;
+            }
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
+
             IAiClient aiClient;
             try
             {
-                aiClient = AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint);
+                aiClient = AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint, httpClient);
             }
             catch (Exception ex)
             {

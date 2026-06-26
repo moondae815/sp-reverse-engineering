@@ -160,6 +160,7 @@ ReSet/
     "ModelName": "gpt-4o",         // 사용할 LLM 모델명
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
+    "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
     "Providers": {
       "OpenAI": {
         "ApiKey": "",              // OpenAI API 키
@@ -224,6 +225,7 @@ ReSet/
     "ModelName": "gpt-4o",
     "Temperature": 0.1,
     "MaxL2Attempts": 2,
+    "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
     "Providers": {
       "OpenAI": {
         "ApiKey": "",
@@ -413,6 +415,11 @@ dotnet run --project src/ReSet.Cli
 > **Q. Mermaid 다이어그램 이미지 컴파일(Level 1 검증) 중에 오류가 납니다.**
 > * **원인**: 시스템에 Node.js 전역 패키지인 `mermaid-cli (mmdc)`가 설치되어 있지 않거나 경로에 등록되지 않았기 때문입니다.
 > * **해결**: `npm install -g @mermaid-js/mermaid-cli` 명령을 통해 설치를 완료하거나, `appsettings.json` 내 `"UseMermaidCli": false`로 설정을 변경하여 텍스트 정적 린팅만 수행하도록 설정을 완화할 수 있습니다.
+
+> [!WARNING]
+> **Q. AI 분석(리버스 엔지니어링) 중 HttpClient.Timeout 관련 취소(Cancellation) 오류가 발생합니다.**
+> * **원인**: 분석하려는 Stored Procedure나 참조하는 DDL의 크기가 너무 커서 AI의 응답을 받기까지 기본 제한 시간(100초 등)을 초과했기 때문입니다.
+> * **해결**: `appsettings.json` (또는 `appsettings.local.json`) 파일 내 `AiSettings` 하위에 `TimeoutSeconds` 값을 300초(5분) 혹은 600초(10분) 등으로 늘려서 재시도하십시오.
 
 > [!WARNING]
 > **Q. Stored Procedure 실행 결과 수집 단계에서 데이터베이스 연결 예외가 발생하며 수집이 실패합니다.**

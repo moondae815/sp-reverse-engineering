@@ -7,7 +7,7 @@ namespace ReSet.Core.Services.Clients
     {
         public static IAiClient CreateClient(string provider, string modelName, string apiKey, string endpoint, HttpClient? httpClient = null)
         {
-            var client = httpClient ?? new HttpClient();
+            var client = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(300) };
 
             if (string.IsNullOrWhiteSpace(provider))
             {

@@ -263,7 +263,13 @@ namespace ReSet.Cli
 
             // 4. 서비스 구성
             IDbMetadataService dbService = new DbMetadataService();
-            IAiClient aiClient = ReSet.Core.Services.Clients.AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint);
+            var timeoutSeconds = 300;
+            if (int.TryParse(configuration["AiSettings:TimeoutSeconds"], out int parsedTimeout) && parsedTimeout > 0)
+            {
+                timeoutSeconds = parsedTimeout;
+            }
+            using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
+            IAiClient aiClient = ReSet.Core.Services.Clients.AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint, httpClient);
             IAiService aiService = new AiService(aiClient, temp);
             IMetadataExporter metadataExporter = new MetadataExporter();
             bool.TryParse(configuration["ValidationSettings:UseMermaidCli"] ?? "false", out bool useMermaidCli);
