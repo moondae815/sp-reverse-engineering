@@ -26,5 +26,8 @@ namespace ReSet.Core.Services
 
         // L3 인간 개입형 검증 화면 제공 및 승인/피드백 결과 대기
         Task<HumanReviewResult> RequestHumanReviewAsync(string selectedOption, string specificationMarkdown);
+
+        // AI가 유추한 메타데이터 설명을 DB에 동기화할지 사용자 동의 요청
+        Task<bool> ConfirmMetadataSyncAsync(string selectedOption);
     }
 }

@@ -11,17 +11,17 @@
 | 컴포넌트 (프로젝트) | 모듈 (클래스/인터페이스) | 주요 아키텍처적 역할 및 기능 |
 | :--- | :--- | :--- |
 | **ReSet.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs) | CLI 아규먼트 파싱, DI 구성, 대화형 및 배치 실행 모드 제어, Multi-SP 물리 선택 순서 보장 순차 선택 루프 흐름 및 CancellationTokenSource 연동 |
-| | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링 및 Markup.Escape 예외 방지 |
+| | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링, DB 동기화 동의(ConfirmMetadataSyncAsync) 및 Markup.Escape 예외 방지 |
 | | [SessionManager](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 및 즉각적인 연결 정보(서버, DB명) 수정 기능 제공 |
 | | [CodingEngineFactory](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/CodingEngineFactory.cs) | 설정 파일에 기반해 다형적 외부 코딩 에이전트(`ICodingEngine`)를 구성하고 생성하는 팩토리 클래스 |
-| **ReSet.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
-| | [AiService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함) 및 결과 분석 오케스트레이션. 주입받은 `IAiClient`를 사용해 AI API 호출 수행, robust한 JSON 추출(`ExtractJson`) |
+| **ReSet.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, 설명 누락 여부(IsDescriptionMissing) 판단, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
+| | [AiService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs) | LLM 프롬프트 조립(동적 SQL/Linked Server 가이드라인 포함) 및 결과 분석 오케스트레이션. 설명 누락 컬럼 역추론 및 주석-코드 모순 감지 프롬프트 룰(12, 13) 내장, 주입받은 `IAiClient`를 사용해 AI API 호출 수행, robust한 JSON 추출(`ExtractJson`) |
 | | [IAiClient](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs) | AI 모델 간의 공통 텍스트 통신 계약 정의 |
 | | [Clients (OpenAi, Claude, Google, Ollama)](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/) | 각 프로바이더(OpenAI, Claude, Google, Ollama)의 네이티브 REST 규격에 맞춰 제작된 HttpClient 통신 모듈 |
 | | [AiClientFactory](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs) | 제공자 문자열에 맞춰 적절한 `IAiClient` 구현체를 생성하여 반환하는 팩토리 클래스 |
 | | [MechanicalValidator](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석(IsConsolidated 분기 검증) 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증 |
 | | [MetadataExporter](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 개체 파일 트리 내보내기(Export) 및 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 생성 제어 |
-| | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션 |
+| | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션. SQL 메타데이터 보완 스크립트 무인 내보내기 및 DB 동기화 조율 수행 |
 | | [CacheManager](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리 |
 | | [ICodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICodingEngine.cs) | 외부 코딩 에이전트 연동용 마이그레이션 생성기 추상 인터페이스 |
 | | [ExternalCliCodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체 |
@@ -150,6 +150,18 @@
   - **원인**: 날짜 포맷 표현 차이나 부동 소수점 자릿수 정밀도 오차 등 **환경적 차이로 인해 미세한 덤프 데이터 불일치(False Positive)**가 발생한 경우입니다.
   * **흐름**: 설계서와 소스코드는 건드리지 않고, 테스트 케이스 매개변수(`*_test_inputs.json`)의 경계 조건을 보완하거나 `DataComparisonService` 내 정규화 함수(`NormalizeValueString`)의 정밀도 비교 조건을 조정하여 덤프 비교 수집을 재구동합니다.
 
+### 14. 메타데이터 정화 및 주석 보완 라이프사이클 (Metadata Cleansing & DB Sync)
+설명 주석(`MS_Description`)이 소실되거나 개발 주석과 실제 코드가 모순되는 레거시 환경을 탐지 및 자동 치유하기 위한 메커니즘입니다.
+* **설명 누락 식별 및 AI 역추론**:
+  - `DbMetadataService`가 스키마 조회 시 한글 속성이 소실된 항목을 찾아 `IsDescriptionMissing` 속성을 마크하고 AI 분석 모델에 제공합니다.
+  - AI는 테이블 스키마에서 `[설명 누락]`으로 마킹된 컬럼의 쿼리 활용 문맥을 SP/UDF/뷰 소스코드 내에서 분석하여 의미를 역으로 유추하고, `[AI 추론 보완: {Schema}.{Table}.{Column} - {설명}]` 포맷으로 사양서에 포함시킵니다.
+* **코드-주석 불일치 경고 전파**:
+  - 소스코드 주석과 실제 연산 수식 간 불일치를 AI가 정밀 탐지하여 개요에 `[🚨 주석 불일치 경고]` 블록을 렌더링하고 오케스트레이터 경고 흐름에 주입합니다.
+* **SQL 보완 스크립트 무인 내보내기**:
+  - 분석 완료 시, 사용자의 DB 갱신 선택 유무와 관계없이 `sp_addextendedproperty` / `sp_updateextendedproperty` 쿼리가 조립된 SQL 스크립트 파일(`*_MetadataCleansing.sql`)을 `{outputDirectory}/cleansing` 디렉토리에 항상 파일로 저장합니다.
+* **인간 승인 기반 DB 동기화**:
+  - TUI에서 최종 승인 시 역동기화 의사 (`ConfirmMetadataSyncAsync`)를 확인하여, 사용자가 동의할 경우에만 DB 세션을 획득해 SQL 스크립트를 동적으로 수행함으로써 DB의 MS_Description 속성을 정화합니다.
+
 ---
 
 ## 📊 프로그램 실행 흐름 (Visual Execution Flow)
@@ -235,7 +247,9 @@ graph TD
     L3Check -- "아니오 (TUI)" --> HumanReview["L3: 사용자 검토 요청<br/>(미리보기 화면 렌더링)"]
     HumanReview --> HumanDecision{"사용자 결정?"}
     
-    HumanDecision -- "1. 승인 (Approve)" --> ReturnSuccess
+    HumanDecision -- "1. 승인 (Approve)" --> ConfirmSync{"DB에 역동기화<br/>(MS_Description)? (Y/N)"}
+    ConfirmSync -- "Yes" --> ExecSync["DB Extended Property 역반영 스크립트 실행"] --> ReturnSuccess
+    ConfirmSync -- "No" --> ReturnSuccess
     HumanDecision -- "3. 취소 (Cancel)" --> ReturnCancel["저장 없이 이탈 (분석 건너뛰기)"]
     HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
     

@@ -103,5 +103,11 @@ namespace ReSet.Cli
                 UserFeedback = userFeedback
             };
         }
+
+        public Task<bool> ConfirmMetadataSyncAsync(string selectedOption)
+        {
+            var result = AnsiConsole.Confirm($"[bold yellow]{selectedOption}[/] - AI가 보완한 설명(Extended Properties) 목록을 실제 데이터베이스에 동기화(Sync)하시겠습니까?", false);
+            return Task.FromResult(result);
+        }
     }
 }

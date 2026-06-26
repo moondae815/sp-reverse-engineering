@@ -21,7 +21,7 @@
 *   **도메인 모델 ([Models](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models))**
     *   [SpDefinition.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/SpDefinition.cs): 분석된 SP 메타데이터(소스코드 DDL, 컬럼, 의존성 등)를 관리하는 루트 데이터 클래스.
     *   [DependencyInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/DependencyInfo.cs): 재귀적으로 수집된 DB 개체(테이블, 뷰, 다른 SP 등) 의존성을 표현하는 모델.
-    *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보 및 한글 설명을 수집하는 모델.
+    *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보, 한글 설명 및 설명 누락 유무(IsDescriptionMissing)를 수집하는 모델.
 *   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services))**
     *   [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
     *   [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiService.cs)) 구현체.
@@ -33,7 +33,7 @@
 
 ### 2. CLI 실행 엔트리: [ReSet.Cli](file:///home/moondae/git-root/ReSet/src/ReSet.Cli)
 *   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs): CLI 진입점이자 TUI 메뉴 제어 및 흐름 오케스트레이션을 담당합니다.
-*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs): TUI와 사용자 간의 인터랙션 콘솔 처리를 정의한 구현체.
+*   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs): TUI와 사용자 간의 인터랙션 콘솔 처리 및 DB 동기화 여부 확인(ConfirmMetadataSyncAsync)을 정의한 구현체.
 
 ### 3. 코드 검증 Core 라이브러리: [ReSet.Validator.Core](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core)
 *   **추상화 및 도메인 모델 ([Abstractions](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions), [Models](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models))**
@@ -127,6 +127,16 @@
 18. **CLI 무인 배치 통합 계획 수립 및 자동 코딩 에이전트 기동 규칙을 적용하십시오.**
     *   CLI 배치 모드 실행 시 `--job-name` 인자가 전달되면, 개별 명세서 작성 후 즉시 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 생성, 번들링(`{JobName}_MigrationInstructions.md` 출력), 그리고 연동된 외부 코딩 에이전트(Claude Code 등) 호출까지 사용자의 키 입력 없이 완전 무인으로 일괄 진행되어야 합니다.
 
+### 🧹 범주 7. 메타데이터 정화 및 주석 보완 (Cleansing & Annotation)
+19. **설명 누락 컬럼의 의미 역추론 포맷을 준수하십시오.**
+    *   스키마 정보에 `[설명 누락]`으로 식별된 컬럼이 있는 경우, AI가 SP 내 연산 문맥을 분석하여 반드시 `[AI 추론 보완: {Schema}.{Table}.{Column} - {유추된설명}]` 형태로 마크다운에 출력하도록 유도해야 합니다.
+20. **개발 주석과 실제 연산 코드 간 모순을 탐지하십시오.**
+    *   자연어 주석과 실제 쿼리 실행 연산 코드 간에 모순이 감지되는 경우, 실제 코드를 진실의 원천으로 두고 개요 섹션 하단에 `[🚨 주석 불일치 경고] {모순내용}` 형식으로 명세서를 작성하게 프롬프트를 구성하십시오.
+21. **메타데이터 클렌징 SQL 스크립트의 무인 생성 및 DB 동기화 규칙을 준수하십시오.**
+    *   AI 분석이 성공 완료되면, 사용자의 DB 반영 동의 여부와 무관하게 보완 스크립트 파일(`*_MetadataCleansing.sql`)을 `{outputDirectory}/cleansing` 디렉토리에 항상 무인으로 자동 생성 및 갱신하도록 설계해야 합니다.
+    *   TUI 상에서 최종 승인 및 동기화 동의(`ConfirmMetadataSyncAsync`)를 얻었을 때에만 실제 데이터베이스에 내장 프로시저(`sp_addextendedproperty` / `sp_updateextendedproperty`)를 실행하여 물리 정화를 수행해야 합니다.
+22. **프롬프트 내 C# 보간 문자열 중괄호 이스케이프를 준수하십시오.**
+    *   `systemPrompt` 구성 시 C# 보간 기호(`$`)에 따라 중괄호 문자가 C# 표현식으로 해석되어 빌드 오류를 유발하는 것을 막기 위해, 프롬프트 텍스트 내부의 중괄호(`{}`)는 반드시 이중 중괄호(`{{}}`)로 이스케이프해야 합니다.
 
 ---
 
@@ -177,7 +187,7 @@ dotnet test
 개발 에이전트는 코드 수정을 마치고 작업을 제출하기 전에 다음 항목을 직접 자가 검증해야 합니다.
 
 - [ ] `dotnet build` 명령어를 통한 컴파일 경고/에러가 0개인지 확인했는가?
-- [ ] `dotnet test` 명령어를 실행하여 62개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
+- [ ] `dotnet test` 명령어를 실행하여 63개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
 - [ ] API Key 등 비공개 자격증명이 소스코드나 `appsettings.json`에 하드코딩되지 않고 `appsettings.local.json` 또는 로컬 환경 변수로 격리되었는가?
 - [ ] DB 메타데이터, AI 결과 원문 등을 Spectre.Console TUI에 출력할 때 모든 출력 부에 `Markup.Escape()` 조치를 적용했는가?
 - [ ] Stored Procedure 실행 및 외부 샌드박스 데이터 수집 시, DB 연결 실패 시 예외 격리(Soft Fail 및 DTO FAIL 상태 주입) 처리가 정상 적용되었는가?

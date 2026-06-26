@@ -301,6 +301,7 @@ namespace ReSet.Core.Services
                     {
                         while (await reader.ReadAsync(cancellationToken))
                         {
+                            var desc = reader.GetString(5);
                             columns.Add(new ColumnInfo
                             {
                                 ColumnName = reader.GetString(0),
@@ -308,7 +309,8 @@ namespace ReSet.Core.Services
                                 IsNullable = reader.GetInt32(2) == 1,
                                 IsPrimaryKey = reader.GetInt32(3) == 1,
                                 IsForeignKey = reader.GetInt32(4) == 1,
-                                Description = reader.GetString(5)
+                                Description = desc,
+                                IsDescriptionMissing = string.IsNullOrWhiteSpace(desc)
                             });
                         }
                     }

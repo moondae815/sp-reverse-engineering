@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
 using ReSet.Core.Models;
 
 namespace ReSet.Core.Services
@@ -205,6 +206,9 @@ namespace ReSet.Core.Services
                 _cacheManager.UpdateCache(selectedOption, spDef, compositeHash, outputDirectory);
             }
 
+            // DB 역반영 여부 선택과 관계없이 항상 파일로 스크립트 저장
+            ExportMetadataCleansingSql(specificationMarkdown, selectedOption, outputDirectory);
+
             // L3: 인간 개입형 승인 (TUI 모드 한정)
             if (!isBatchMode)
             {
@@ -219,6 +223,14 @@ namespace ReSet.Core.Services
                         {
                             _cacheManager.UpdateCache(selectedOption, spDef, compositeHash, outputDirectory);
                         }
+
+                        // 사용자가 승인하면 DB 역반영 동기화 수행
+                        var syncApproved = await _userInteraction.ConfirmMetadataSyncAsync(selectedOption);
+                        if (syncApproved)
+                        {
+                            await ApplyMetadataCleansingSqlAsync(connectionString, selectedOption, outputDirectory, cancellationToken);
+                        }
+
                         return (specificationMarkdown, spDef);
                     }
                     else if (reviewResult.Decision == UserDecision.Cancel)
@@ -432,6 +444,111 @@ namespace ReSet.Core.Services
 
                     consolidatedPlan = rePlan;
                 }
+            }
+        }
+
+        private void ExportMetadataCleansingSql(string specificationMarkdown, string selectedOption, string outputDirectory)
+        {
+            if (string.IsNullOrEmpty(specificationMarkdown)) return;
+
+            // 정규식을 사용하여 [AI 추론 보완: Schema.Table.Column - 설명] 패턴 추출
+            var regex = new System.Text.RegularExpressions.Regex(@"\[AI 추론 보완:\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*-\s*([^\]]+)\]");
+            var matches = regex.Matches(specificationMarkdown);
+
+            if (matches.Count == 0) return;
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("-- ==========================================================================");
+            sb.AppendLine($"-- AI Generated Metadata Cleansing Script for {selectedOption}");
+            sb.AppendLine($"-- Created At: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine("-- ==========================================================================");
+            sb.AppendLine();
+
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                var schema = match.Groups[1].Value;
+                var table = match.Groups[2].Value;
+                var column = match.Groups[3].Value;
+                var value = match.Groups[4].Value.Trim();
+
+                sb.AppendLine($"-- Column: {schema}.{table}.{column}");
+                sb.AppendLine($"IF NOT EXISTS (");
+                sb.AppendLine($"    SELECT 1 FROM sys.extended_properties ep");
+                sb.AppendLine($"    INNER JOIN sys.columns c ON ep.major_id = c.object_id AND ep.minor_id = c.column_id");
+                sb.AppendLine($"    INNER JOIN sys.objects o ON c.object_id = o.object_id");
+                sb.AppendLine($"    INNER JOIN sys.schemas s ON o.schema_id = s.schema_id");
+                sb.AppendLine($"    WHERE s.name = '{schema}' AND o.name = '{table}' AND c.name = '{column}' AND ep.name = 'MS_Description'");
+                sb.AppendLine($")");
+                sb.AppendLine($"BEGIN");
+                sb.AppendLine($"    EXEC sp_addextendedproperty ");
+                sb.AppendLine($"         @name = N'MS_Description', @value = N'{value.Replace("'", "''")}',");
+                sb.AppendLine($"         @level0type = N'SCHEMA', @level0name = '{schema}',");
+                sb.AppendLine($"         @level1type = N'TABLE',  @level1name = '{table}',");
+                sb.AppendLine($"         @level2type = N'COLUMN', @level2name = '{column}';");
+                sb.AppendLine($"END");
+                sb.AppendLine($"ELSE");
+                sb.AppendLine($"BEGIN");
+                sb.AppendLine($"    EXEC sp_updateextendedproperty ");
+                sb.AppendLine($"         @name = N'MS_Description', @value = N'{value.Replace("'", "''")}',");
+                sb.AppendLine($"         @level0type = N'SCHEMA', @level0name = '{schema}',");
+                sb.AppendLine($"         @level1type = N'TABLE',  @level1name = '{table}',");
+                sb.AppendLine($"         @level2type = N'COLUMN', @level2name = '{column}';");
+                sb.AppendLine($"END");
+                sb.AppendLine($"GO");
+                sb.AppendLine();
+            }
+
+            try
+            {
+                var cleansingDir = System.IO.Path.Combine(outputDirectory, "cleansing");
+                if (!System.IO.Directory.Exists(cleansingDir))
+                {
+                    System.IO.Directory.CreateDirectory(cleansingDir);
+                }
+
+                var sqlPath = System.IO.Path.Combine(cleansingDir, $"{selectedOption}_MetadataCleansing.sql");
+                System.IO.File.WriteAllText(sqlPath, sb.ToString(), System.Text.Encoding.UTF8);
+                _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 메타데이터 보완 SQL 스크립트가 저장되었습니다: [blue]{sqlPath}[/]");
+            }
+            catch (Exception ex)
+            {
+                _userInteraction.NotifyError($"메타데이터 보완 스크립트 저장 중 오류 발생: {ex.Message}");
+            }
+        }
+
+        private async Task ApplyMetadataCleansingSqlAsync(string connectionString, string selectedOption, string outputDirectory, CancellationToken cancellationToken)
+        {
+            var sqlPath = System.IO.Path.Combine(outputDirectory, "cleansing", $"{selectedOption}_MetadataCleansing.sql");
+            if (!System.IO.File.Exists(sqlPath)) return;
+
+            try
+            {
+                var sqlText = await System.IO.File.ReadAllTextAsync(sqlPath, cancellationToken);
+                if (string.IsNullOrWhiteSpace(sqlText)) return;
+
+                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - DB 메타데이터 설명 역반영 중...");
+
+                var batches = sqlText.Split(new[] { "GO\r\n", "GO\n", "go\r\n", "go\n" }, StringSplitOptions.RemoveEmptyEntries);
+
+                using (var conn = new SqlConnection(connectionString))
+                {
+                    await conn.OpenAsync(cancellationToken);
+                    foreach (var batch in batches)
+                    {
+                        var cleanBatch = batch.Trim();
+                        if (string.IsNullOrEmpty(cleanBatch)) continue;
+
+                        using (var cmd = new SqlCommand(cleanBatch, conn))
+                        {
+                            await cmd.ExecuteNonQueryAsync(cancellationToken);
+                        }
+                    }
+                }
+                _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - DB 메타데이터 설명 역반영 완료!");
+            }
+            catch (Exception ex)
+            {
+                _userInteraction.NotifyError($"DB 메타데이터 설명 역반영 중 오류 발생: {ex.Message}");
             }
         }
     }

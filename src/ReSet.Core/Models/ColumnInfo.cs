@@ -8,5 +8,7 @@ namespace ReSet.Core.Models
         public bool IsPrimaryKey { get; set; }
         public bool IsForeignKey { get; set; }
         public string Description { get; set; } = string.Empty;
+        public bool IsDescriptionMissing { get; set; }
     }
 }
+

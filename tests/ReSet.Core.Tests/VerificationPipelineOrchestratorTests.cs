@@ -22,6 +22,7 @@ namespace ReSet.Core.Tests
             _aiService = Substitute.For<IAiService>();
             _validator = new MechanicalValidator(); // 검증 규칙은 실제 동작 검증에 필수
             _userInteraction = Substitute.For<IVerificationUserInteraction>();
+            _userInteraction.ConfirmMetadataSyncAsync(Arg.Any<string>()).Returns(Task.FromResult(false));
             _orchestrator = new VerificationPipelineOrchestrator(_dbService, _aiService, _validator, _userInteraction);
         }
 
@@ -232,6 +233,44 @@ namespace ReSet.Core.Tests
             // Assert
             Assert.NotNull(result);
             _userInteraction.Received(1).NotifyL2Defects("Job_Test", 1, Arg.Any<int>(), "L2 결함");
+        }
+
+        [Fact]
+        public async Task RunPipelineAsync_ExportsMetadataCleansingSql_CreatesSqlFile()
+        {
+            // Arrange
+            var tempOutDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            var spDef = new SpDefinition { Schema = "dbo", Name = "USP_Test", DdlText = "CREATE PROCEDURE USP_Test AS SELECT 1" };
+            _dbService.GetSpDetailsAsync(Arg.Any<string>(), "dbo", "USP_Test", Arg.Any<int>())
+                .Returns(Task.FromResult(spDef));
+
+            // AI가 유추 주석 패턴을 포함한 명세서 반환
+            var specMarkdown = "## 개요\n이것은 테스트입니다. [AI 추론 보완: dbo.Orders.TotAmt - 순 결제액]\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
+                .Returns(Task.FromResult(specMarkdown));
+
+            var reviewResult = new ReviewResult { HasDefects = false };
+            _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
+                .Returns(Task.FromResult(reviewResult));
+
+            // Act
+            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+                "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true, outputDirectory: tempOutDir);
+
+            // Assert
+            Assert.NotNull(resultSpec);
+            
+            var expectedSqlPath = System.IO.Path.Combine(tempOutDir, "cleansing", "dbo.USP_Test_MetadataCleansing.sql");
+            Assert.True(System.IO.File.Exists(expectedSqlPath), $"SQL 스크립트 파일이 존재해야 합니다: {expectedSqlPath}");
+
+            var sqlContent = await System.IO.File.ReadAllTextAsync(expectedSqlPath);
+            Assert.Contains("sp_addextendedproperty", sqlContent);
+            Assert.Contains("sp_updateextendedproperty", sqlContent);
+            Assert.Contains("dbo.Orders.TotAmt", sqlContent);
+            Assert.Contains("순 결제액", sqlContent);
+
+            // Clean up
+            try { System.IO.Directory.Delete(tempOutDir, true); } catch {}
         }
 
         [Theory]

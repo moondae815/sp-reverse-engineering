@@ -38,7 +38,8 @@ namespace ReSet.Core.Services
                 var constraintStr = string.Join(", ", constraints);
                 var nullableStr = col.IsNullable ? "Yes" : "No";
                 
-                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} | {col.Description} |");
+                var descStr = string.IsNullOrWhiteSpace(col.Description) ? "[설명 누락]" : col.Description;
+                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} | {descStr} |");
             }
             
             return sb.ToString();
@@ -65,6 +66,8 @@ namespace ReSet.Core.Services
 9. 문서 작성이 완료되면 추가 지원 제안, 인사말, 또는 향후 추가 분석 가능성에 대한 설명 등 본문 요건과 관련 없는 사족이나 안내 문구를 문서 끝에 절대 작성하지 마십시오. 문서의 정해진 필수 섹션 작성이 끝나는 즉시 깔끔하게 출력을 마쳐야 합니다.
 10. 테이블 컬럼의 상태값(예: OutState 등)이나 비즈니스 코드의 구체적인 의미가 메타데이터나 주석에 명시적으로 주어지지 않았다면, 임의로 업무 명칭(예: '지급완료' 등)을 단정하여 해석하지 말고 코드에 작성된 값 조건(예: 'OutState가 1, 5인 경우') 그대로 사실 기반으로 서술하십시오.
 11. 저장 프로시저의 최종 반환값이나 출력 파라미터가 소스코드 내에서 명시적으로 제어되지 않거나 초기값에 의존하는 경우, 호출부의 초기화 책임이나 전제 조건을 설계 주석으로 정확하게 명세화하십시오.
+12. 제공된 스키마 정보에서 `[설명 누락]`으로 표시된 컬럼이 있는 경우, SP 소스코드 내에서 사용되는 연산식 및 대입 방식을 분석하여 의미를 유추하십시오. 그리고 작성할 기능 명세서 본문에 해당 컬럼이 언급될 때 반드시 `[AI 추론 보완: {{Schema}}.{{Table}}.{{Column}} - {{유추된설명}}]` 형태로 그 결과를 누락 없이 함께 표기하십시오. (예: `[AI 추론 보완: dbo.Orders.TotAmt - 주문 건의 할인 적용 후 최종 결제 금액]`)
+13. SP 소스코드 내부의 자연어 개발 주석과 실제 쿼리 실행 연산식 사이에 모순(불일치)이 감지되면, 실제 쿼리 코드를 최우선 기준으로 판정해 명세서를 작성하고, `## 개요` 섹션 하단에 `[🚨 주석 불일치 경고] {{모순내용}}` 형식으로 구체적인 경고 문구를 포함시키십시오.
 
 [사용자 지침]
 {userInstructions}";
