@@ -551,5 +551,42 @@ namespace ReSet.Core.Services
                 }
             }
         }
+
+        public async Task<List<Dictionary<string, object>>> GetTableDataPreviewAsync(
+            string connectionString, string? database, string schema, string tableName, int limit = 100, CancellationToken cancellationToken = default)
+        {
+            var dataList = new List<Dictionary<string, object>>();
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var escapedSchema = $"[{schema.Replace("]", "]]")}]";
+            var escapedTable = $"[{tableName.Replace("]", "]]")}]";
+            
+            var query = $"SELECT TOP (@Limit) * FROM {cleanDb}{escapedSchema}.{escapedTable};";
+
+            using (var conn = new SqlConnection(connectionString))
+            {
+                await conn.OpenAsync(cancellationToken);
+                using (var cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@Limit", limit);
+                    using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
+                    {
+                        var fieldCount = reader.FieldCount;
+                        while (await reader.ReadAsync(cancellationToken))
+                        {
+                            var row = new Dictionary<string, object>();
+                            for (int i = 0; i < fieldCount; i++)
+                            {
+                                var name = reader.GetName(i);
+                                var val = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                                row[name] = val ?? DBNull.Value;
+                            }
+                            dataList.Add(row);
+                        }
+                    }
+                }
+            }
+
+            return dataList;
+        }
     }
 }

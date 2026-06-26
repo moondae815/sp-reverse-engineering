@@ -10,7 +10,9 @@ namespace ReSet.Cli
         public bool EnableCodegen { get; set; }
         public string? Engine { get; set; }
         public string? JobName { get; set; }
+        public bool GeneratePolicy { get; set; }
+        public List<string> PolicyProcedures { get; set; } = new();
 
-        public bool IsBatchMode => AnalyzeAll || TargetProcedures.Count > 0;
+        public bool IsBatchMode => AnalyzeAll || TargetProcedures.Count > 0 || GeneratePolicy;
     }
 }

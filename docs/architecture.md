@@ -25,6 +25,8 @@
 | | [CacheManager](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리 |
 | | [ICodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICodingEngine.cs) | 외부 코딩 에이전트 연동용 마이그레이션 생성기 추상 인터페이스 |
 | | [ExternalCliCodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체 |
+| | [ISettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ISettlementPolicyService.cs) | 정산 정책 문서 생성기 추상 인터페이스 |
+| | [SettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs) | DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 활용한 통합 정산 정책서 생성 서비스 |
 | **ReSet.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어 |
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링. 탭(Tab) 자동완성 디렉토리 입력창(`ShowChoices(false)` 제어) 및 Gap 분석 결과 패널 렌더링 |
 | **ReSet.Validator.Core**<br/>(검증 비즈니스 레이어) | [FileMappingService](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/FileMappingService.cs) | 명세서 파일명/YAML Front Matter 기반 구현 소스 매핑 및 경로 중복 자동 보정 |
@@ -161,6 +163,10 @@
   - 분석 완료 시, 사용자의 DB 갱신 선택 유무와 관계없이 `sp_addextendedproperty` / `sp_updateextendedproperty` 쿼리가 조립된 SQL 스크립트 파일(`*_MetadataCleansing.sql`)을 `{outputDirectory}/cleansing` 디렉토리에 항상 파일로 저장합니다.
 * **인간 승인 기반 DB 동기화**:
   - TUI에서 최종 승인 시 역동기화 의사 (`ConfirmMetadataSyncAsync`)를 확인하여, 사용자가 동의할 경우에만 DB 세션을 획득해 SQL 스크립트를 동적으로 수행함으로써 DB의 MS_Description 속성을 정화합니다.
+
+### 15. 정산 정책 문서 도출 메커니즘 (Settlement Policy Extraction)
+* **정적 및 동적 분석 결합**: 정적 코드에 하드코딩된 상수 분기 조건들을 수집하고, 이에 매핑되는 DB 공통코드와 마스터 테이블의 실제 레코드들을 동적으로 프로파일링(SELECT TOP 100)하여 데이터셋을 덤프합니다.
+* **통합 정책서 합성**: DDL 의존성 스키마와 프로파일링 데이터셋을 AI 엔진에 주입하여, 상수값들이 비즈니스적으로 의미하는 바(예: `S02 = 정산보류`)를 1:1 결합하여 자연어 형태의 구체적인 '통합 정산 정책 정의서'를 도출합니다.
 
 ---
 

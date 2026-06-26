@@ -56,6 +56,22 @@ namespace ReSet.Cli
                 {
                     cliArgs.JobName = args[++i];
                 }
+                else if (arg.Equals("--policy", StringComparison.OrdinalIgnoreCase))
+                {
+                    cliArgs.GeneratePolicy = true;
+                }
+                else if (arg.Equals("--policy-sps", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    var sps = args[++i].Split(',');
+                    foreach (var sp in sps)
+                    {
+                        var trimmed = sp.Trim();
+                        if (!string.IsNullOrEmpty(trimmed))
+                        {
+                            cliArgs.PolicyProcedures.Add(trimmed);
+                        }
+                    }
+                }
             }
 
             return cliArgs;
@@ -277,6 +293,7 @@ namespace ReSet.Cli
             var userInteraction = new ConsoleUserInteraction();
             var maxL2Attempts = configuration["AiSettings:MaxL2Attempts"] ?? "1";
             var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts, modelName);
+            ISettlementPolicyService policyService = new SettlementPolicyService(dbService, aiService);
 
             string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";
             if (File.Exists(instructionsFile))
@@ -308,6 +325,85 @@ namespace ReSet.Cli
 
             if (cliArgs.IsBatchMode)
             {
+                if (cliArgs.GeneratePolicy)
+                {
+                    AnsiConsole.MarkupLine("[bold blue]=== 정산 정책 문서 자동 도출 배치 프로세스 시작 ===[/]");
+                    var policyTargetSps = new List<string>();
+                    if (cliArgs.PolicyProcedures.Count > 0)
+                    {
+                        foreach (var target in cliArgs.PolicyProcedures)
+                        {
+                            string? matchedSp = null;
+                            if (target.Contains('.'))
+                            {
+                                matchedSp = spNames.Find(x => x.Equals(target, StringComparison.OrdinalIgnoreCase));
+                            }
+                            else
+                            {
+                                matchedSp = spNames.Find(x =>
+                                {
+                                    var parts = x.Split('.', 2);
+                                    var nameOnly = parts.Length > 1 ? parts[1] : parts[0];
+                                    return nameOnly.Equals(target, StringComparison.OrdinalIgnoreCase);
+                                });
+                            }
+
+                            if (matchedSp != null)
+                            {
+                                policyTargetSps.Add(matchedSp);
+                            }
+                            else
+                            {
+                                AnsiConsole.MarkupLine($"[yellow]경고: 입력된 SP '{target}'를 DB에서 찾을 수 없어 건너뜁니다.[/]");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        policyTargetSps.AddRange(spNames);
+                    }
+
+                    if (policyTargetSps.Count == 0)
+                    {
+                        AnsiConsole.MarkupLine("[yellow]정책 분석 대상 Stored Procedure가 없습니다. 종료합니다.[/]");
+                        return;
+                    }
+
+                    AnsiConsole.MarkupLine($"[bold blue]총 {policyTargetSps.Count}개의 Stored Procedure에 대해 정산 정책 분석 시작...[/]");
+                    
+                    try
+                    {
+                        string? rulebook = null;
+                        await AnsiConsole.Status()
+                            .StartAsync("정산 정책 문서 생성 중...", async ctx =>
+                            {
+                                rulebook = await policyService.GenerateSettlementPolicyRulebookAsync(connectionString, policyTargetSps, maxDepth, globalCts.Token);
+                            });
+
+                        if (string.IsNullOrEmpty(rulebook))
+                        {
+                            throw new Exception("정산 정책 문서 생성 실패");
+                        }
+
+                        if (!Directory.Exists(outputDir))
+                        {
+                            Directory.CreateDirectory(outputDir);
+                        }
+
+                        var rulebookName = string.IsNullOrEmpty(cliArgs.JobName) ? "Settlement_Policy_Rulebook.md" : $"{cliArgs.JobName}_Settlement_Policy_Rulebook.md";
+                        var rulebookPath = Path.Combine(outputDir, rulebookName);
+                        var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+
+                        await File.WriteAllTextAsync(rulebookPath, metadataHeader + rulebook);
+                        AnsiConsole.MarkupLine($"[green]성공: 정산 정책 문서 생성 완료![/] {Markup.Escape(rulebookPath)}");
+                    }
+                    catch (Exception ex)
+                    {
+                        AnsiConsole.MarkupLine($"[red]에러: 정산 정책 문서 도출 실패:[/] {Markup.Escape(ex.Message)}");
+                    }
+                    return;
+                }
+
                 // 배치 모드 실행 흐름
                 List<string> targetSps = new();
                 if (cliArgs.AnalyzeAll)
@@ -474,7 +570,8 @@ namespace ReSet.Cli
                     {
                         "1. Stored Procedure 개별 분석 명세서 작성",
                         "2. 기분석 명세서 통합 배치 전환 계획 수립 (Multi-SP)",
-                        "3. 종료 (Exit)"
+                        "3. 정산 정책 문서 도출 (Settlement Policy Rulebook)",
+                        "4. 종료 (Exit)"
                     };
 
                     var selectedMenu = AnsiConsole.Prompt(
@@ -483,7 +580,7 @@ namespace ReSet.Cli
                             .AddChoices(choicesMenu)
                     );
 
-                    if (selectedMenu.StartsWith("3"))
+                    if (selectedMenu.StartsWith("4"))
                     {
                         AnsiConsole.MarkupLine("[blue]도구를 종료합니다.[/]");
                         break;
@@ -768,6 +865,138 @@ namespace ReSet.Cli
                         finally
                         {
                             _currentCts = globalCts; // 전역 CTS 복원
+                        }
+                    }
+                    else if (selectedMenu.StartsWith("3"))
+                    {
+                        var remainingFiles = new List<string>(spNames);
+                        var selectedFiles = new List<string>();
+                        var isCompleted = false;
+                        var isCancelled = false;
+
+                        // 순차적 단일 선택 루프
+                        while (!isCompleted && !isCancelled)
+                        {
+                            AnsiConsole.Clear();
+                            AnsiConsole.Write(new FigletText("ReSet Policy").Color(Color.Green));
+                            AnsiConsole.MarkupLine("[bold green]=== 정산 정책 문서 도출 대상 선택 ===[/]");
+                            AnsiConsole.WriteLine();
+
+                            if (selectedFiles.Count > 0)
+                            {
+                                var sequenceStr = string.Join(" [bold green], [/] ", selectedFiles.Select(f => $"[yellow]{Markup.Escape(f)}[/]"));
+                                AnsiConsole.Write(new Panel(new Markup(sequenceStr))
+                                {
+                                    Header = new PanelHeader(" [bold cyan]선택된 분석 대상 SP 목록[/] "),
+                                    Border = BoxBorder.Rounded
+                                });
+                                AnsiConsole.WriteLine();
+                            }
+
+                            var choices = new List<string>();
+                            var completeOption = "[-- 선택 완료 및 정책 문서 생성 --]";
+                            var cancelOption = "[-- 메인 메뉴로 돌아가기 --]";
+
+                            if (selectedFiles.Count > 0)
+                            {
+                                choices.Add(completeOption);
+                            }
+                            choices.Add(cancelOption);
+                            choices.AddRange(remainingFiles);
+
+                            var selectedChoice = AnsiConsole.Prompt(
+                                new SelectionPrompt<string>()
+                                    .Title($"[green]분석 대상 SP #{selectedFiles.Count + 1}[/]를 선택하거나 검색하세요:")
+                                    .PageSize(12)
+                                    .MoreChoicesText("[grey](더 많은 목록은 방향키를 누르세요)[/]")
+                                    .UseConverter(x => Markup.Escape(x))
+                                    .AddChoices(choices)
+                                    .EnableSearch()
+                            );
+
+                            if (selectedChoice == cancelOption)
+                            {
+                                isCancelled = true;
+                            }
+                            else if (selectedChoice == completeOption)
+                            {
+                                isCompleted = true;
+                            }
+                            else
+                            {
+                                selectedFiles.Add(selectedChoice);
+                                remainingFiles.Remove(selectedChoice);
+
+                                if (remainingFiles.Count == 0)
+                                {
+                                    isCompleted = true;
+                                }
+                            }
+                        }
+
+                        if (isCancelled || selectedFiles.Count == 0)
+                        {
+                            continue;
+                        }
+
+                        var jobName = AnsiConsole.Prompt(
+                            new TextPrompt<string>("생성할 정산 정책서의 작업(Job) 이름을 입력하세요:")
+                                .DefaultValue("Consolidated_Settlement_Policy")
+                        );
+
+                        using var activeCts = new CancellationTokenSource();
+                        _currentCts = activeCts;
+
+                        try
+                        {
+                            string? rulebook = null;
+                            await AnsiConsole.Status()
+                                .StartAsync("정산 정책 문서 생성 중...", async ctx =>
+                                {
+                                    rulebook = await policyService.GenerateSettlementPolicyRulebookAsync(connectionString, selectedFiles, maxDepth, activeCts.Token);
+                                });
+
+                            if (string.IsNullOrEmpty(rulebook))
+                            {
+                                AnsiConsole.MarkupLine("[red]정산 정책 문서 생성에 실패했습니다.[/]");
+                                continue;
+                            }
+
+                            if (!Directory.Exists(outputDir))
+                            {
+                                Directory.CreateDirectory(outputDir);
+                            }
+
+                            var rulebookName = $"{jobName}_Settlement_Policy_Rulebook.md";
+                            var rulebookPath = Path.Combine(outputDir, rulebookName);
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+
+                            await File.WriteAllTextAsync(rulebookPath, metadataHeader + rulebook);
+                            AnsiConsole.Write(new Panel(new Markup($"[green]정산 정책 문서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(rulebookPath)}"))
+                            {
+                                Border = BoxBorder.Rounded,
+                                Header = new PanelHeader($" {jobName} 정책 분석 완료 ")
+                            });
+
+                            AnsiConsole.WriteLine();
+                            AnsiConsole.MarkupLine("[yellow]아무 키나 누르면 메인 메뉴로 돌아갑니다...[/]");
+                            Console.ReadKey(true);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            AnsiConsole.MarkupLine("\n[yellow]정책 문서 도출 작업이 중단되었습니다. 메인 메뉴로 돌아갑니다.[/]");
+                            AnsiConsole.WriteLine();
+                            Console.ReadKey(true);
+                        }
+                        catch (Exception ex)
+                        {
+                            AnsiConsole.MarkupLine($"[red]에러:[/] 정책 문서 도출 중 오류 발생: {Markup.Escape(ex.Message)}");
+                            AnsiConsole.WriteLine();
+                            Console.ReadKey(true);
+                        }
+                        finally
+                        {
+                            _currentCts = globalCts;
                         }
                     }
                 }

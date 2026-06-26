@@ -402,5 +402,57 @@ namespace ReSet.Core.Services
 
             return content;
         }
+
+        public async Task<string> GenerateSettlementPolicyRulebookAsync(System.Collections.Generic.List<SpDefinition> spDefs, string profilingDataJson, CancellationToken cancellationToken = default)
+        {
+            var systemPrompt = @"당신은 레거시 DB 내 Stored Procedure 코드(DDL) 및 실제 코드값/설정 데이터(Data Profiling)를 종합하여, 비즈니스 관점의 통합 '정산 정책 문서(Settlement Rulebook)'를 도출해내는 수석 정산 정책 분석가입니다.
+제시된 SP들의 SQL 조건문 분기, 매핑 관계와 실제 적재된 마스터 데이터(코드값 등)를 결합하여, 실무자가 바로 읽고 이해할 수 있는 자연어 정책 정의서를 작성하십시오.
+
+[작성 규칙]
+1. 정적 코드(DDL) 상에 존재하는 하드코딩된 상수 분기 조건(예: WHERE Status = 'S02', WHERE Type = 'A10' 등)이, 함께 제공된 실제 공통 코드/마스터 데이터 상에서 어떤 의미(예: 'S02' = '정산보류', 'A10' = '신용카드 대행사')를 가지는지 1:1로 매핑하여 설명하십시오.
+2. 정책서는 마크다운 형식으로 작성하며, 반드시 다음 5가지 대분류(H2) 헤더를 사용해야 합니다:
+   ## 1. 개요 및 목적
+   ## 2. 핵심 정산 비즈니스 규칙 정의
+   ## 3. 코드값 및 마스터 데이터 매핑 정보
+   ## 4. 프로그램별 정산 영향도 매핑
+   ## 5. 예외 처리 및 제약 사항
+3. 다이어그램이나 도표를 적극적으로 활용하여 가독성을 높여 주십시오.
+4. 응답 전체를 백틱(```markdown ... ```)으로 감싸지 마십시오.";
+
+            var userPrompt = new StringBuilder();
+            userPrompt.AppendLine("[Stored Procedure 분석 대상 목록 및 DDL 정보]");
+            foreach (var sp in spDefs)
+            {
+                userPrompt.AppendLine($"### SP: {sp.Schema}.{sp.Name}");
+                userPrompt.AppendLine("#### [DDL 소스코드]");
+                userPrompt.AppendLine("```sql");
+                userPrompt.AppendLine(sp.DdlText);
+                userPrompt.AppendLine("```");
+                userPrompt.AppendLine("#### [의존성 정보]");
+                foreach (var dep in sp.Dependencies)
+                {
+                    userPrompt.AppendLine($"- 의존 객체: {dep.Schema}.{dep.Name} ({dep.Type})");
+                    if (dep.Columns != null && dep.Columns.Count > 0)
+                    {
+                        userPrompt.AppendLine("  * 컬럼 정보:");
+                        foreach (var col in dep.Columns)
+                        {
+                            var desc = string.IsNullOrEmpty(col.Description) ? "설명 없음" : col.Description;
+                            userPrompt.AppendLine($"    - {col.ColumnName} ({col.DataType}): {desc}");
+                        }
+                    }
+                }
+                userPrompt.AppendLine();
+            }
+
+            userPrompt.AppendLine("[실제 마스터/공통코드 데이터 프로파일링 결과 (JSON)]");
+            userPrompt.AppendLine("```json");
+            userPrompt.AppendLine(profilingDataJson);
+            userPrompt.AppendLine("```");
+            userPrompt.AppendLine();
+            userPrompt.AppendLine("위의 SQL 로직 분기 조건과 프로파일링 JSON 데이터를 1:1 대조 분석하여, 통합 '정산 정책 문서'를 도출해 주십시오.");
+
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, cancellationToken);
+        }
     }
 }
