@@ -36,6 +36,30 @@ namespace ReSet.Core.Services.Clients
                 throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
             }
 
+            var lowerModel = _modelName.ToLowerInvariant();
+            float targetTemp = temperature;
+
+            // gpt-5.x 모델 중 x가 5 이상인 모델 및 o1, o3 모델은 temperature = 1.0f 필수 제약 적용
+            var versionMatch = System.Text.RegularExpressions.Regex.Match(lowerModel, @"gpt-?5\.(\d+)");
+            bool isGpt55OrHigher = false;
+            if (versionMatch.Success && int.TryParse(versionMatch.Groups[1].Value, out int minorVersion))
+            {
+                if (minorVersion >= 5)
+                {
+                    isGpt55OrHigher = true;
+                }
+            }
+
+            bool isReasoningEnforcedModel = 
+                lowerModel.StartsWith("o1") || 
+                lowerModel.StartsWith("o3") ||
+                isGpt55OrHigher;
+
+            if (isReasoningEnforcedModel)
+            {
+                targetTemp = 1.0f; // 최신 추론 모델 및 GPT-5.5+ 계열 API 제약 대응 (1.0만 허용)
+            }
+
             var requestBody = new
             {
                 model = _modelName,
@@ -44,7 +68,7 @@ namespace ReSet.Core.Services.Clients
                     new { role = "system", content = systemPrompt },
                     new { role = "user", content = userPrompt }
                 },
-                temperature = temperature
+                temperature = targetTemp
             };
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
@@ -59,7 +83,11 @@ namespace ReSet.Core.Services.Clients
             }
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
+            }
 
             var responseContent = await response.Content.ReadAsStringAsync();
             using (var doc = JsonDocument.Parse(responseContent))

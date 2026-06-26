@@ -67,7 +67,11 @@ namespace ReSet.Core.Services.Clients
             };
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
+            }
 
             var responseContent = await response.Content.ReadAsStringAsync();
             using (var doc = JsonDocument.Parse(responseContent))

@@ -35,17 +35,60 @@ namespace ReSet.Core.Services.Clients
                 throw new ArgumentException("Claude API 키가 설정되지 않았습니다.");
             }
 
-            var requestBody = new
+            // Claude 모델별 최대 출력 토큰(max_tokens) 및 Thinking 설정 대응
+            var lowerModel = _modelName.ToLowerInvariant();
+            int maxTokens = 4096; // 기본 안전 한도 (Claude 3 Opus 등)
+
+            if (lowerModel.Contains("4-") || lowerModel.Contains("4."))
             {
-                model = _modelName,
-                system = systemPrompt,
-                messages = new[]
+                if (lowerModel.Contains("haiku-4-5"))
                 {
-                    new { role = "user", content = userPrompt }
-                },
-                max_tokens = 64000,
-                temperature = temperature
-            };
+                    maxTokens = 64000; // Claude Haiku 4.5 한도
+                }
+                else
+                {
+                    maxTokens = 128000; // Claude Opus 4.8, Sonnet 4.6 한도 (128k)
+                }
+            }
+            else if (lowerModel.Contains("sonnet") || lowerModel.Contains("haiku") || lowerModel.Contains("3-5") || lowerModel.Contains("3-7") || lowerModel.Contains("3.5") || lowerModel.Contains("3.7"))
+            {
+                maxTokens = 8192; // Claude 3.5 / 3.7 Sonnet 및 Haiku 등 최신 모델 한도
+            }
+
+            object requestBody;
+            if (lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6"))
+            {
+                // Adaptive Thinking 필수/지원 모델 처리 (thinking 활성화 시 temperature는 반드시 1.0이어야 함)
+                requestBody = new
+                {
+                    model = _modelName,
+                    system = systemPrompt,
+                    messages = new[]
+                    {
+                        new { role = "user", content = userPrompt }
+                    },
+                    max_tokens = maxTokens,
+                    temperature = 1.0,
+                    thinking = new
+                    {
+                        type = "adaptive"
+                    }
+                };
+            }
+            else
+            {
+                requestBody = new
+                {
+                    model = _modelName,
+                    system = systemPrompt,
+                    messages = new[]
+                    {
+                        new { role = "user", content = userPrompt }
+                    },
+                    max_tokens = maxTokens,
+                    temperature = temperature
+                };
+            }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/v1/messages")
@@ -57,7 +100,11 @@ namespace ReSet.Core.Services.Clients
             request.Headers.Add("anthropic-version", "2023-06-01");
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
+            }
 
             var responseContent = await response.Content.ReadAsStringAsync();
             using (var doc = JsonDocument.Parse(responseContent))
