@@ -24,7 +24,7 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, CancellationToken cancellationToken = default)
+        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {

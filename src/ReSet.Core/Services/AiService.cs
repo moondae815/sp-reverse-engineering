@@ -45,7 +45,7 @@ namespace ReSet.Core.Services
             return sb.ToString();
         }
 
-        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, CancellationToken cancellationToken = default)
+        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default)
         {
             // 프롬프트 조립
             var systemPrompt = $@"당신은 SQL Server Stored Procedure 분석 전문가입니다. 다음 규칙을 준수하여 마크다운 기능 명세서를 작성하십시오.
@@ -132,10 +132,10 @@ namespace ReSet.Core.Services
                 userPrompt += $"\n\n[이전 시도에 대한 검증 오류/수정 피드백 로그]:\n{feedbackLog}\n위 검토 및 수정 의견을 전적으로 수용하여 명세서 내용을 정교하게 수정하고 오류를 바로잡아 다시 작성해 주십시오.";
             }
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, cancellationToken);
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
         }
 
-        public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, CancellationToken cancellationToken = default)
+        public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 SQL Server Stored Procedure 기능 명세서의 완성도를 검증하는 수석 아키텍트이자 리뷰어 에이전트입니다.
 제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하십시오.
@@ -164,7 +164,7 @@ namespace ReSet.Core.Services
 위 마크다운 명세서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.
 ";
 
-            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, cancellationToken);
+            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort, cancellationToken);
             try
             {
                 var jsonString = ExtractJson(responseContent);
@@ -255,10 +255,10 @@ namespace ReSet.Core.Services
 위 레거시 배치 SP 정보를 바탕으로 {targetLanguage} 기준의 '배치 전환 계획 설계서'를 작성해 주십시오.
 ";
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, cancellationToken);
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort: null, cancellationToken: cancellationToken);
         }
 
-        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, CancellationToken cancellationToken = default)
+        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = $@"당신은 여러 개의 레거시 Stored Procedure 분석 명세서(마크다운)를 바탕으로, 이를 최신 {targetLanguage} 기반의 단일 배치 애플리케이션 및 스케줄러 전환 설계도(Consolidated Batch Modernization Plan)로 작성하는 전문 수석 배치 아키텍트입니다.
 제공된 개별 SP 분석서들의 비즈니스 요약과 테이블 CRUD 맵을 종합적으로 설계하여, '{jobName}'이라는 단일 통합 배치 Job으로 전환하는 계획서를 기안해 주십시오.
@@ -293,10 +293,10 @@ namespace ReSet.Core.Services
 
             userPrompt.AppendLine("위 개별 명세서들의 정보를 완벽히 분석하여, 지침에 맞추어 단일 통합 배치 전환 계획서를 구성해 주십시오.");
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, cancellationToken);
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort, cancellationToken);
         }
 
-        public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, CancellationToken cancellationToken = default)
+        public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 여러 레거시 SP 분석 명세서들을 종합하여 설계된 통합 배치 전환 계획서(Markdown)의 완성도를 검증하는 수석 배치 아키텍트이자 리뷰어 에이전트입니다.
 제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하십시오.
@@ -331,7 +331,7 @@ namespace ReSet.Core.Services
             userPrompt.AppendLine();
             userPrompt.AppendLine("위 계획서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.");
 
-            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, cancellationToken);
+            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, effort, cancellationToken);
             try
             {
                 var jsonString = ExtractJson(responseContent);
@@ -452,7 +452,7 @@ namespace ReSet.Core.Services
             userPrompt.AppendLine();
             userPrompt.AppendLine("위의 SQL 로직 분기 조건과 프로파일링 JSON 데이터를 1:1 대조 분석하여, 통합 '정산 정책 문서'를 도출해 주십시오.");
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, cancellationToken);
+            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort: null, cancellationToken: cancellationToken);
         }
     }
 }

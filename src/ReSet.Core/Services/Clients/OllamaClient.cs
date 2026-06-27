@@ -16,9 +16,9 @@ namespace ReSet.Core.Services.Clients
             _openAiClient = new OpenAiClient(httpClient, string.Empty, ep, modelName);
         }
 
-        public Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, CancellationToken cancellationToken = default)
+        public Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            return _openAiClient.ChatAsync(systemPrompt, userPrompt, temperature, cancellationToken);
+            return _openAiClient.ChatAsync(systemPrompt, userPrompt, temperature, effort, cancellationToken);
         }
     }
 }

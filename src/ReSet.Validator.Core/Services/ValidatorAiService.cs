@@ -54,7 +54,7 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, cancellationToken);
+                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort: null, cancellationToken: cancellationToken);
                 return ParseGapReport(response);
             }
             catch (Exception ex)
@@ -137,7 +137,7 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, cancellationToken);
+                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
                 
                 // markdown json 블록 정제
                 var cleanJson = response.Trim();
@@ -204,7 +204,7 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, cancellationToken);
+                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
                 
                 // markdown json 블록 정제
                 var cleanJson = response.Trim();

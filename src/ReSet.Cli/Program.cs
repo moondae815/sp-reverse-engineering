@@ -287,12 +287,56 @@ namespace ReSet.Cli
             using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
             IAiClient aiClient = ReSet.Core.Services.Clients.AiClientFactory.CreateClient(provider, modelName, apiKey, endpoint, httpClient);
             IAiService aiService = new AiService(aiClient, temp);
+
+            // 하이브리드 아키텍처: ActorEffort 파싱
+            var actorEffort = configuration["AiSettings:ActorEffort"];
+
+            // 하이브리드 아키텍처: Critic 서비스 구성
+            IAiService criticService = aiService;
+            var criticEffort = configuration["AiSettings:Critic:Effort"];
+            var criticProvider = configuration["AiSettings:Critic:Provider"] ?? provider;
+            var criticModel = configuration["AiSettings:Critic:ModelName"] ?? modelName;
+            if (configuration["AiSettings:Critic:Provider"] != null || configuration["AiSettings:Critic:ModelName"] != null)
+            {
+                var criticApiKey = configuration[$"AiSettings:Providers:{criticProvider}:ApiKey"] ?? string.Empty;
+                var criticEndpoint = configuration[$"AiSettings:Providers:{criticProvider}:Endpoint"] ?? string.Empty;
+                var criticClient = ReSet.Core.Services.Clients.AiClientFactory.CreateClient(criticProvider, criticModel, criticApiKey, criticEndpoint, httpClient);
+                criticService = new AiService(criticClient, temp);
+            }
+
+            // 하이브리드 아키텍처: Consolidator 서비스 구성
+            IAiService consolidatorService = aiService;
+            var consolidatorEffort = configuration["AiSettings:Consolidator:Effort"];
+            var consolidatorProvider = configuration["AiSettings:Consolidator:Provider"] ?? provider;
+            var consolidatorModel = configuration["AiSettings:Consolidator:ModelName"] ?? modelName;
+            if (configuration["AiSettings:Consolidator:Provider"] != null || configuration["AiSettings:Consolidator:ModelName"] != null)
+            {
+                var consolidatorApiKey = configuration[$"AiSettings:Providers:{consolidatorProvider}:ApiKey"] ?? string.Empty;
+                var consolidatorEndpoint = configuration[$"AiSettings:Providers:{consolidatorProvider}:Endpoint"] ?? string.Empty;
+                var consolidatorClient = ReSet.Core.Services.Clients.AiClientFactory.CreateClient(consolidatorProvider, consolidatorModel, consolidatorApiKey, consolidatorEndpoint, httpClient);
+                consolidatorService = new AiService(consolidatorClient, temp);
+            }
+
             IMetadataExporter metadataExporter = new MetadataExporter();
             bool.TryParse(configuration["ValidationSettings:UseMermaidCli"] ?? "false", out bool useMermaidCli);
             var validator = new MechanicalValidator(useMermaidCli);
             var userInteraction = new ConsoleUserInteraction();
             var maxL2Attempts = configuration["AiSettings:MaxL2Attempts"] ?? "1";
-            var orchestrator = new VerificationPipelineOrchestrator(dbService, aiService, validator, userInteraction, maxL2Attempts, modelName);
+            
+            var orchestrator = new VerificationPipelineOrchestrator(
+                dbService, 
+                aiService, 
+                validator, 
+                userInteraction, 
+                maxL2Attempts, 
+                modelName, 
+                null,
+                criticService,
+                consolidatorService,
+                actorEffort,
+                criticEffort,
+                consolidatorEffort
+            );
             ISettlementPolicyService policyService = new SettlementPolicyService(dbService, aiService);
 
             string instructions = "기본 마크다운 규칙을 적용하여 분석해 주세요.";

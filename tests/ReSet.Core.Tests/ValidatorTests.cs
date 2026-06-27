@@ -187,7 +187,7 @@ public class CustOrderHistBatch {
   ""Suggestions"": ""Perfect match.""
 }
 ```";
-            mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<CancellationToken>())
+            mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(jsonResponse));
 
             var service = new ValidatorAiService(mockAiClient);
@@ -206,7 +206,7 @@ public class CustOrderHistBatch {
         {
             // Arrange
             var mockAiClient = Substitute.For<IAiClient>();
-            mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<CancellationToken>())
+            mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult("This is not a JSON response."));
 
             var service = new ValidatorAiService(mockAiClient);

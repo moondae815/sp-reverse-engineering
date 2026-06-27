@@ -28,7 +28,7 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, CancellationToken cancellationToken = default)
+        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
@@ -55,9 +55,30 @@ namespace ReSet.Core.Services.Clients
                 maxTokens = 8192; // Claude 3.5 / 3.7 Sonnet 및 Haiku 등 최신 모델 한도
             }
 
+            bool enableThinking = !string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6");
             object requestBody;
-            if (lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6"))
+
+            if (enableThinking)
             {
+                int budgetTokens = 4000; // 기본값
+                if (!string.IsNullOrWhiteSpace(effort))
+                {
+                    budgetTokens = effort.ToLowerInvariant() switch
+                    {
+                        "low" => 2000,
+                        "medium" => 4000,
+                        "high" => 16000,
+                        "xhigh" => 32000,
+                        _ => 4000
+                    };
+                }
+
+                if (budgetTokens >= maxTokens)
+                {
+                    budgetTokens = maxTokens - 1000;
+                    if (budgetTokens < 1000) budgetTokens = 1000;
+                }
+
                 // Adaptive Thinking 필수/지원 모델 처리 (thinking 활성화 시 temperature는 반드시 1.0이어야 함)
                 requestBody = new
                 {
@@ -71,7 +92,8 @@ namespace ReSet.Core.Services.Clients
                     temperature = 1.0,
                     thinking = new
                     {
-                        type = "adaptive"
+                        type = "adaptive",
+                        budget_tokens = budgetTokens
                     }
                 };
             }

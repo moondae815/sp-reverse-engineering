@@ -20,7 +20,7 @@
 
 ### 2. 3단계 신뢰성 검증 파이프라인 (Verification)
 * **Level 1 (기계적 정적 검증)**: `Markdig` 파서로 구조적 필수 섹션을 검증하고, `mermaid-cli` 컴파일 테스트 또는 구문 린팅을 통해 Mermaid 다이어그램 오류를 방지합니다.
-* **Level 2 (AI 교차 리뷰 및 자가 교정)**: 검토관 에이전트를 통해 비즈니스 로직의 결함을 검증하고, 오류 발견 시 한도 내에서 자동으로 자가 수정(`Self-Correction`) 루프를 수행합니다.
+* **Level 2 (하이브리드 Actor-Critic 및 자가 교정)**: `ActorEffort`가 `dynamic`으로 지정된 경우, Low/Medium/High Effort를 적용한 3종의 명세서 후보를 병렬 생성합니다. 이후, 설정에 따라 지정된 **Critic(리뷰어)** 에이전트가 각 후보의 우수 영역을 채점하고, **Consolidator(합성기)** 에이전트가 장점 조각들을 1회로 병합 조립하는 하이브리드 Actor-Critic 모델을 가동하여 비즈니스 왜곡률을 극단적으로 제어합니다. (사용자 설정에 의해 다형적으로 모델 및 제공자를 분리 운용할 수 있으며, 단일 모델 가동 시에는 한도 내 자가 수정 루프를 수행)
 * **Level 3 (인간 승인 피드백 루프)**: TUI 모드에서 실시간 문서 미리보기를 제공하며, 개발자의 자연어 보완 피드백을 수렴하여 완벽한 설계서가 나올 때까지 재생성 및 검증을 반복합니다. (무인 배치 모드에서는 생략)
 
 ### 3. 배치 현대화 설계 및 비용 최적화 (Modernization & Cache)
@@ -171,6 +171,17 @@ ReSet/
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
     "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
+    "ActorEffort": "dynamic",      // [하이브리드] dynamic 설정 시 Low/Medium/High 차등 Effort로 3종 후보군 생성 및 점진적 합성 가동
+    "Critic": {
+      "Provider": "OpenAI",        // [하이브리드] 평가를 담당할 Critic의 AI 제공자
+      "ModelName": "gpt-4o",
+      "Effort": "high"             // [하이브리드] Critic의 추론 강도 (low | medium | high)
+    },
+    "Consolidator": {
+      "Provider": "OpenAI",        // [하이브리드] 최종 합성을 담당할 Consolidator의 AI 제공자
+      "ModelName": "gpt-4o",
+      "Effort": "medium"           // [하이브리드] Consolidator의 추론 강도
+    },
     "Providers": {
       "OpenAI": {
         "ApiKey": "",              // OpenAI API 키

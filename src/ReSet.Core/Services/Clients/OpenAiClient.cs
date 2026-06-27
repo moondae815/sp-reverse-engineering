@@ -29,7 +29,7 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, CancellationToken cancellationToken = default)
+        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
             {
@@ -60,16 +60,32 @@ namespace ReSet.Core.Services.Clients
                 targetTemp = 1.0f; // 최신 추론 모델 및 GPT-5.5+ 계열 API 제약 대응 (1.0만 허용)
             }
 
-            var requestBody = new
+            var requestBody = new System.Collections.Generic.Dictionary<string, object>
             {
-                model = _modelName,
-                messages = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = targetTemp
+                { "model", _modelName },
+                { "messages", new[]
+                    {
+                        new { role = "system", content = systemPrompt },
+                        new { role = "user", content = userPrompt }
+                    }
+                }
             };
+
+            if (isReasoningEnforcedModel)
+            {
+                if (!string.IsNullOrWhiteSpace(effort))
+                {
+                    requestBody.Add("reasoning_effort", effort.ToLowerInvariant());
+                }
+                else
+                {
+                    requestBody.Add("temperature", 1.0f);
+                }
+            }
+            else
+            {
+                requestBody.Add("temperature", targetTemp);
+            }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")

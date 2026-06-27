@@ -97,7 +97,8 @@
 ### ⚙️ 범주 4. 검증 오케스트레이션 및 파이프라인 흐름 (Verification Workflow)
 10. **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
     *   **L1 (정적 검증)**: [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 구조적 필수 섹션 헤더 검증과 Mermaid 다이어그램 린팅을 엄격히 수행하십시오. L1 검증 실패 시 즉시 보완 프롬프트 제안을 리턴합니다.
-    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
+    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer/Critic) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
+    *   **L2 하이브리드 Actor-Critic**: `ActorEffort: "dynamic"` 설정이 활성화된 경우, 복수의 독립된 에이전트(Low, Medium, High Effort를 지닌 다중 Actor)가 병렬로 후보 명세서를 작성하고, Critic 에이전트가 우수 영역을 채점 선별한 뒤, Consolidator 에이전트가 이 조각들을 톤앤매너에 맞춰 최종 병합 조립하는 **영역별 점진적 합성(Scoring & Consolidation)** 아키텍처 규칙을 철저히 준수하십시오. 자가 편향(Self-Confirmation Bias) 방지를 위해 Actor와 Critic은 완벽히 동일 모델이 아닌 서로 다른 이종 모델(Heterogeneous Multi-Model, 예: Claude 계열 Actor와 GPT 계열 Critic 조합 등)이 독립적으로 구성 및 상호 작용하도록 운용하십시오.
 11. **L2 자가 교정 시 이전 피드백 주입 및 무인 배치 우회를 적용하십시오.**
     *   L2 단계(AI 교차 검토)에서 자가 보완 루프(`Self-Correction`)가 구동될 때, 이전 시도의 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적으로 주입하여 점진적 보완 정확성을 극대화해야 합니다.
     *   무인 배치 모드(`isBatchMode: true`) 환경에서는 통합 배치 전환 계획서 검증 시 L3 단계(사용자 승인) 프롬프트 대기 단계를 생략하고 자동으로 우회 승인하도록 흐름을 통제하십시오.
