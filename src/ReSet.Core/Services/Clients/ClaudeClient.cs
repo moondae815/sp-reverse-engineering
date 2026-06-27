@@ -190,14 +190,35 @@ namespace ReSet.Core.Services.Clients
                     throw new InvalidOperationException("Claude API 응답 데이터 내에 content 속성이 존재하지 않거나 비어 있습니다.");
                 }
 
-                var firstContent = contentElement[0];
-                if (!firstContent.TryGetProperty("text", out var textElement))
+                // Thinking 모드에서는 content 배열에 { "type": "thinking", ... } 블록이
+                // 먼저 오고, 실제 텍스트는 { "type": "text", ... } 블록에 위치합니다.
+                // 배열을 순회하여 type == "text"인 항목을 찾아 반환합니다.
+                string? resultText = null;
+                foreach (var contentItem in contentElement.EnumerateArray())
                 {
-                    Log.Error("Claude API 응답 content[0] 내 text 속성 누락");
+                    if (contentItem.TryGetProperty("type", out var typeElem)
+                        && typeElem.GetString() == "text"
+                        && contentItem.TryGetProperty("text", out var textElem))
+                    {
+                        resultText = textElem.GetString();
+                        break;
+                    }
+                }
+
+                if (resultText == null)
+                {
+                    // 디버깅을 위해 content 배열의 type 목록을 로그로 기록
+                    var types = new System.Collections.Generic.List<string>();
+                    foreach (var item in contentElement.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("type", out var t))
+                            types.Add(t.GetString() ?? "unknown");
+                    }
+                    Log.Error("Claude API 응답 content 배열에 type=text 항목 없음 - 수신된 type 목록: [{Types}]", string.Join(", ", types));
                     throw new InvalidOperationException("Claude API 응답 content 내에 text 속성이 존재하지 않습니다.");
                 }
 
-                return textElement.GetString() ?? string.Empty;
+                return resultText ?? string.Empty;
             }
         }
     }
