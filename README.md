@@ -20,7 +20,7 @@
 
 ### 2. 3단계 신뢰성 검증 파이프라인 (Verification)
 * **Level 1 (기계적 정적 검증)**: `Markdig` 파서로 구조적 필수 섹션을 검증하고, `mermaid-cli` 컴파일 테스트 또는 구문 린팅을 통해 Mermaid 다이어그램 오류를 방지합니다.
-* **Level 2 (Actor-Critic 및 자가 교정)**: `ActorEffort`가 `dynamic`으로 지정된 경우, Low/Medium/High Effort를 적용한 3종의 명세서 후보를 병렬 생성합니다. 이후, 설정에 따라 지정된 **Critic(리뷰어)** 에이전트가 각 후보의 우수 영역을 채점하고, **Consolidator(합성기)** 에이전트가 장점 조각들을 1회로 병합 조립하는 Actor-Critic 앙상블 모델을 가동하여 비즈니스 왜곡률을 극단적으로 제어합니다. (사용자 설정에 의해 다형적으로 모델 및 제공자를 분리 운용할 수 있으며, 단일 모델 가동 시에는 한도 내 자가 수정 루프를 수행)
+* **Level 2 (Actor-Critic 및 자가 교정)**: `ActorEffort`가 `dynamic`으로 지정된 경우, Low/Medium/High Effort를 적용한 3종의 명세서 후보를 병렬 생성합니다. 이후, 설정에 따라 지정된 **Critic(리뷰어) 에이전트**가 각 후보에 대해 4대 기준(정합성, CRUD 매핑, 가독성, 예외처리 각 10점, 총 40점 만점)으로 정량 채점을 가동합니다. 결함이 없고 100점 환산 기준 90점 이상인 우수 후보는 즉시 채택(**스마트 Fast-Pass**)하며, 그렇지 않은 경우 **Consolidator(합성기) 에이전트**가 각 항목별 고득점 후보의 파트를 Source of Truth 삼아 유기적으로 병합 조립하는 Actor-Critic 앙상블 모델을 가동하여 비즈니스 왜곡률을 극단적으로 제어합니다. (사용자 설정에 의해 다형적으로 모델 및 제공자를 분리 운용할 수 있으며, 단일 모델 가동 시에는 한도 내 자가 수정 루프를 수행)
 * **Level 3 (인간 승인 피드백 루프)**: TUI 모드에서 실시간 문서 미리보기를 제공하며, 개발자의 자연어 보완 피드백을 수렴하여 완벽한 설계서가 나올 때까지 재생성 및 검증을 반복합니다. (무인 배치 모드에서는 생략)
 
 ### 3. 배치 현대화 설계 및 비용 최적화 (Modernization & Cache)
@@ -44,7 +44,7 @@
 * **정적/동적 하이브리드 정책 도출**: 레거시 DB 내 Stored Procedure 코드(DDL)에 숨겨진 비즈니스 분기 조건(예: `WHERE Status = 'S02'`)과 실제 공통 코드 및 마스터 설정 테이블에 적재되어 있는 데이터(예: `S02 = 정산보류`)를 1:1 결합 및 분석(Data Profiling)하여, 실무진과 개발진 모두 즉시 참고할 수 있는 통합 '정산 정책서(Settlement Rulebook)'를 자동 작성합니다.
 
 ### 7. 실시간 병렬 태스크 진행률 시각화 (CLI Progress)
-* **비결합 멀티태스크 진행률 추적**: 관심사 분리(Clean Architecture) 원칙에 입각하여 Core 비즈니스 로직은 화면 렌더링에 관여하지 않고, 추상화된 `IMultiProgressScope` 인터페이스와 `NullProgressScope`를 주입받아 비동기 진행률 정보를 통보합니다. TUI 프로젝트 단에서는 `Spectre.Console`의 `Progress` 컴포넌트와 연동되어 백그라운드 렌더링 스레드를 제어하며 실시간 진행도 바(Bar)와 경과 시간 정보를 출력합니다.
+* **비결합 멀티태스크 진행률 추적**: 관심사 분리(Clean Architecture) 원칙에 입각하여 Core 비즈니스 로직은 화면 렌더링에 관여하지 않고, 추상화된 `IMultiProgressScope` 인터페이스와 `NullProgressScope`를 주입받아 비동기 진행률 정보를 통보합니다. TUI 프로젝트 단에서는 `Spectre.Console`의 `Progress` 컴포넌트와 연동되어 백그라운드 렌더링 스레드를 제어하며, 회전하는 도트 스피너(Spinner)와 누적 경과 시간(Elapsed Time) 정보 등을 직관적으로 출력해 대기 상태에 대한 피로감을 최소화합니다.
 
 ### 8. 영속적인 실행 로깅 시스템 (Serilog File Sink & Clean Logging)
 * **TUI 비파괴식 Serilog 파일 로깅**: TUI 대화형 화면 및 진행 바가 로깅 출력으로 인해 깨지지 않도록 Serilog는 **오직 파일 전용(File Sink)**으로만 분리 가동됩니다. `appsettings.json` 설정을 통해 로깅 대상 디렉토리, 기록 등급, 보존 주기를 자유롭게 지정할 수 있습니다.
