@@ -158,7 +158,7 @@ namespace ReSet.Cli
                         new TaskDescriptionColumn(),
                         new ProgressBarColumn(),
                         new PercentageColumn(),
-                        new RemainingTimeColumn(),
+                        new ElapsedTimeColumn(),
                         new SpinnerColumn(),
                     })
                     .StartAsync(async ctx =>
