@@ -192,6 +192,19 @@ namespace ReSet.Cli
                                     }
                                 }
                             }
+
+                            // API 호출 대기 중인 활성 태스크들의 모의 진척률(Simulated Progress) 업데이트
+                            foreach (var kvp in _tasks)
+                            {
+                                var task = kvp.Value;
+                                if (!task.IsFinished && task.Value < 95.0)
+                                {
+                                    // 95%까지 매 100ms마다 남은 간격의 2%씩 점진적 증가
+                                    var increment = (95.0 - task.Value) * 0.02;
+                                    task.Increment(increment);
+                                }
+                            }
+
                             await Task.Delay(100);
                         }
                     });
