@@ -237,6 +237,13 @@ ReSet/
 }
 ```
 
+> [!TIP]
+> **💡 Actor-Critic 및 점진적 합성 가동 가이드**
+> * **활성화 조건**: `AiSettings:ActorEffort` 값을 `"dynamic"`으로 지정하면 Actor-Critic 및 점진적 조각 합성(Consolidation) 루프가 활성화됩니다.
+> * **다중 후보군 병렬 생성**: 활성화 시, 서로 다른 추론 깊이(`Low`, `Medium`, `High` Effort)를 할당받은 3종의 명세서 후보를 동시에 병렬 생성합니다.
+> * **이종 모델 앙상블 권장**: 자가 편향(Self-Confirmation Bias) 방지를 위해 기본 Actor/Consolidator와 Critic의 AI 제공자(`Provider`) 및 모델을 서로 다르게(예: Actor/Consolidator는 Claude, Critic은 OpenAI) 교차 지정하여 검증의 객관성을 극대화하기를 권장합니다.
+> * **단일 모델 모드 우회**: `ActorEffort`가 `"dynamic"`이 아닌 단일 값(예: `"low"`, `"medium"`, `"high"`)인 경우에는 Actor-Critic 합성을 건너뛰고, 설정 한도(`MaxL2Attempts`) 내에서 자가 수정(Self-Correction)만을 수행하는 단일 모델 모드로 자동 우회 구동됩니다.
+
 #### 2) 검증기 설정 (`src/ReSet.Validator.Cli/appsettings.json`)
 마이그레이션된 소스 코드와 설계서의 일치성을 검증하기 위한 설정 파일입니다.
 ```json
