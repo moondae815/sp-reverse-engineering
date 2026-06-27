@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Spectre.Console;
 using ReSet.Core.Models;
 using ReSet.Core.Services;
+using Serilog;
 
 namespace ReSet.Cli
 {
@@ -104,6 +105,9 @@ namespace ReSet.Cli
                 .AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true)
                 .AddEnvironmentVariables()
                 .Build();
+
+            // 2.5 로깅 초기화
+            ConfigureLogging(configuration);
 
             // 세션에서 이전 연결 정보 복원
             var session = SessionManager.LoadSession();
@@ -1159,6 +1163,9 @@ namespace ReSet.Cli
                     AnsiConsole.MarkupLine($"[yellow]코딩 에이전트 가이드라인 번들 저장 중 경고:[/] {Markup.Escape(ex.Message)}");
                 }
             }
+
+            // 로거 버퍼 플러시 및 정리
+            Serilog.Log.CloseAndFlush();
         }
 
         private static async Task RunCodegenEngineAsync(
@@ -1217,6 +1224,53 @@ namespace ReSet.Cli
             {
                 AnsiConsole.MarkupLine($"\n[red]외부 코딩 에이전트 실행 중 오류 발생:[/] {Markup.Escape(ex.Message)}");
             }
+        }
+
+        private static void ConfigureLogging(IConfiguration configuration)
+        {
+            var logDirectory = configuration["LoggingSettings:LogDirectory"] ?? "./output/logs";
+            var minLevelStr = configuration["LoggingSettings:MinimumLevel"] ?? "Information";
+            var retainedFileCountLimitStr = configuration["LoggingSettings:RetainedFileCountLimit"] ?? "31";
+
+            try
+            {
+                if (!Directory.Exists(logDirectory))
+                {
+                    Directory.CreateDirectory(logDirectory);
+                }
+            }
+            catch (Exception ex)
+            {
+                AnsiConsole.MarkupLine($"[yellow]경고: 로그 디렉터리 생성 실패 ({logDirectory}): {Markup.Escape(ex.Message)}[/]");
+            }
+
+            var logEventLevel = minLevelStr.ToLowerInvariant() switch
+            {
+                "verbose" => Serilog.Events.LogEventLevel.Verbose,
+                "debug" => Serilog.Events.LogEventLevel.Debug,
+                "information" => Serilog.Events.LogEventLevel.Information,
+                "warning" => Serilog.Events.LogEventLevel.Warning,
+                "error" => Serilog.Events.LogEventLevel.Error,
+                "fatal" => Serilog.Events.LogEventLevel.Fatal,
+                _ => Serilog.Events.LogEventLevel.Information
+            };
+
+            int.TryParse(retainedFileCountLimitStr, out int retainedFileCountLimit);
+            if (retainedFileCountLimit <= 0) retainedFileCountLimit = 31;
+
+            var logFilePath = Path.Combine(logDirectory, "reset-.log");
+
+            Serilog.Log.Logger = new Serilog.LoggerConfiguration()
+                .MinimumLevel.Is(logEventLevel)
+                .WriteTo.File(
+                    path: logFilePath,
+                    rollingInterval: Serilog.RollingInterval.Day,
+                    retainedFileCountLimit: retainedFileCountLimit,
+                    outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
+                    encoding: System.Text.Encoding.UTF8)
+                .CreateLogger();
+
+            Serilog.Log.Information("=== ReSet CLI 실행 로거 시작 ===");
         }
     }
 }

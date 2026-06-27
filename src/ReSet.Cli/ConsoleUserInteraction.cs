@@ -8,14 +8,22 @@ namespace ReSet.Cli
 {
     public class ConsoleUserInteraction : IVerificationUserInteraction
     {
+        private string StripMarkup(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return System.Text.RegularExpressions.Regex.Replace(text, @"\[\/?[a-zA-Z\s,=#]*\]", "");
+        }
+
         public void NotifyStatus(string message)
         {
             AnsiConsole.MarkupLine(message);
+            Serilog.Log.Information(StripMarkup(message));
         }
 
         public void NotifyError(string message)
         {
             AnsiConsole.MarkupLine($"[red]{Markup.Escape(message)}[/]");
+            Serilog.Log.Error(StripMarkup(message));
         }
 
         public void NotifyWarnings(string selectedOption, List<string> warnings)
@@ -39,6 +47,12 @@ namespace ReSet.Cli
 
             AnsiConsole.Write(panel);
             AnsiConsole.WriteLine();
+
+            Serilog.Log.Warning($"[{selectedOption}] 수집 경고 ({warnings.Count}건):");
+            foreach (var warn in warnings)
+            {
+                Serilog.Log.Warning($"  - {warn}");
+            }
         }
 
         public void NotifyL1Errors(string selectedOption, int attempt, int maxAttempts, List<string> errors)
@@ -49,6 +63,12 @@ namespace ReSet.Cli
             {
                 AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(err)}[/]");
             }
+
+            Serilog.Log.Warning($"[{selectedOption}] L1 기계 검증 오류 발견 (시도 {attempt}/{maxStr}):");
+            foreach (var err in errors)
+            {
+                Serilog.Log.Warning($"  - {err}");
+            }
         }
 
         public void NotifyL2Defects(string selectedOption, int attempt, int maxAttempts, string feedbackComment)
@@ -56,11 +76,14 @@ namespace ReSet.Cli
             var maxStr = maxAttempts == -1 ? "검증 완료까지" : maxAttempts.ToString();
             AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/{maxStr}):[/]");
             AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(feedbackComment)}[/]");
+
+            Serilog.Log.Warning($"[{selectedOption}] L2 AI 리뷰 결함 발견 (시도 {attempt}/{maxStr}): {feedbackComment}");
         }
 
         public void NotifyValidationSuccess(string selectedOption)
         {
             AnsiConsole.MarkupLine($"[green]{selectedOption} - [[L1/L2 자동 검증]] 모두 통과![/]");
+            Serilog.Log.Information($"[{selectedOption}] L1/L2 자동 검증 모두 통과!");
         }
 
         public async Task<HumanReviewResult> RequestHumanReviewAsync(string selectedOption, string specificationMarkdown)
