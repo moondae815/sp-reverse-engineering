@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ReSet.Core.Services;
 using ReSet.Validator.Core.Models;
+using Serilog;
 
 namespace ReSet.Validator.Core.Services
 {
@@ -54,11 +55,15 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
+                Log.Debug("[ValidatorAI] 코드 검증 AI 요청 시작 - Language: {Language}, HasPreviousFeedback: {HasFeedback}",
+                    targetLanguage, !string.IsNullOrEmpty(previousFeedback));
                 var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 코드 검증 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
                 return ParseGapReport(response);
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[ValidatorAI] 코드 검증 AI 요청 중 예외 발생");
                 return new GapReport
                 {
                     OverallStatus = "MISMATCH",
@@ -137,7 +142,9 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
+                Log.Debug("[ValidatorAI] 테스트 파라미터 생성 AI 요청 시작 - ProcedureName: {ProcedureName}", procedureName);
                 var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 테스트 파라미터 생성 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
                 
                 // markdown json 블록 정제
                 var cleanJson = response.Trim();
@@ -153,6 +160,7 @@ namespace ReSet.Validator.Core.Services
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[ValidatorAI] 테스트 파라미터 생성 AI 요청 중 예외 발생 - ProcedureName: {ProcedureName}", procedureName);
                 return $"{{\"ProcedureName\":\"{procedureName}\", \"TestCases\":[], \"Error\":\"AI를 통한 테스트 파라미터 생성 실패: {ex.Message}\"}}";
             }
         }
@@ -204,7 +212,9 @@ namespace ReSet.Validator.Core.Services
 
             try
             {
+                Log.Debug("[ValidatorAI] 모의 테이블 데이터 생성 AI 요청 시작");
                 var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 모의 테이블 데이터 생성 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
                 
                 // markdown json 블록 정제
                 var cleanJson = response.Trim();
@@ -220,6 +230,7 @@ namespace ReSet.Validator.Core.Services
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[ValidatorAI] 모의 테이블 데이터 생성 AI 요청 중 예외 발생");
                 return $"{{\"Tables\":[], \"Error\":\"AI를 통한 모의 데이터 생성 실패: {ex.Message}\"}}";
             }
         }

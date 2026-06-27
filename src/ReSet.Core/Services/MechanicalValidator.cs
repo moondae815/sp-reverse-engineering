@@ -5,6 +5,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using Markdig;
 using Markdig.Syntax;
+using Serilog;
 
 namespace ReSet.Core.Services
 {
@@ -52,12 +53,14 @@ namespace ReSet.Core.Services
         public ValidationResult Validate(string markdown)
         {
             var result = new ValidationResult();
+            Log.Information("개별 명세서 기계적 문법 및 린트 검증 시작");
 
             if (string.IsNullOrWhiteSpace(markdown))
             {
                 result.IsValid = false;
                 result.Errors.Add("명세서 내용이 비어있습니다.");
                 result.DetailedErrors.Add(new DetailedError { Type = ErrorType.General, Message = "명세서 내용이 비어있습니다." });
+                Log.Warning("명세서 검증 실패 - 내용이 비어있습니다.");
                 return result;
             }
 
@@ -65,9 +68,10 @@ namespace ReSet.Core.Services
             {
                 ValidateMarkdownStructure(markdown, RequiredHeaders, result);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 소프트 페일 처리 (검증기 자체 오류 시 툴 중단 방지)
+                Log.Error(ex, "개별 명세서 검증기 실행 중 자체 오류가 발생하여 소프트 패스 처리합니다.");
                 result.Errors.Clear();
                 result.DetailedErrors.Clear();
                 result.IsValid = true;
@@ -75,6 +79,7 @@ namespace ReSet.Core.Services
             }
 
             result.IsValid = (result.Errors.Count == 0);
+            Log.Information("개별 명세서 기계적 검증 완료 - 결과: {IsValid}, 에러 개수: {ErrorCount}개", result.IsValid, result.Errors.Count);
             return result;
         }
 
@@ -82,12 +87,14 @@ namespace ReSet.Core.Services
         {
             var result = new ValidationResult();
             result.IsConsolidated = true;
+            Log.Information("통합 계획서 기계적 문법 및 린트 검증 시작");
 
             if (string.IsNullOrWhiteSpace(markdown))
             {
                 result.IsValid = false;
                 result.Errors.Add("계획서 내용이 비어있습니다.");
                 result.DetailedErrors.Add(new DetailedError { Type = ErrorType.General, Message = "계획서 내용이 비어있습니다." });
+                Log.Warning("통합 계획서 검증 실패 - 내용이 비어있습니다.");
                 return result;
             }
 
@@ -95,8 +102,9 @@ namespace ReSet.Core.Services
             {
                 ValidateMarkdownStructure(markdown, RequiredConsolidatedHeaders, result);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Log.Error(ex, "통합 계획서 검증기 실행 중 자체 오류가 발생하여 소프트 패스 처리합니다.");
                 result.Errors.Clear();
                 result.DetailedErrors.Clear();
                 result.IsValid = true;
@@ -104,6 +112,7 @@ namespace ReSet.Core.Services
             }
 
             result.IsValid = (result.Errors.Count == 0);
+            Log.Information("통합 계획서 기계적 검증 완료 - 결과: {IsValid}, 에러 개수: {ErrorCount}개", result.IsValid, result.Errors.Count);
             return result;
         }
 
@@ -157,6 +166,7 @@ namespace ReSet.Core.Services
                 if (!found)
                 {
                     var msg = $"필수 섹션 헤더 '## {req}'가 누락되었습니다.";
+                    Log.Warning("린트 에러 감지 (헤더 누락) - {Message}", msg);
                     result.Errors.Add(msg);
                     result.DetailedErrors.Add(new DetailedError { Type = ErrorType.HeaderMissing, Message = msg });
                 }
@@ -207,6 +217,7 @@ namespace ReSet.Core.Services
                                 if (process.ExitCode != 0)
                                 {
                                     var stderr = process.StandardError.ReadToEnd().Trim();
+                                    Log.Warning("Mermaid CLI 검증 문법 오류 감지 - Stderr: {Stderr}", stderr);
                                     result.Errors.Add($"Mermaid CLI 검증 실패: {stderr}");
                                     result.DetailedErrors.Add(new DetailedError { Type = ErrorType.MermaidCliError, Message = stderr });
                                 }
@@ -215,6 +226,7 @@ namespace ReSet.Core.Services
                             {
                                 try { process.Kill(); } catch { }
                                 var msg = "Mermaid CLI 검증 시간 초과(10초).";
+                                Log.Warning("Mermaid CLI 검증 시간 초과.");
                                 result.Errors.Add(msg);
                                 result.DetailedErrors.Add(new DetailedError { Type = ErrorType.General, Message = msg });
                             }
@@ -273,6 +285,7 @@ namespace ReSet.Core.Services
                         if (!(labelText.StartsWith("\"") && labelText.EndsWith("\"")))
                         {
                             var msg = $"Mermaid 다이어그램 내 노드 '{nodeId}'의 텍스트 '{labelText}'에 괄호나 특수문자가 포함되어 있으나 큰따옴표(\"\")로 감싸지지 않았습니다. 문법 오류를 막기 위해 '\"{labelText}\"' 형태로 큰따옴표를 감싸서 출력해 주십시오.";
+                            Log.Warning("린트 에러 감지 (Mermaid 따옴표 누락) - Node: {NodeId}, Label: {LabelText}", nodeId, labelText);
                             result.Errors.Add(msg);
                             result.DetailedErrors.Add(new DetailedError 
                             { 

@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using ReSet.Validator.Core.Models;
+using Serilog;
 
 namespace ReSet.Validator.Core.Services
 {
@@ -32,16 +34,23 @@ namespace ReSet.Validator.Core.Services
                 ExecutionResults = new List<TestCaseResultDto>()
             };
 
+            Log.Information("[SP실행] Stored Procedure 실행 시작 - ProcedureName: {ProcedureName}, TestCase수: {TestCaseCount}",
+                inputData.ProcedureName, inputData.TestCases?.Count ?? 0);
+
             // 2. DB 연결 및 각 테스트 케이스 실행
             try
             {
                 using (var conn = new SqlConnection(connectionString))
                 {
                     await conn.OpenAsync(cancellationToken);
+                    Log.Debug("[SP실행] DB 연결 성공 - ProcedureName: {ProcedureName}", inputData.ProcedureName);
 
-                    foreach (var testCase in inputData.TestCases)
+                    foreach (var testCase in inputData.TestCases ?? new System.Collections.Generic.List<TestCaseDto>())
                     {
                         if (cancellationToken.IsCancellationRequested) break;
+
+                        Log.Debug("[SP실행] 테스트 케이스 실행 - ProcedureName: {ProcedureName}, CaseId: {CaseId}, 파라미터 수: {ParamCount}",
+                            inputData.ProcedureName, testCase.CaseId, testCase.Parameters?.Count ?? 0);
 
                         var caseResult = new TestCaseResultDto
                         {
@@ -95,10 +104,14 @@ namespace ReSet.Validator.Core.Services
                             }
 
                             caseResult.Status = "SUCCESS";
+                            Log.Debug("[SP실행] 테스트 케이스 성공 - CaseId: {CaseId}, ResultSets수: {ResultSetCount}",
+                                testCase.CaseId, caseResult.ResultSets.Count);
                         }
                         catch (Exception ex)
                         {
                             // DB 실행 예외(제약조건 에러 등) 발생 시 Soft Fail로 실패 내역 기록
+                            Log.Warning(ex, "[SP실행] 테스트 케이스 실행 실패 (Soft Fail) - CaseId: {CaseId}, 오류: {Error}",
+                                testCase.CaseId, ex.Message);
                             caseResult.Status = "FAIL";
                             caseResult.ErrorCode = ex.Message;
                         }
@@ -110,7 +123,8 @@ namespace ReSet.Validator.Core.Services
             catch (Exception connEx)
             {
                 // DB 연결 자체에 실패한 경우 모든 테스트 케이스를 실패 상태로 기록
-                foreach (var testCase in inputData.TestCases)
+                Log.Error(connEx, "[SP실행] DB 연결 실패 - ProcedureName: {ProcedureName}", inputData.ProcedureName);
+                foreach (var testCase in inputData.TestCases ?? new System.Collections.Generic.List<TestCaseDto>())
                 {
                     outputResult.ExecutionResults.Add(new TestCaseResultDto
                     {
@@ -131,6 +145,11 @@ namespace ReSet.Validator.Core.Services
                     });
                 }
             }
+
+            Log.Information("[SP실행] Stored Procedure 실행 완료 - ProcedureName: {ProcedureName}, 성공: {SuccessCount}, 실패: {FailCount}",
+                inputData.ProcedureName,
+                outputResult.ExecutionResults.Count(r => r.Status == "SUCCESS"),
+                outputResult.ExecutionResults.Count(r => r.Status == "FAIL"));
 
             return JsonSerializer.Serialize(outputResult, new JsonSerializerOptions { WriteIndented = true });
         }

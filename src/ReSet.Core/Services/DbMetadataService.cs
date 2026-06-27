@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using ReSet.Core.Models;
+using Serilog;
 
 namespace ReSet.Core.Services
 {
@@ -11,6 +12,7 @@ namespace ReSet.Core.Services
     {
         public async Task<List<string>> GetStoredProcedureNamesAsync(string connectionString, CancellationToken cancellationToken = default)
         {
+            Log.Information("[DbMetadata] SP 목록 조회 시작");
             var spList = new List<string>();
             var query = @"
                 SELECT ROUTINE_SCHEMA + '.' + ROUTINE_NAME 
@@ -32,12 +34,15 @@ namespace ReSet.Core.Services
                     }
                 }
             }
+            Log.Information("[DbMetadata] SP 목록 조회 완료 - 발견 개수: {Count}개", spList.Count);
             return spList;
         }
 
         // 헬퍼 메서드: 특정 객체의 DDL 원본 텍스트 조회
         private async Task<string> GetObjectDdlAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
+            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
+            Log.Debug("[DbMetadata] 객체 DDL 조회 시작: {FullName}", fullName);
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
             var query = $@"
                 SELECT sm.definition 
@@ -56,6 +61,8 @@ namespace ReSet.Core.Services
                     var result = await cmd.ExecuteScalarAsync(cancellationToken);
                     if (result != null && result != DBNull.Value)
                     {
+                        Log.Debug("[DbMetadata] 객체 DDL 조회 성공 - 길이: {Length}자 ({FullName})",
+                            result.ToString()?.Length ?? 0, fullName);
                         return result.ToString() ?? string.Empty;
                     }
                 }
@@ -88,13 +95,15 @@ namespace ReSet.Core.Services
                 catch {}
             }
 
-            var fullName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
+            Log.Warning("[DbMetadata] 객체 DDL 조회 실패 - 대상 객체가 존재하지 않습니다: {FullName}", fullName);
             throw new InvalidOperationException($"'{fullName}'의 DDL 코드를 찾을 수 없습니다.");
         }
 
         // 헬퍼 메서드: 특정 객체의 1차 의존 정보 목록 수집
         private async Task<List<DependencyInfo>> GetRawDependenciesAsync(string connectionString, string? database, string schema, string objectName, CancellationToken cancellationToken)
         {
+            var targetName = string.IsNullOrEmpty(database) ? $"{schema}.{objectName}" : $"[{database}].[{schema}].[{objectName}]";
+            Log.Debug("[DbMetadata] 의존성 조회 시작: {TargetName}", targetName);
             var rawDeps = new List<DependencyInfo>();
             var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
             var query = $@"
@@ -131,6 +140,7 @@ namespace ReSet.Core.Services
                     }
                 }
             }
+            Log.Debug("[DbMetadata] 의존성 조회 완료 - {Count}개 의존 관계 발견 ({TargetName})", rawDeps.Count, targetName);
             return rawDeps;
         }
 
@@ -139,6 +149,7 @@ namespace ReSet.Core.Services
         {
             var spDef = new SpDefinition { Schema = schema, Name = spName };
             var spFullName = $"{schema}.{spName}";
+            Log.Information("[DbMetadata] SP 상세 메타데이터 수집 시작 - SP: {SpFullName}, MaxDepth: {MaxDepth}", spFullName, maxDepth);
 
             // 1. 메인 SP의 DDL 조회
             try
@@ -147,6 +158,7 @@ namespace ReSet.Core.Services
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[DbMetadata] 메인 SP DDL 수집 실패 - SP: {SpFullName}", spFullName);
                 spDef.Warnings.Add($"[{spFullName}] 메인 프로시저 DDL 수집 실패: {ex.Message}");
                 throw;
             }
@@ -158,8 +170,11 @@ namespace ReSet.Core.Services
             await ResolveDynamicSqlDependenciesAsync(connectionString, null, spDef.DdlText, 1, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
             
             // 3. 재귀 수집 시작
+            Log.Information("[DbMetadata] 재귀 의존성 탐색(DFS) 시작 - SP: {SpFullName}", spFullName);
             await GatherDependenciesRecursiveAsync(connectionString, null, schema, spName, 1, maxDepth, visited, spDef.Dependencies, spDef.Warnings, cancellationToken);
 
+            Log.Information("[DbMetadata] SP 메타데이터 수집 완료 - SP: {SpFullName}, 의존 객체: {DepCount}개, 경고: {WarnCount}개",
+                spFullName, spDef.Dependencies.Count, spDef.Warnings.Count);
             return spDef;
         }
 
@@ -172,6 +187,10 @@ namespace ReSet.Core.Services
         {
             if (currentDepth > maxDepth) return;
 
+            var targetName = string.IsNullOrEmpty(database) ? $"{schema}.{name}" : $"[{database}].[{schema}].[{name}]";
+            Log.Debug("[DbMetadata] DFS 재귀 탐색 - Target: {TargetName}, Depth: {CurrentDepth}/{MaxDepth}",
+                targetName, currentDepth, maxDepth);
+
             List<DependencyInfo> rawDeps;
             try
             {
@@ -179,7 +198,7 @@ namespace ReSet.Core.Services
             }
             catch (Exception ex)
             {
-                var targetName = string.IsNullOrEmpty(database) ? $"{schema}.{name}" : $"[{database}].[{schema}].[{name}]";
+                Log.Warning(ex, "[DbMetadata] 의존 관계 수집 실패 (Soft Fail) - Target: {TargetName}", targetName);
                 warnings.Add($"[{targetName}] 의존 관계 정보 수집 실패: {ex.Message}");
                 return; // 수집 실패 시 조용히 스킵 (Soft Fail)
             }

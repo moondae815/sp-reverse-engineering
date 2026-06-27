@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using ReSet.Core.Models;
+using Serilog;
 
 namespace ReSet.Core.Services
 {
@@ -50,10 +51,13 @@ namespace ReSet.Core.Services
                 return false;
             }
 
+            Log.Information("캐시 유효성 검사 - SP: {ProcedureName}", procedureName);
+
             // 1. 실제 출력 파일이 존재하는지 검증 (*_Spec.md)
             var specFilePath = Path.Combine(outputDirectory, $"{procedureName}_Spec.md");
             if (!File.Exists(specFilePath))
             {
+                Log.Debug("캐시 미스 (설계 명세서 파일이 존재하지 않음): {SpecFilePath}", specFilePath);
                 return false;
             }
 
@@ -63,15 +67,26 @@ namespace ReSet.Core.Services
                 var cacheIndex = LoadCacheIndex(outputDirectory);
                 if (cacheIndex != null && cacheIndex.Entries.TryGetValue(procedureName, out var entry))
                 {
-                    return string.Equals(entry.CompositeHash, compositeHash, StringComparison.OrdinalIgnoreCase);
+                    bool isValid = string.Equals(entry.CompositeHash, compositeHash, StringComparison.OrdinalIgnoreCase);
+                    if (isValid)
+                    {
+                        Log.Information("캐시 히트 - SP: {ProcedureName} (분석 생략 가능)", procedureName);
+                    }
+                    else
+                    {
+                        Log.Debug("캐시 미스 (복합 해시 불일치) - SP: {ProcedureName}, EntryHash: {EntryHash}, CurrentHash: {CurrentHash}", procedureName, entry.CompositeHash, compositeHash);
+                    }
+                    return isValid;
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 캐시 로드 실패 시 안전하게 Soft Fail (false 반환하여 재분석 진행)
+                Log.Warning(ex, "캐시 인덱스 파일 로드 중 오류 발생 - SP: {ProcedureName}", procedureName);
                 return false;
             }
 
+            Log.Debug("캐시 미스 (캐시 인덱스 내 항목 없음) - SP: {ProcedureName}", procedureName);
             return false;
         }
 
@@ -112,11 +127,13 @@ namespace ReSet.Core.Services
                     cacheIndex.Entries[procedureName] = entry;
 
                     SaveCacheIndex(outputDirectory, cacheIndex);
+                    Log.Information("캐시 인덱스 갱신 성공 - SP: {ProcedureName}", procedureName);
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // 캐시 쓰기 실패 시 예외 격리 (분석은 통과했으므로 로깅 외 무시)
+                Log.Warning(ex, "캐시 인덱스 갱신 실패 (예외 격리) - SP: {ProcedureName}", procedureName);
             }
         }
 

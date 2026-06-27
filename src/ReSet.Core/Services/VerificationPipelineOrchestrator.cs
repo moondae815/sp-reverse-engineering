@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using ReSet.Core.Models;
+using Serilog;
 
 namespace ReSet.Core.Services
 {
@@ -82,18 +83,25 @@ namespace ReSet.Core.Services
             var selectedOption = $"{schema}.{name}";
             SpDefinition? spDef = null;
 
+            Log.Information("[파이프라인] SP 분석 시작 - SP: {SpName}, Provider: {Provider}, MaxDepth: {MaxDepth}, BatchMode: {IsBatchMode}",
+                selectedOption, provider, maxDepth, isBatchMode);
+
             _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - DB 메타데이터 및 의존성 분석 중 (최대 깊이: {maxDepth}단계)...");
             try
             {
                 spDef = await _dbService.GetSpDetailsAsync(connectionString, schema, name, maxDepth, cancellationToken);
+                Log.Debug("[파이프라인] DB 메타데이터 수집 완료 - SP: {SpName}, 의존성 수: {DepCount}, 경고 수: {WarningCount}",
+                    selectedOption, spDef?.Dependencies?.Count ?? 0, spDef?.Warnings?.Count ?? 0);
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[파이프라인] DB 메타데이터 수집 실패 - SP: {SpName}", selectedOption);
                 _userInteraction.NotifyError($"{selectedOption} - DB 조회 실패: {ex.Message}");
             }
 
             if (spDef == null)
             {
+                Log.Warning("[파이프라인] SP 정의를 가져오지 못해 파이프라인을 중단합니다 - SP: {SpName}", selectedOption);
                 return (null, null);
             }
 
@@ -111,6 +119,7 @@ namespace ReSet.Core.Services
                     compositeHash = _cacheManager.ComputeCompositeHash(spDef);
                     if (_cacheManager.IsCacheValid(selectedOption, compositeHash, outputDirectory))
                     {
+                        Log.Information("[파이프라인] 캐시 히트 - AI 분석 건너뜀 - SP: {SpName}", selectedOption);
                         _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 캐시가 유효합니다. AI 분석을 건너뛰고 기존 보고서를 사용합니다. (Cache Hit)");
                         var specFilePath = System.IO.Path.Combine(outputDirectory, $"{selectedOption}_Spec.md");
                         if (System.IO.File.Exists(specFilePath))
@@ -119,9 +128,14 @@ namespace ReSet.Core.Services
                             return (cachedSpec, spDef);
                         }
                     }
+                    else
+                    {
+                        Log.Debug("[파이프라인] 캐시 미스 - AI 분석 진행 - SP: {SpName}", selectedOption);
+                    }
                 }
                 catch (Exception ex)
                 {
+                    Log.Warning(ex, "[파이프라인] 캐시 확인 중 예외 발생 (무시됨) - SP: {SpName}", selectedOption);
                     _userInteraction.NotifyStatus($"[yellow]경고: 캐시 확인 중 오류가 발생하여 무시하고 분석을 진행합니다. ({ex.Message})[/]");
                 }
             }
@@ -257,14 +271,19 @@ namespace ReSet.Core.Services
                     var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                     bool genSuccess = false;
 
+                    Log.Information("[파이프라인] AI 명세서 생성 시작 - SP: {SpName}, 시도: {Attempt}, Provider: {Provider}, Model: {Model}",
+                        selectedOption, attempt, provider, _modelName);
                     _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}) [[{attemptText}]]...");
                     try
                     {
                         specificationMarkdown = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, effort: null, cancellationToken: cancellationToken);
                         genSuccess = true;
+                        Log.Debug("[파이프라인] AI 명세서 생성 성공 - SP: {SpName}, 시도: {Attempt}, 응답 길이: {Length}자",
+                            selectedOption, attempt, specificationMarkdown.Length);
                     }
                     catch (Exception ex)
                     {
+                        Log.Error(ex, "[파이프라인] AI 명세서 생성 실패 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
                         _userInteraction.NotifyError($"{selectedOption} - AI 분석 실패 (시도 {attempt}): {ex.Message}");
                     }
 
@@ -277,7 +296,9 @@ namespace ReSet.Core.Services
                     var l1Result = _validator.Validate(specificationMarkdown);
                     if (!l1Result.IsValid)
                     {
-                        _userInteraction.NotifyL1Errors(selectedOption, attempt, _maxAttempts, l1Result.Errors);
+                        Log.Warning("[파이프라인] L1 기계 검증 실패 - SP: {SpName}, 시도: {Attempt}, 오류 수: {ErrorCount}",
+                            selectedOption, attempt, l1Result.Errors?.Count ?? 0);
+                        _userInteraction.NotifyL1Errors(selectedOption, attempt, _maxAttempts, l1Result.Errors ?? new System.Collections.Generic.List<string>());
 
                         bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
                         if (canRetry)
@@ -288,28 +309,38 @@ namespace ReSet.Core.Services
                         }
                         else
                         {
+                            Log.Error("[파이프라인] L1 기계 검증 최종 실패 - SP: {SpName}", selectedOption);
                             _userInteraction.NotifyError($"{selectedOption} - [[L1 기계 검증]] 최종 보완 실패. 마지막 작성 버전을 사용합니다.");
                             break;
                         }
+                    }
+                    else
+                    {
+                        Log.Debug("[파이프라인] L1 기계 검증 통과 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
                     }
 
                     // L2: AI 교차 리뷰
                     ReviewResult? l2Result = null;
                     bool reviewSuccess = false;
 
+                    Log.Information("[파이프라인] L2 AI 교차 리뷰 시작 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
                     _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider} - {_modelName})...");
                     try
                     {
                         l2Result = await _criticService.ReviewSpecificationAsync(spDef, specificationMarkdown, _criticEffort, cancellationToken);
                         reviewSuccess = true;
+                        Log.Debug("[파이프라인] L2 AI 교차 리뷰 완료 - SP: {SpName}, 결함 감지: {HasDefects}",
+                            selectedOption, l2Result?.HasDefects);
                     }
                     catch (Exception ex)
                     {
+                        Log.Error(ex, "[파이프라인] L2 AI 교차 리뷰 예외 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
                         _userInteraction.NotifyError($"{selectedOption} - AI 교차 리뷰 실패 (시도 {attempt}): {ex.Message}");
                     }
 
                     if (reviewSuccess && l2Result != null && l2Result.HasDefects)
                     {
+                        Log.Warning("[파이프라인] L2 AI 교차 리뷰 결함 발견 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
                         _userInteraction.NotifyL2Defects(selectedOption, attempt, _maxAttempts, l2Result.FeedbackComment ?? string.Empty);
 
                         bool canRetry = _maxAttempts == -1 || attempt < _maxAttempts;
@@ -323,6 +354,7 @@ namespace ReSet.Core.Services
                         }
                         else
                         {
+                            Log.Error("[파이프라인] L2 AI 교차 리뷰 최종 실패 - SP: {SpName}", selectedOption);
                             _userInteraction.NotifyError($"{selectedOption} - [[L2 AI 리뷰]] 최종 보완 실패. 마지막 리뷰 반영 버전을 사용합니다.");
                             break;
                         }
@@ -331,6 +363,7 @@ namespace ReSet.Core.Services
                     // 검증을 통과한 경우 루프 탈출
                     if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
                     {
+                        Log.Information("[파이프라인] L1+L2 검증 최종 통과 - SP: {SpName}, 최종 시도 횟수: {Attempt}", selectedOption, attempt);
                         _userInteraction.NotifyValidationSuccess(selectedOption);
                         break;
                     }
@@ -340,6 +373,7 @@ namespace ReSet.Core.Services
             // 배치 모드 성공 완료 시 캐시 업데이트
             if (isBatchMode && enableCache && !string.IsNullOrEmpty(compositeHash))
             {
+                Log.Debug("[파이프라인] 배치 모드 캐시 업데이트 - SP: {SpName}", selectedOption);
                 _cacheManager.UpdateCache(selectedOption, spDef, compositeHash, outputDirectory);
             }
 
@@ -592,6 +626,7 @@ namespace ReSet.Core.Services
             var regex = new System.Text.RegularExpressions.Regex(@"\[AI 추론 보완:\s*([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*-\s*([^\]]+)\]");
             var matches = regex.Matches(specificationMarkdown);
 
+            Log.Debug("[파이프라인] 메타데이터 보완 SQL 패턴 탐지 - SP: {SpName}, 탐지된 패턴 수: {MatchCount}", selectedOption, matches.Count);
             if (matches.Count == 0) return;
 
             var sb = new System.Text.StringBuilder();
@@ -645,10 +680,12 @@ namespace ReSet.Core.Services
 
                 var sqlPath = System.IO.Path.Combine(cleansingDir, $"{selectedOption}_MetadataCleansing.sql");
                 System.IO.File.WriteAllText(sqlPath, sb.ToString(), System.Text.Encoding.UTF8);
+                Log.Debug("[파이프라인] 메타데이터 보완 SQL 스크립트 저장 성공 - SP: {SpName}, 경로: {SqlPath}", selectedOption, sqlPath);
                 _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 메타데이터 보완 SQL 스크립트가 저장되었습니다: [blue]{sqlPath}[/]");
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[파이프라인] 메타데이터 보완 스크립트 저장 실패 - SP: {SpName}", selectedOption);
                 _userInteraction.NotifyError($"메타데이터 보완 스크립트 저장 중 오류 발생: {ex.Message}");
             }
         }
@@ -658,6 +695,8 @@ namespace ReSet.Core.Services
             var sqlPath = System.IO.Path.Combine(outputDirectory, "cleansing", $"{selectedOption}_MetadataCleansing.sql");
             if (!System.IO.File.Exists(sqlPath)) return;
 
+            Log.Information("[파이프라인] DB 메타데이터 역반영 SQL 실행 시작 - SP: {SpName}, SqlPath: {SqlPath}", selectedOption, sqlPath);
+
             try
             {
                 var sqlText = await System.IO.File.ReadAllTextAsync(sqlPath, cancellationToken);
@@ -666,6 +705,7 @@ namespace ReSet.Core.Services
                 _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - DB 메타데이터 설명 역반영 중...");
 
                 var batches = sqlText.Split(new[] { "GO\r\n", "GO\n", "go\r\n", "go\n" }, StringSplitOptions.RemoveEmptyEntries);
+                Log.Debug("[파이프라인] 실행할 SQL 배치 수: {BatchCount} - SP: {SpName}", batches.Length, selectedOption);
 
                 using (var conn = new SqlConnection(connectionString))
                 {
@@ -681,10 +721,12 @@ namespace ReSet.Core.Services
                         }
                     }
                 }
+                Log.Information("[파이프라인] DB 메타데이터 역반영 완료 - SP: {SpName}", selectedOption);
                 _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - DB 메타데이터 설명 역반영 완료!");
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "[파이프라인] DB 메타데이터 역반영 중 예외 발생 - SP: {SpName}", selectedOption);
                 _userInteraction.NotifyError($"DB 메타데이터 설명 역반영 중 오류 발생: {ex.Message}");
             }
         }

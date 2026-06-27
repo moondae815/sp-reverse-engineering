@@ -8,6 +8,7 @@ using ReSet.Core.Services;
 using ReSet.Validator.Core.Abstractions;
 using ReSet.Validator.Core.Models;
 using ReSet.Validator.Core.Plugins;
+using Serilog;
 using ValidationResult = ReSet.Validator.Core.Models.ValidationResult;
 
 namespace ReSet.Validator.Core.Services
@@ -40,15 +41,20 @@ namespace ReSet.Validator.Core.Services
 
         public async Task<List<ValidationResult>> RunVerificationAsync(bool isBatchMode, CancellationToken cancellationToken = default)
         {
+            Log.Information("[코드검증] 검증 오케스트레이션 시작 - BatchMode: {IsBatchMode}, SpecDir: {SpecDir}, CodeDir: {CodeDir}",
+                isBatchMode, _config.SpecDirectory, _config.SourceCodeDirectory);
+
             _ui?.ShowInfo("1. 설계서 및 소스코드 매핑 구성 중...");
             var mappedPairs = _mappingService.ResolveMappings(_config);
 
             if (mappedPairs.Count == 0)
             {
+                Log.Warning("[코드검증] 검증 매핑 대상 없음 - 경로를 확인하십시오.");
                 _ui?.ShowWarning("검증 매핑 대상(Spec & Code 파일 쌍)을 찾을 수 없습니다. 경로를 확인해 주세요.");
                 return mappedPairs;
             }
 
+            Log.Information("[코드검증] 총 {Count}개의 검증 대상 매핑 완료", mappedPairs.Count);
             _ui?.ShowInfo($"총 {mappedPairs.Count}개의 검증 대상이 매핑되었습니다.");
 
             foreach (var pair in mappedPairs)
@@ -59,6 +65,8 @@ namespace ReSet.Validator.Core.Services
                 _ui?.ShowInfo($"🔍 검증 대상 분석 시작: {pair.MappedName}");
                 _ui?.ShowInfo($" - 설계서: {Path.GetFileName(pair.SpecFilePath)}");
                 _ui?.ShowInfo($" - 소스코드: {Path.GetFileName(pair.SourceCodePath)}");
+                Log.Information("[코드검증] 검증 대상 처리 시작 - Name: {MappedName}, Spec: {SpecFile}, Code: {CodeFile}",
+                    pair.MappedName, pair.SpecFilePath, pair.SourceCodePath);
 
                 string specContent = await File.ReadAllTextAsync(pair.SpecFilePath, cancellationToken);
                 string codeContent = await File.ReadAllTextAsync(pair.SourceCodePath, cancellationToken);
@@ -70,20 +78,26 @@ namespace ReSet.Validator.Core.Services
 
                 if (plugin != null)
                 {
+                    Log.Debug("[코드검증] L1 정적 검증 시작 - Name: {MappedName}, Language: {Language}", pair.MappedName, language);
                     var l1Result = await plugin.ValidateStaticAsync(specContent, codeContent);
                     pair.L1Passed = l1Result.Passed;
                     pair.L1Message = l1Result.ErrorMessage;
+                    Log.Debug("[코드검증] L1 정적 검증 완료 - Name: {MappedName}, Passed: {Passed}, Message: {Message}",
+                        pair.MappedName, l1Result.Passed, l1Result.ErrorMessage);
                     _ui?.ShowL1Result(pair.MappedName, l1Result);
                 }
                 else
                 {
                     pair.L1Passed = false;
                     pair.L1Message = $"지원되지 않는 언어 확장자입니다: {extension}";
+                    Log.Warning("[코드검증] L1 정적 검증 플러그인 없음 - Name: {MappedName}, Extension: {Extension}", pair.MappedName, extension);
                     _ui?.ShowWarning($"[L1 경고] {pair.MappedName} - 지원 플러그인 없음");
                 }
 
                 _ui?.ShowInfo(" - Level 2: AI 비즈니스 로직 일치성 분석 요청 중...");
+                Log.Information("[코드검증] L2 AI 분석 시작 - Name: {MappedName}", pair.MappedName);
                 var gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, null, cancellationToken);
+                Log.Debug("[코드검증] L2 AI 분석 완료 - Name: {MappedName}, Status: {Status}", pair.MappedName, gapReport.OverallStatus);
                 
                 // L2 자체 교정 (Self-Correction) 시도 (선택)
                 int attempt = 1;
@@ -91,15 +105,21 @@ namespace ReSet.Validator.Core.Services
                 {
                     attempt++;
                     var attemptsTotalText = _config.MaxL2Attempts == -1 ? "무제한" : _config.MaxL2Attempts.ToString();
+                    Log.Debug("[코드검증] L2 자체 교정 루프 - Name: {MappedName}, 시도: {Attempt}, 상태: {Status}",
+                        pair.MappedName, attempt, gapReport.OverallStatus);
                     _ui?.ShowInfo($"   [L2 자체 교정 루프] AI 재검토 요청 중... (시도 {attempt}/{attemptsTotalText})");
                     
                     var feedback = $"- 종합 상태: {gapReport.OverallStatus}\n- 입력 파라미터 불일치: {gapReport.InputParametersGap}\n- 출력 데이터셋 불일치: {gapReport.OutputResultSetsGap}\n- 비즈니스 로직 불일치: {gapReport.BusinessLogicGap}\n- 예외 및 트랜잭션 불일치: {gapReport.ExceptionHandlingGap}\n- 수정 제안: {gapReport.Suggestions}";
                     
                     gapReport = await _aiService.VerifyCodeAsync(specContent, codeContent, language, feedback, cancellationToken);
+                    Log.Debug("[코드검증] L2 자체 교정 후 상태 - Name: {MappedName}, 시도: {Attempt}, 상태: {Status}",
+                        pair.MappedName, attempt, gapReport.OverallStatus);
                 }
 
                 pair.GapReport = gapReport;
                 pair.L2Passed = gapReport.OverallStatus == "MATCH";
+                Log.Information("[코드검증] L2 최종 판정 - Name: {MappedName}, Status: {Status}, L2Passed: {L2Passed}",
+                    pair.MappedName, gapReport.OverallStatus, pair.L2Passed);
                 _ui?.ShowL2Result(pair.MappedName, gapReport);
 
                 // --- Level 3: 인간 최종 검토 ---
@@ -107,6 +127,7 @@ namespace ReSet.Validator.Core.Services
                 {
                     var approved = await _ui.ConfirmValidationAsync(pair.MappedName, pair.SourceCodePath, gapReport);
                     pair.IsApproved = approved;
+                    Log.Information("[코드검증] L3 인간 검토 결과 - Name: {MappedName}, Approved: {Approved}", pair.MappedName, approved);
 
                     if (!approved)
                     {
@@ -118,6 +139,7 @@ namespace ReSet.Validator.Core.Services
                 {
                     // 배치 모드일 때는 AI가 일치 판정을 내렸다면 자동 승인 처리
                     pair.IsApproved = pair.L2Passed;
+                    Log.Information("[코드검증] L3 배치 자동 처리 - Name: {MappedName}, AutoApproved: {IsApproved}", pair.MappedName, pair.IsApproved);
                     _ui?.ShowInfo($" - [L3 자동 처리] 배치 모드로 인한 자동 승인 상태: {pair.IsApproved}");
                 }
             }
@@ -132,6 +154,7 @@ namespace ReSet.Validator.Core.Services
 
         private void ExportReports(List<ValidationResult> results)
         {
+            Log.Information("[코드검증] 검증 리포트 내보내기 시작 - 총 {Count}개, OutputDir: {OutputDir}", results.Count, _config.OutputDirectory);
             try
             {
                 if (!Directory.Exists(_config.OutputDirectory))
@@ -175,6 +198,7 @@ namespace ReSet.Validator.Core.Services
 {res.GapReport.Suggestions}
 ";
                     File.WriteAllText(mdPath, content);
+                    Log.Debug("[코드검증] 개별 검증 리포트 저장 - {ReportPath}", mdPath);
                 }
 
                 // 2. 종합 검증 요약 보고서 저장 (validation_summary.md)
@@ -197,10 +221,12 @@ namespace ReSet.Validator.Core.Services
 {string.Join("\n", results.Select(r => $"| {r.MappedName} | {(r.L1Passed ? "✅ PASS" : "❌ FAIL")} | {(r.L2Passed ? "✅ MATCH" : "⚠️ GAP")} | {(r.IsApproved ? "✅ APPROVED" : "❌ REJECTED")} | [{r.MappedName}_ValidationReport.md](./{r.MappedName}_ValidationReport.md) |"))}
 ";
                 File.WriteAllText(summaryPath, summaryContent);
+                Log.Information("[코드검증] 종합 검증 요약 리포트 저장 완료 - {SummaryPath}", summaryPath);
             }
             catch (Exception ex)
             {
                 // Soft Fail 정책 준수: 파일 저장 중 에러가 나더라도 검증 프로세스 자체가 크래시되지 않음.
+                Log.Error(ex, "[코드검증] 리포트 내보내기 중 예외 발생 (Soft Fail)");
                 _ui?.ShowWarning($"보고서 내보내기 중 오류 발생: {ex.Message}");
             }
         }
