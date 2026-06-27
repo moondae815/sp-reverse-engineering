@@ -141,7 +141,7 @@ namespace ReSet.Core.Services
             Log.Information("AI 명세서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", response);
 
-            return response;
+            return response ?? string.Empty;
         }
 
         public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default)
@@ -182,7 +182,7 @@ namespace ReSet.Core.Services
             Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
             try
             {
-                var jsonString = ExtractJson(responseContent);
+                var jsonString = ExtractJson(responseContent ?? string.Empty);
                 Log.Debug("[추출된 JSON 내용]: {JsonString}", jsonString);
 
                 using (var resultDoc = JsonDocument.Parse(jsonString))
@@ -280,7 +280,7 @@ namespace ReSet.Core.Services
             Log.Information("AI 배치 전환 계획서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", response);
 
-            return response;
+            return response ?? string.Empty;
         }
 
         public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, string? effort = null, CancellationToken cancellationToken = default)
@@ -326,7 +326,7 @@ namespace ReSet.Core.Services
             Log.Information("AI 통합 배치 계획서 생성 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, response?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", response);
 
-            return response;
+            return response ?? string.Empty;
         }
 
         public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, string? effort = null, CancellationToken cancellationToken = default)
@@ -373,7 +373,7 @@ namespace ReSet.Core.Services
             Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
             try
             {
-                var jsonString = ExtractJson(responseContent);
+                var jsonString = ExtractJson(responseContent ?? string.Empty);
                 Log.Debug("[추출된 JSON 내용]: {JsonString}", jsonString);
 
                 using (var resultDoc = JsonDocument.Parse(jsonString))
@@ -499,7 +499,7 @@ namespace ReSet.Core.Services
             Log.Information("AI 정산 정책서 생성 완료 - 응답 길이: {Length}", response?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", response);
 
-            return response;
+            return response ?? string.Empty;
         }
     }
 }
