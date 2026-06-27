@@ -67,94 +67,54 @@
     *   로컬 개발용 API Key는 Git 추적 제외 대상인 `src/ReSet.Cli/appsettings.local.json`을 새로 생성하여 관리해야 합니다.
 
 ### ⚡ 범주 2. 예외 처리 및 안정성 (Stability & Soft Fail)
-2.  **안전한 Soft Fail (예외 격리 정책)을 준수하십시오.**
-    *   SQL Server DB 메타데이터 수집([DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs)) 시, 특정 테이블이나 뷰에 대한 스키마 조회 권한이 없는 경우 전체 프로세스를 크래시(`throw`)하지 마십시오.
-    *   권한 오류가 나면 경고 목록(`Warnings`)에 기록하고 안전하게 소프트 스킵하여, AI 프롬프트 및 TUI 화면에 수집 오류가 명시적으로 고지되도록 설계해야 합니다.
-    *   원천 데이터 파일 덤프([MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs)) 과정에서 디스크 쓰기 오류(용량 부족 등)가 발생하더라도 핵심 산출물 저장은 끝까지 완료될 수 있도록 에러 핸들러로 감싸주어야 합니다.
-3.  **데이터 정합성 검증 DB 실행의 Soft Fail 정책을 따르십시오.**
-    *   Stored Procedure 실행 데이터를 Legacy SQL Server에서 수집할 때(`SpExecutionService`), 서버 네트워크 차단이나 패스워드 만료 등으로 데이터베이스 연결(`conn.OpenAsync`)이 실패하더라도 검증 프로그램 전체가 비정상 크래시(Crash)나 예외 중단되게 하지 마십시오.
-    *   연결 실패(또는 쿼리 수행 오류) 등은 반드시 `try-catch` 블록으로 안전하게 격리하고, 결과 JSON DTO의 각 테스트 케이스에 상태를 `FAIL`로 전환하고 구체적인 예외 메시지를 `ErrorCode` 필드에 기재하여 Soft Fail 형태로 데이터를 안전하게 직렬화해 내보내야 합니다.
-4.  **DDL 해시 기반 로컬 증분 캐싱 예외를 격리하십시오.**
-    *   분석 대상 SP 정의 문자열과 모든 의존성 스펙 DDL 문자열을 SHA-256 해시 처리하고 키로 정렬하여 Composite Signature Hash를 일관되게 생성해야 합니다.
-    *   캐시 인덱스 `.sp_cache_index.json` 파일을 조작하거나 처리할 때의 예외는 반드시 try-catch로 격리(Soft Fail)하여, 캐싱 모듈의 에러로 인해 전체 마이그레이션 파이프라인 분석이 중단되지 않도록 방지해 주십시오.
-5.  **동적 SQL 하이브리드 의존성 탐색 및 예외 격리를 수행하십시오.**
-    *   Stored Procedure DDL 내에서 동적 SQL 실행 패턴(`EXEC`, `sp_executesql`)이 탐색되면, 정적 의존성 수집의 한계를 극복하기 위해 Regex 텍스트 추출과 `sys.objects` 대조를 결합한 하이브리드 기법을 사용하십시오.
-    *   동적 SQL 분석 과정의 쿼리 수행 또는 권한 오류 시 전체 프로세스가 중단되지 않도록 Soft Fail 정책을 적용해 예외를 격리하십시오.
-6.  **AI API 응답 검증 및 KeyNotFoundException 예외 방지**:
-    *   Google Gemini, Claude, OpenAI 등 모든 AI API 클라이언트 호출 응답 파싱 시, 안전 필터 차단(Safety Block, Recitation) 또는 장애로 결과 필드가 비정상/누락 수신되었을 때 발생하는 `KeyNotFoundException`("The given key was not present in the dictionary.") 크래시를 완벽히 차단하십시오.
-    *   반드시 JSON 요소를 바로 꺼내지 말고 `TryGetProperty`로 존재 유무를 확인하고, 비정상 수신 시 상세한 거부/에러 사유를 담아 `InvalidOperationException`을 던져 투명하게 알려야 합니다.
-    *   OpenAI의 o1/o3 등 추론 모델(Reasoning Model) 호출 시에는 `400 BadRequestError`를 방지하기 위해 `temperature` 파라미터를 요청 본문에서 생략하고 `reasoning_effort`를 API 표준(low, medium, high)으로 안전하게 변환 매핑해야 합니다.
-    *   Claude의 4세대 Adaptive Thinking 모델 호출 시에는 `budget_tokens`를 제외하고 `output_config.effort`로 사고 강도를 위임해 에러를 원천 차단하십시오.
+2.  **전방위적 소프트 페일(Soft Fail) 및 예외 격리 정책을 준수하십시오.**
+    *   **DB 메타데이터 수집**: [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs)의 스키마 권한 누락 또는 동적 SQL 의존성 탐색 과정의 쿼리 오류 시 프로세스를 중단(`throw`)하지 마십시오. 경고 목록(`Warnings`)에 기록하고 소프트 스킵 처리해야 합니다.
+    *   **원천 데이터 파일 덤프**: [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs)의 디스크 쓰기 오류 등이 발생하더라도 핵심 산출물은 안전하게 보존되도록 에러 핸들러로 감싸야 합니다.
+    *   **정합성 검증 DB 실행**: [SpExecutionService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SpExecutionService.cs)의 Legacy SQL 실행 수집 시 연결 실패나 쿼리 수행 오류가 나면 크래시하지 말고, 결과 DTO의 테스트 케이스를 `FAIL`로 처리하고 예외 메시지를 `ErrorCode` 필드에 기재하여 직렬화 내보내야 합니다.
+    *   **캐싱 및 서브 시스템**: [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs)의 DDL 해시 캐시 조작 및 기타 보조 연동 시 발생하는 모든 예외는 try-catch로 격리하여 마이그레이션 메인 파이프라인의 중단을 예방하십시오.
+3.  **AI API 응답 널 가드(TryGetProperty) 및 모델 파라미터 매핑을 준수하십시오.**
+    *   [ClaudeClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/ClaudeClient.cs), [OpenAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/OpenAiClient.cs), [GoogleClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/GoogleClient.cs) 호출 파싱 시 안전 필터 차단이나 응답 누락으로 인해 `KeyNotFoundException` 크래시가 발생하는 것을 원천 차단하십시오.
+    *   반드시 `TryGetProperty`를 활용해 JSON 필드 유무를 안전하게 확인하고, 비정상 수신 시 `InvalidOperationException`을 던져 투명하게 거절 사유를 노출하십시오.
+    *   **모델별 전송 규격 매핑**: OpenAI 추론 모델(o1/o3) 호출 시 `temperature`를 제외하고 `reasoning_effort`를 표준 매핑하고, Claude 4세대 모델 호출 시 `budget_tokens` 대신 `output_config.effort`에 강도를 위임해 400 에러를 방지하십시오.
 
 ### 🎨 범주 3. 인터페이스 및 Spectre.Console 예외 회피 (UI/UX)
-6.  **Spectre.Console 렌더링 충돌 예방을 위해 Escape 처리를 준수하십시오.**
-    *   렌더링할 텍스트에 대괄호(`[...]`)가 포함되어 있으면 Spectre.Console은 이를 마크업 태그로 오인하여 `System.InvalidOperationException`을 던집니다.
-    *   DB 메타데이터나 AI 분석 원문, 파일 경로 등 대괄호가 포함될 여지가 있는 모든 정보를 TUI에 출력할 때는 반드시 **`Markup.Escape()`** 메소드를 호출하여 출력해야 합니다.
-    *   예: `AnsiConsole.MarkupLine($"[green]Analyzed:[/] {Markup.Escape(spName)}")`
-7.  **TUI 디렉토리 입력 피드백 및 이스케이프를 준수하십시오.**
-    *   프로그램 구동 시 필수 디렉토리 경로가 존재하지 않는다면 무조건 종료(Crash)하기보다, TUI 상에서 사용자에게 올바른 경로를 입력하도록 재요청하는 프롬프트를 반드시 띄우십시오.
-    *   입력을 유도하는 프롬프트(Spectre.Console `TextPrompt`) 작성 시, 디렉토리 내 슬래시('/') 문자가 선택지 구분선으로 렌더링되어 지저분해지는 현상을 막기 위해 반드시 **`.ShowChoices(false)`**를 결합하여 화면 노출을 방지하십시오.
-    *   경로 계산의 기준점은 항상 현재 실행 중인 쉘 경로인 **`Directory.GetCurrentDirectory()`**로 설정하여 사용자가 `../../` 없이 직관적인 경로를 사용하게 하십시오.
-8.  **TUI 로그인 연결 정보 실시간 변경을 지원하십시오.**
-    *   로그인 시 로컬 세션 파일(`.session.json`)로부터 정보를 불러온 경우에도, 사용자가 원할 경우 appsettings.json을 수정하지 않고 즉석에서 서버 주소 및 데이터베이스 이름을 수정하여 다른 대상 데이터베이스에 접속할 수 있도록 입력 기회를 제공해야 합니다.
-9.  **Multi-SP 통합 계획 순서 보장 (물리 선택 순서 보장) 루프를 유지하십시오.**
-    *   배치 마이그레이션 통합 전환 계획서 수립 시, 계획서 내 배치 스텝의 순서는 사용자가 의도하여 선택한 순서대로 기입되어야 합니다.
-    *   이를 달성하기 위해 한 번에 여러 개를 체크하는 다중 선택 대신, 사용자가 원하는 순차대로 하나씩 추가하고 완료 키를 눌러 종료하는 순차 선택 루프 방식으로 수집 흐름을 통제해야 합니다.
-10. **TUI 비파괴식 Serilog 파일 로깅 및 마크업 자동 정화**:
-    *   프로그램 실행 로그를 파일로 기록할 때, 대화형 TUI 화면과 진행 바가 출력 로그로 인해 깨지는 현상을 방지하도록 Serilog를 **오직 파일 저장 전용(File Sink)**으로만 제한 가동하십시오.
-    *   로그 파일에 기록하기 직전에 Spectre.Console의 스타일 마크업 태그(예: `[yellow]`, `[/]`)가 로그 파일에 지저분하게 섞이지 않도록 정규식을 활용해 자동 정화(StripMarkup)해야 하며, 로그 수명주기 관리를 위해 프로그램 종료 시 `Serilog.Log.CloseAndFlush()` 호출을 수행해야 합니다.
+4.  **TUI 인터페이스의 시각적 안정성 및 사용자 입력을 지원하십시오.**
+    *   **마크업 이스케이프**: 출력할 DB 메타데이터, AI 원문, 파일 경로 등에 대괄호(`[...]`)가 포함되어 있으면 Spectre.Console의 스타일 마크업 오인 오류를 방지하기 위해 반드시 **`Markup.Escape()`** 처리를 하십시오.
+    *   **유효 디렉토리 유도**: 필수 폴더 경로가 없을 경우 종료하기보다 TUI 상에서 사용자 재입력을 유도하되, `TextPrompt.ShowChoices(false)`를 결합해 슬래시('/') 기호가 구분선으로 오작동하여 화면이 깨지는 현상을 차단하십시오. (경로 기준점은 항상 `Directory.GetCurrentDirectory()` 활용)
+    *   **연결 정보 즉석 수정**: 로그인 성공 후에도 [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) 상에서 appsettings.json을 수정하지 않고 즉석에서 서버 주소 및 DB명을 갱신하여 대상 DB에 교체 접속할 수 있도록 입력 기회를 제공하십시오.
+    *   **배치 단계 순서 보장**: 다중 선택 UI의 순서 유실 문제를 차단하기 위해 순차 선택 루프 방식으로 배치 계획 스텝 순서를 확보하십시오.
+5.  **TUI 비파괴식 Serilog 파일 로깅 및 마크업 자동 정화를 준수하십시오.**
+    *   진행 상황 로그 파일 기록 시 대화형 TUI 화면과 진행 바가 깨지지 않도록 Serilog를 **오직 파일 저장 전용(File Sink)**으로 가동하십시오.
+    *   로그 기록 직전에는 Spectre.Console 스타일 마크업 태그들을 정규식을 활용해 자동 정화(StripMarkup)해야 하며, 프로세스 종료 시 `Serilog.Log.CloseAndFlush()` 호출로 리소스를 정리하십시오.
 
 ### ⚙️ 범주 4. 검증 오케스트레이션 및 파이프라인 흐름 (Verification Workflow)
-10. **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
-    *   **L1 (정적 검증)**: [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 구조적 필수 섹션 헤더 검증과 Mermaid 다이어그램 린팅을 엄격히 수행하십시오. L1 검증 실패 시 즉시 보완 프롬프트 제안을 리턴합니다.
-    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)를 통해 분석가 에이전트와 검토자(Reviewer/Critic) 에이전트를 분리하고 `Self-Correction` 한도(`MaxL2Attempts`)를 넘지 않도록 자가 보완 루프를 제어합니다.
-    *   **L2 Actor-Critic**: `ActorEffort: "dynamic"` 설정이 활성화된 경우, 복수의 독립된 에이전트(Low, Medium, High Effort를 지닌 다중 Actor)가 병렬로 후보 명세서를 작성하고, Critic 에이전트가 우수 영역을 채점 선별한 뒤, Consolidator 에이전트가 이 조각들을 톤앤매너에 맞춰 최종 병합 조립하는 **영역별 점진적 합성(Scoring & Consolidation)** 아키텍처 규칙을 철저히 준수하십시오. 자가 편향(Self-Confirmation Bias) 방지를 위해 Actor와 Critic은 완벽히 동일 모델이 아닌 서로 다른 이종 모델(Heterogeneous Multi-Model, 예: Claude 계열 Actor와 GPT 계열 Critic 조합 등)이 독립적으로 구성 및 상호 작용하도록 운용하십시오.
-11. **L2 자가 교정 시 이전 피드백 주입 및 무인 배치 우회를 적용하십시오.**
-    *   L2 단계(AI 교차 검토)에서 자가 보완 루프(`Self-Correction`)가 구동될 때, 이전 시도의 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적으로 주입하여 점진적 보완 정확성을 극대화해야 합니다.
-    *   무인 배치 모드(`isBatchMode: true`) 환경에서는 통합 배치 전환 계획서 검증 시 L3 단계(사용자 승인) 프롬프트 대기 단계를 생략하고 자동으로 우회 승인하도록 흐름을 통제하십시오.
-12. **신규 AI 공급자 추가 가이드를 따르십시오.**
-    *   새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
-13. **비결합 멀티태스크 진행도 시각화 및 동시성 격리**:
-    *   비동기 작업들의 진행률 시각화(`IMultiProgressScope`) 통합 시, Core 비즈니스 서비스가 특정 UI 라이브러리에 직접 의존하지 않도록 추상 인터페이스를 준수해야 합니다.
-    *   실제 TUI 구현부(`ConsoleProgressScope`)에서는 렌더링 루프와 비즈니스 비동기 태스크 간의 충돌 및 데드락을 원천 격리하기 위해 `ConcurrentDictionary`와 `TaskCompletionSource`를 적용하여 백그라운드 태스크 방식으로 안전하게 화면을 갱신해야 합니다.
-    *   진행 바 래핑은 `WrapWithProgress` 헬퍼 방식을 적용하여 예외 발생 시 `FailTask`가 확실히 격리 호출되도록 설계하십시오.
+6.  **3단계 검증 파이프라인의 역할 분리 및 L2 Actor-Critic을 운용하십시오.**
+    *   **L1 (정적)**: [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 필수 섹션 검증 및 Mermaid 다이어그램 린팅을 수행하십시오.
+    *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)의 자가 보완 루프(`MaxL2Attempts` 한도 준수)를 제어하고, 이전 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적 주입하십시오.
+    *   **L2 Actor-Critic**: `ActorEffort: "dynamic"` 시 3종 차등 Effort 병렬 생성 ➔ Critic 채점 ➔ Consolidator 앙상블 합성을 가동하십시오. 자가 편향 방지를 위해 Actor와 Critic 모델을 이종(Heterogeneous) 조합으로 다형성 매핑하십시오.
+    *   **L3 (인간 승인)**: [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs)에서 미리보기 및 DB 역동기화를 제어하되, 무인 배치 모드(`isBatchMode: true`) 환경에서는 L3 프롬프트 단계를 생략하고 자동으로 우회 승인하십시오.
+    *   **진행도 시각화**: 진행률 시각화([IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs)) 통합 시 Core가 UI에 직접 의존하지 않는 비결합 설계를 유지하고, TUI 구현부(`ConsoleProgressScope`)에서는 렌더링 루프와의 충돌 방지를 위해 `ConcurrentDictionary`와 `TaskCompletionSource`를 적용하여 백그라운드 태스크 방식으로 격리 갱신하십시오.
+    *   **신규 공급자 확장**: 새로운 LLM 공급자 연동 시, [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs)를 상속받아 클라이언트를 구현하고 [AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs)에 등록하십시오.
 
 ### 🔒 범주 5. 타겟 런타임 격리 및 리소스 정리 (Lifecycle & Sandbox)
-13. **타겟 러너 트랜잭션 격리 및 프로세스 타임아웃을 적용하십시오.**
-    *   C# 타겟 리플렉션 러너 호출 시 생성되는 `DbTransaction`은 비즈니스 로직 구동 완료 성공/실패 여부를 막론하고 항상 **`Rollback()`** 처리하여 Sandbox DB 상태 변경을 완벽히 격리해야 합니다.
-    *   Java 외부 프로세스 타겟 러너 구동 시에는 30초의 타임아웃 제한을 명확히 설정하여 Java 프로그램 오동작 시 전체 검증 CLI가 무한 정지하는 것을 막아야 합니다.
-14. **모의 데이터(Mock Data) 자동 생성 및 적재/소거 수명주기를 준수하십시오.**
-    *   물리적 FK가 존재하지 않는 레거시 환경에 대비해, AI 분석을 기반으로 관계 데이터 시드(Shared Seed)를 맞춰 생성한 `output/validation/mock/*_mock_data.json` 파일을 활용해야 합니다.
-    *   검증기 실행 시 반드시 `SandboxSeedingService`를 이용해 DB에 데이터를 선행 적재(Seed)하고, 실행이 완료되면 트랜잭션 롤백 또는 Truncate/Delete 스크립트를 통해 데이터를 안전하게 원복(Clean-up)하여 DB 상태 격리를 준수하십시오.
+7.  **타겟 러너 격리 및 모의 데이터(Mock Data) 적재 수명주기를 준수하십시오.**
+    *   **트랜잭션/타임아웃 격리**: C# 리플렉션 러너([CSharpReflectionRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CSharpReflectionRunner.cs)) 호출 시 생성되는 `DbTransaction`은 항상 **`Rollback()`** 처리하여 Sandbox 상태 변경을 격리하고, Java 프로세스 구동 시에는 30초의 타임아웃 제한을 명확히 설정하십시오.
+    *   **모의 데이터 수명주기**: 물리적 FK가 없는 환경을 극복하기 위해 관계 시드가 매핑된 모의 데이터 캐시를 활용하고, [SandboxSeedingService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SandboxSeedingService.cs)를 통해 데이터 적재(Seed) 및 테스트 완료 후 자동 소거(Clean-up/Truncate) 처리를 확실히 수행하십시오.
 
 ### 🔌 범주 6. 외부 코딩 에이전트 및 프로세스 제어 (External Agent & Codegen)
-15. **코딩 에이전트 가이드라인 및 번들 생성 규칙을 따르십시오.**
-    *   `ExportMigrationInstructionsAsync` 및 `ExportConsolidatedMigrationInstructionsAsync`는 비즈니스 설계서, 통합 배치 전환 계획서, 원본 SP DDL 및 모든 의존성 스펙들을 코딩 에이전트가 완벽히 이해할 수 있도록 마크다운으로 구조화하여 하나로 묶어줘야 합니다.
-    *   지시서 하단에 사용자가 복사해서 외부 코딩 에이전트(Claude Code, agy, codex 등)에 즉시 입력할 수 있는 안내 프롬프트를 반드시 명시적으로 포함해야 합니다.
-    *   파일 작성 전에 대상 출력 디렉터리(`baseOutputDir`)가 실제 존재하는지 확인하고, 존재하지 않는 경우 자동으로 폴더를 선행 생성하여 디바이스 쓰기 예외를 사전에 격리해 주어야 합니다.
-16. **외부 코딩 에이전트 CLI 프로세스 기동 규칙을 준수하십시오.**
-    *   외부 에이전트(Claude Code, agy, codex 등) 기동 시, 사용자가 직접 자연어 질의응답 및 승인 등의 흐름을 진행할 수 있도록 **부모 콘솔의 입출력 스트림을 직접 상속 공유(`RedirectStandardInput/Output = false`)**하여 대화형 세션을 원활히 지원해야 합니다.
-    *   비동기 작업 취소(`CancellationToken`) 수신 시, 구동 중인 외부 코딩 에이전트 프로세스가 백그라운드에서 좀비 프로세스로 남지 않도록 **강제 종료(`process.Kill(true)`)** 처리를 완벽히 수행해야 합니다.
-    *   외부 코딩 에이전트(Claude Code 등) 호출 시, 띄어쓰기가 포함된 프롬프트 구문 전체가 단일 쿼리 인자로 에이전트에 안전하게 인식될 수 있도록 **인자 템플릿(Arguments) 전체를 쌍따옴표(`\"...\"`)로 감싸서 구성**해야 합니다. (예: `"Arguments": "\"write code using {instructions}\""` 또는 `"Arguments": "\"{instructions}\""`)
-17. **소스 코드 자동 생성(Codegen)의 실행 시점을 제약하십시오.**
-    *   소스 코드 생성기(Codegen)는 개별 SP 분석 완료 직후에는 기동되지 않도록 제한해야 합니다.
-    *   코드 자동 생성(Codegen) 브릿지는 반드시 복수 개의 SP가 연계된 **통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 수립 및 최종 승인 완료 시점**에, 병합된 통합 마이그레이션 지시서(`{JobName}_MigrationInstructions.md`)를 기반으로 에이전트(Claude Code 등)를 기동시켜야 합니다.
-18. **CLI 무인 배치 통합 계획 수립 및 자동 코딩 에이전트 기동 규칙을 적용하십시오.**
-    *   CLI 배치 모드 실행 시 `--job-name` 인자가 전달되면, 개별 명세서 작성 후 즉시 통합 배치 전환 계획서(`*_BatchMigrationPlan.md`) 생성, 번들링(`{JobName}_MigrationInstructions.md` 출력), 그리고 연동된 외부 코딩 에이전트(Claude Code 등) 호출까지 사용자의 키 입력 없이 완전 무인으로 일괄 진행되어야 합니다.
+8.  **지시서 번들 생성 및 코딩 에이전트 CLI 프로세스 제어를 적용하십시오.**
+    *   **번들 및 프롬프트 제공**: [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs)의 지시서 내보내기 시 DDL, 스펙, 계획서 및 의존 관계를 마크다운 하나로 묶어 제공하고, 하단에 외부 에이전트 복사/붙여넣기용 프롬프트를 명시하십시오. 대상 출력 폴더가 없을 시 선행 자동 생성을 처리하십시오.
+    *   **동적 코드 생성 시점 제약**: 개별 SP 분석 완료 직후에는 기동을 금지하며, 반드시 복수 SP가 엮인 통합 배치 전환 계획서 수립 및 최종 승인 완료 시점에만 외부 에이전트를 기동하십시오.
+    *   **프로세스 양방향 제어**: [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) 기동 시 대화형 흐름을 공유할 수 있도록 부모 콘솔 입출력 스트림을 직접 상속 공유하고, 취소(`CancellationToken`) 수신 시 좀비 프로세스를 예방하기 위해 하위 프로세스 트리를 강제 종료(`process.Kill(true)`)하십시오. 띄어쓰기가 포함된 프롬프트 파싱을 막기 위해 Arguments 전체를 쌍따옴표(`\"...\"`)로 래핑하여 공급하십시오.
+    *   **무인 자동 기동**: CLI 배치 모드 실행 시 `--job-name` 인자가 공급되면 L3 대화형 단계를 건너뛰고 자동으로 통합 계획 및 지시서 번들을 생성해 외부 에이전트 프로세스 기동까지 연속 수행하는 CI/CD 무인 파이프라인을 지원하십시오.
 
 ### 🧹 범주 7. 메타데이터 정화 및 주석 보완 (Cleansing & Annotation)
-19. **설명 누락 컬럼의 의미 역추론 포맷을 준수하십시오.**
-    *   스키마 정보에 `[설명 누락]`으로 식별된 컬럼이 있는 경우, AI가 SP 내 연산 문맥을 분석하여 반드시 `[AI 추론 보완: {Schema}.{Table}.{Column} - {유추된설명}]` 형태로 마크다운에 출력하도록 유도해야 합니다.
-20. **개발 주석과 실제 연산 코드 간 모순을 탐지하십시오.**
-    *   자연어 주석과 실제 쿼리 실행 연산 코드 간에 모순이 감지되는 경우, 실제 코드를 진실의 원천으로 두고 개요 섹션 하단에 `[🚨 주석 불일치 경고] {모순내용}` 형식으로 명세서를 작성하게 프롬프트를 구성하십시오.
-21. **메타데이터 클렌징 SQL 스크립트의 무인 생성 및 DB 동기화 규칙을 준수하십시오.**
-    *   AI 분석이 성공 완료되면, 사용자의 DB 반영 동의 여부와 무관하게 보완 스크립트 파일(`*_MetadataCleansing.sql`)을 `{outputDirectory}/cleansing` 디렉토리에 항상 무인으로 자동 생성 및 갱신하도록 설계해야 합니다.
-    *   TUI 상에서 최종 승인 및 동기화 동의(`ConfirmMetadataSyncAsync`)를 얻었을 때에만 실제 데이터베이스에 내장 프로시저(`sp_addextendedproperty` / `sp_updateextendedproperty`)를 실행하여 물리 정화를 수행해야 합니다.
-22. **프롬프트 내 C# 보간 문자열 중괄호 이스케이프를 준수하십시오.**
-    *   `systemPrompt` 구성 시 C# 보간 기호(`$`)에 따라 중괄호 문자가 C# 표현식으로 해석되어 빌드 오류를 유발하는 것을 막기 위해, 프롬프트 텍스트 내부의 중괄호(`{}`)는 반드시 이중 중괄호(`{{}}`)로 이스케이프해야 합니다.
-23. **정산 정책 문서 도출을 위한 하이브리드 수집 규칙을 준수하십시오.**
-    *   SP DDL의 상수 분기 조건 분석과 테이블 데이터 프로파일링(Data Profiling) 정보를 결합해 통합 정산 정책서(Settlement Rulebook)를 도출하도록 설계해야 합니다.
-    *   AI 분석 시 공통 코드와 분기 의미가 매핑되도록 처리하고, 정책서는 반드시 5대 헤더(`## 1. 개요 및 목적`, `## 2. 핵심 정산 비즈니스 규칙 정의`, `## 3. 코드값 및 마스터 데이터 매핑 정보`, `## 4. 프로그램별 정산 영향도 매핑`, `## 5. 예외 처리 및 제약 사항`) 구조를 준수하게 만드십시오.
+9.  **메타데이터 정화 및 정책 문서 수립 가이드를 준수하십시오.**
+    *   **설명 누락 추론**: 스키마 정보에 `[설명 누락]`으로 식별된 컬럼이 있는 경우, AI가 SP 내 연산 문맥을 분석하여 반드시 `[AI 추론 보완: {Schema}.{Table}.{Column} - {유추된설명}]` 형태로 마크다운에 출력하도록 유도해야 합니다.
+    *   **주석-코드 모순 탐지**: 자연어 주석과 실제 쿼리 실행 연산 코드 간에 모순이 감지되는 경우, 실제 코드를 진실의 원천으로 두고 개요 섹션 하단에 `[🚨 주석 불일치 경고] {모순내용}` 형식으로 명세서를 작성하게 하십시오.
+    *   **클렌징 스크립트 및 동기화**: AI 분석 성공 완료 시 보완 스크립트 파일(`*_MetadataCleansing.sql`)을 항상 무인으로 자동 생성 및 갱신하되, 실제 DB 정화는 TUI 최종 승인 및 동의 시에만 실행하십시오.
+    *   **C# 보간 중괄호 이스케이프**: 프롬프트 텍스트 내부의 중괄호(`{}`)는 C# 보간 기호($) 해석 오류를 막기 위해 반드시 이중 중괄호(`{{}}`)로 이스케이프해야 합니다.
+    *   **정산 정책서**: SP DDL의 상수 분기 조건 분석과 테이블 데이터 프로파일링 정보를 결합해 정산 정책서(Settlement Rulebook)를 도출하고, 지정된 5대 헤더 구조를 엄격히 준수하도록 설계하십시오.
 
 ---
 
