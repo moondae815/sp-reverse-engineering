@@ -59,6 +59,23 @@
   * `ActorEffort: "dynamic"` 설정이 활성화되면, 분석가(Actor)가 `Low`, `Medium`, `High` 추론 강도를 적용하여 3종의 상이한 후보 분석서를 병렬로 생성합니다.
   * 생성된 후보들은 L1 정적 검사 후 **Critic 에이전트**에게 주입되어 다차원 스코어카드(비즈니스 정합성, CRUD 명확성, 시각화 문법)에 기반하여 정량 채점(0~10점) 및 결점 피드백을 부여받습니다.
   * 완벽한 무결 후보가 존재할 경우 Fast-pass 채택되며, 그렇지 않은 경우 **Consolidator 에이전트**가 Critic의 조립 지침을 받아 각 후보의 우수 영역 조각들을 하나의 마크다운 명세서로 안전하게 조립(Consolidation)하는 구조를 취합니다. 각 에이전트의 구체적 모델 및 공급자는 설정에서 자유롭게 지정 및 연동 가능하며, 이종 모델(예: Claude 계열 Actor와 GPT 계열 Critic 앙상블 등)을 매핑하여 온도 조절 제약을 극복하고 자가 편향을 소거하도록 권장됩니다.
+  * **Level 2 Actor-Critic 상세 협업 워크플로우**:
+    ```mermaid
+    graph TD
+        Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 구동"]
+        
+        Sampler --> ActorA["후보 A: Low Effort<br/>(비즈니스 흐름 및 요약 타겟)"]
+        Sampler --> ActorB["후보 B: Medium Effort<br/>(데이터 CRUD 및 쿼리 매핑 타겟)"]
+        Sampler --> ActorC["후보 C: High Effort<br/>(예외 처리 및 Mermaid 다이어그램)"]
+        
+        ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 조각 선별<br/>(설정된 Critic 모델 및 CriticEffort 적용)"]
+        
+        CriticEvaluator --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: A의 요약 + B의 CRUD 표 + C의 Mermaid)"]
+        
+        BestSections --> Consolidator["3단계: Consolidation Actor 구동<br/>(설정된 Consolidator 모델 및 ConsolidatorEffort 적용)"]
+        
+        Consolidator --> Output["최종 완성본 마크다운 명세서"]
+    ```
 * **다단계 검증 구조**: AI 분석 및 합성을 거친 명세서의 기계적 무결성을 재검사하기 위해 Level 1(기계적 정적 검사), Level 2(AI 리뷰어 상호 교사), Level 3(개발자 검토 및 승인)의 3단계 파이프라인이 연쇄적으로 작동합니다.
 * **CancellationToken 전파 및 취소 안전성**: 대량의 SP 데이터 수집이나 원격 AI 응답 대기가 장시간 블로킹되거나 무한 대기가 발생하는 것을 방지합니다. `Program`의 메인 컨트롤러부터 `VerificationPipelineOrchestrator`, `AiService`, `DbMetadataService` 등 모든 비동기 호출 경로로 `CancellationToken`을 전파하였고, CLI 환경에서 `Ctrl+C` 입력 감지 시 `CancellationTokenSource`를 즉시 취소하여 안전하게 예외를 격리하고 메인 루프를 복구합니다.
 
