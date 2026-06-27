@@ -271,24 +271,41 @@ graph TD
 ```
 
 ### 3.1. Level 2 Actor-Critic 상세 협업 워크플로우
-3단계 검증 파이프라인의 **Level 2 (AI 교차 리뷰)** 단계가 활성화되었을 때, 다중 모델의 병렬 생성 및 채점, 최종 조립(Consolidation)이 이루어지는 내부 에이전트 협업 시퀀스입니다.
+3단계 검증 파이프라인의 **Level 2 (AI 교차 리뷰)** 단계에서 `ActorEffort: "dynamic"`이 적용되었을 때, 다중 모델의 병렬 생성 및 채점, 최고 득점자 Fast-Pass 판정, 최종 조립(Consolidation)이 이루어지는 내부 에이전트 협업 시퀀스입니다.
 
 ```mermaid
 graph TD
-    Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 구동"]
+    Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 병렬 구동"]
     
-    Sampler --> ActorA["후보 A: Low Effort<br/>(비즈니스 흐름 및 요약 타겟)"]
-    Sampler --> ActorB["후보 B: Medium Effort<br/>(데이터 CRUD 및 쿼리 매핑 타겟)"]
-    Sampler --> ActorC["후보 C: High Effort<br/>(예외 처리 및 Mermaid 다이어그램)"]
+    Sampler --> ActorA["후보 1: Low Effort<br/>(비즈니스 흐름 요약 속도 최적화)"]
+    Sampler --> ActorB["후보 2: Medium Effort<br/>(CRUD 매핑 및 표준적 범위 균형)"]
+    Sampler --> ActorC["후보 3: High Effort<br/>(예외 케이스 및 시각화 상세화)"]
     
-    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 조각 선별<br/>(설정된 Critic 모델 및 CriticEffort 적용)"]
+    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(NormalizedScore 100점 환산 및 결함 유무 도출)"]
     
-    CriticEvaluator --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: A의 요약 + B의 CRUD 표 + C의 Mermaid)"]
+    CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
     
-    BestSections --> Consolidator["3단계: Consolidation Actor 구동<br/>(설정된 Consolidator 모델 및 ConsolidatorEffort 적용)"]
+    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(동점 발생 시 생성 효율성에 따라<br/>Low > Medium > High 순으로 우선순위 부여)"] --> SuccessOutput["최종 마크다운 명세서 채택 (합성 생략)"]
     
-    Consolidator --> Output["최종 완성본 마크다운 명세서"]
+    CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: 1의 요약 + 2의 CRUD 표 + 3의 Mermaid)"]
+    
+    BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(각 후보의 강점을 병합하고 결합 결점 보완)"]
+    
+    Consolidator --> ConsOutput["최종 합성 마크다운 명세서"]
 ```
+
+#### 🔄 상세 실행 원칙
+1. **차등 Effort 병렬 생성 (1단계 - Sampler & Actors)**
+   - 동일한 SP 정의에 대하여 `low`, `medium`, `high` 3가지의 차등 Effort 옵션을 가진 생성 태스크들을 병렬로 구동하여 각기 강점이 다른 세 개의 명세서 후보군을 획득합니다.
+2. **독립적 Critic 평가 및 채점 (2단계 - Critic)**
+   - 생성된 3종 후보군에 대해 Critic 에이전트가 4대 평가 기준(비즈니스 정합성, CRUD 데이터 매핑, 다이어그램 가독성, 예외 및 트랜잭션 - 각 10점 만점, 총 40점 만점)을 토대로 독립 채점을 실시하고 100점 만점(`NormalizedScore`)으로 환산합니다. 동시에 Critic Feedback(결함 내용) 유무를 분석합니다.
+3. **최고 득점자 Fast-Pass 판정**
+   - 3종 후보군 중 **"L1 정적 검사 통과 및 L2 Critic 결함이 없고, 90점 이상"**인 후보들을 필터링합니다.
+   - 만족하는 후보가 존재할 경우, 그중 **가장 높은 NormalizedScore를 획득한 최고 득점 후보**를 선별하여 즉시 채택(Fast-Pass)하고 합성 프로세스를 생략합니다.
+   - 동점자 발생 시에는 생성 비용 및 속도적 측면을 고려하여 `Low` > `Medium` > `High` 순서로 우선권을 가집니다.
+4. **이종 모델 합성 (3단계 - Consolidator)**
+   - Fast-Pass 조건을 만족하는 완벽한 후보가 단 하나도 없는 경우에만 3단계 Consolidation으로 진입합니다.
+   - 각 영역별(ScoreAccuracy, ScoreCrud, ScoreReadability, ScoreException) 최고 득점을 기록한 후보의 파트를 진실의 원천(Source of Truth)으로 삼아, Consolidator 에이전트가 단일한 고품질 병합 명세서로 재구성합니다.
 
 ### 15. 비결합 진행도 시각화 및 동시성 제어
 * **Clean Architecture 기반 UI 비결합**: Core 비즈니스 로직은 특정 뷰 기술(Spectre.Console 등)에 종속되지 않도록 진행률 추적 수단을 `IMultiProgressScope` 추상화 뒤로 은닉했습니다. 이로 인해 유닛 테스트 실행 시에는 Mocking에 유연하게 대응하며 아무 동작도 하지 않는 `NullProgressScope`를 주입하여 널 참조 크래시를 온전히 방어합니다.
