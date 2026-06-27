@@ -171,16 +171,16 @@ ReSet/
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
     "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
-    "ActorEffort": "dynamic",      // [하이브리드] dynamic 설정 시 Low/Medium/High 차등 Effort로 3종 후보군 생성 및 점진적 합성 가동
+    "ActorEffort": "dynamic",      // [Actor-Critic] dynamic 설정 시 Low/Medium/High 차등 Effort로 3종 후보군 생성 및 점진적 합성 가동
     "Critic": {
-      "Provider": "OpenAI",        // [하이브리드] 평가를 담당할 Critic의 AI 제공자
+      "Provider": "OpenAI",        // [Actor-Critic] 평가를 담당할 Critic의 AI 제공자
       "ModelName": "gpt-4o",
-      "Effort": "high"             // [하이브리드] Critic의 추론 강도 (low | medium | high)
+      "Effort": "high"             // [Actor-Critic] Critic의 추론 강도 (low | medium | high)
     },
     "Consolidator": {
-      "Provider": "OpenAI",        // [하이브리드] 최종 합성을 담당할 Consolidator의 AI 제공자
+      "Provider": "OpenAI",        // [Actor-Critic] 최종 합성을 담당할 Consolidator의 AI 제공자
       "ModelName": "gpt-4o",
-      "Effort": "medium"           // [하이브리드] Consolidator의 추론 강도
+      "Effort": "medium"           // [Actor-Critic] Consolidator의 추론 강도
     },
     "Providers": {
       "OpenAI": {
