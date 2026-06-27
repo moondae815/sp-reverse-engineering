@@ -151,14 +151,14 @@ namespace ReSet.Core.Services
                 string[] candidates;
                 using (var progressScope = _userInteraction.CreateProgressScope("하이브리드 다중 후보군 생성") ?? NullProgressScope.Instance)
                 {
-                    progressScope.AddTask("low_gen", "Low Effort Spec 생성");
-                    progressScope.AddTask("medium_gen", "Medium Effort Spec 생성");
-                    progressScope.AddTask("high_gen", "High Effort Spec 생성");
+                    progressScope.AddTask("Low Effort Spec 생성", "Low Effort Spec 생성");
+                    progressScope.AddTask("Medium Effort Spec 생성", "Medium Effort Spec 생성");
+                    progressScope.AddTask("High Effort Spec 생성", "High Effort Spec 생성");
 
                     var tasks = new System.Collections.Generic.List<Task<string>>();
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), progressScope, "low_gen"));
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), progressScope, "medium_gen"));
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), progressScope, "high_gen"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), progressScope, "Low Effort Spec 생성"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), progressScope, "Medium Effort Spec 생성"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), progressScope, "High Effort Spec 생성"));
 
                     try
                     {
@@ -178,7 +178,6 @@ namespace ReSet.Core.Services
                     var reviewTasks = new System.Collections.Generic.List<Task<ReviewResult>>();
                     for (int i = 0; i < candidates.Length; i++)
                     {
-                        var taskKey = $"critic_{i}";
                         var taskName = i switch
                         {
                             0 => "Low Effort Spec 검토",
@@ -186,6 +185,7 @@ namespace ReSet.Core.Services
                             2 => "High Effort Spec 검토",
                             _ => $"후보군 {i+1} Spec 검토"
                         };
+                        var taskKey = taskName;
                         progressScope.AddTask(taskKey, taskName);
                         reviewTasks.Add(WrapWithProgress(_criticService.ReviewSpecificationAsync(spDef, candidates[i], _criticEffort, cancellationToken), progressScope, taskKey));
                     }

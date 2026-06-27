@@ -155,11 +155,9 @@ namespace ReSet.Cli
                 await AnsiConsole.Progress()
                     .Columns(new ProgressColumn[]
                     {
+                        new SpinnerColumn(Spinner.Known.Dots),
                         new TaskDescriptionColumn(),
-                        new ProgressBarColumn(),
-                        new PercentageColumn(),
                         new ElapsedTimeColumn(),
-                        new SpinnerColumn(),
                     })
                     .StartAsync(async ctx =>
                     {
