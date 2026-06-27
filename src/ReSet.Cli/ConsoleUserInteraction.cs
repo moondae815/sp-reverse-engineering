@@ -180,6 +180,8 @@ namespace ReSet.Cli
         private readonly Task _progressTask;
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ProgressTask> _tasks = new();
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string desc, double val, bool comp, bool fail)> _pendingUpdates = new();
+        private readonly System.Collections.Generic.List<string> _taskOrder = new();
+        private readonly object _lock = new();
         private readonly TaskCompletionSource _tcs = new();
         private readonly string _title;
 
@@ -199,6 +201,26 @@ namespace ReSet.Cli
                     {
                         while (!_tcs.Task.IsCompleted || !_pendingUpdates.IsEmpty)
                         {
+                            // 1. 등록 순서대로 화면 행(Row)을 선제 생성
+                            System.Collections.Generic.List<string> orderedKeys;
+                            lock (_lock)
+                            {
+                                orderedKeys = new System.Collections.Generic.List<string>(_taskOrder);
+                            }
+
+                            foreach (var name in orderedKeys)
+                            {
+                                if (!_tasks.ContainsKey(name))
+                                {
+                                    if (_pendingUpdates.TryGetValue(name, out var item))
+                                    {
+                                        var task = ctx.AddTask(item.desc, autoStart: true);
+                                        _tasks[name] = task;
+                                    }
+                                }
+                            }
+
+                            // 2. 갱신 내용 반영
                             var keys = new List<string>(_pendingUpdates.Keys);
                             foreach (var name in keys)
                             {
@@ -247,6 +269,13 @@ namespace ReSet.Cli
 
         public void AddTask(string taskName, string description)
         {
+            lock (_lock)
+            {
+                if (!_taskOrder.Contains(taskName))
+                {
+                    _taskOrder.Add(taskName);
+                }
+            }
             _pendingUpdates[taskName] = (description, 0.0, false, false);
         }
 
