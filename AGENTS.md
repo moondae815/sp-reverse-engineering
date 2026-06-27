@@ -25,6 +25,7 @@
 *   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services))**
     *   [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
     *   [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiService.cs)) 구현체.
+    *   [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs): AI 모델 간의 공통 텍스트 통신 계약 정의 인터페이스 및 프로바이더별 클라이언트 팩토리([AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs)).
     *   [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs): Markdig 파서 및 Mermaid 린터를 활용해 산출물 뼈대 및 다이어그램 문법을 정적 검증하는 클래스.
     *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
     *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
@@ -32,6 +33,7 @@
     *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
     *   [IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs): 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스.
     *   [NullProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs): 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체.
+    *   [SettlementPolicyService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs): DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 활용한 통합 정산 정책서 생성 서비스 인터페이스([ISettlementPolicyService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ISettlementPolicyService.cs) 포함).
 
 ### 2. CLI 실행 엔트리: [ReSet.Cli](file:///home/moondae/git-root/ReSet/src/ReSet.Cli)
 *   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs): CLI 진입점이자 TUI 메뉴 제어 및 흐름 오케스트레이션을 담당합니다.
@@ -39,16 +41,22 @@
 
 ### 3. 코드 검증 Core 라이브러리: [ReSet.Validator.Core](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core)
 *   **추상화 및 도메인 모델 ([Abstractions](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions), [Models](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models))**
-    *   [IValidatorPlugin.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IValidatorPlugin.cs): C#, Java 등 언어별 L1 정적 구조 및 명칭 검증을 구현하는 플러그인 인터페이스.
+    *   [IValidatorPlugin.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IValidatorPlugin.cs): C#([CsValidatorPlugin.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Plugins/CsValidatorPlugin.cs)), Java([JavaValidatorPlugin.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Plugins/JavaValidatorPlugin.cs)) 등 언어별 L1 정적 구조 및 명칭 검증을 구현하는 플러그인 인터페이스.
     *   [IRuntimeRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IRuntimeRunner.cs): 타겟 런타임 코드 실행을 위한 인터페이스 규격 정의.
+    *   [IValidationUserInterface.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/IValidationUserInterface.cs): 검증기 TUI 사용자 인터랙션을 추상화한 인터페이스.
+    *   [L1ValidationResult.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Abstractions/L1ValidationResult.cs): L1 정적 구문 검증 결과를 담는 모델.
     *   [ValidationResult.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/ValidationResult.cs): 검증 대상의 L1/L2/L3 전체 상태를 관리하는 데이터 모델.
     *   [MockDataDto.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/MockDataDto.cs): 기획된 관계형 모의 데이터를 로컬 및 메모리에 들고 있기 위한 데이터 모델.
+    *   [GapReport.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/GapReport.cs): L2 AI 의미론적 Gap 분석 결과 구조 데이터 모델.
+    *   [RunnerDtos.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/RunnerDtos.cs): 타겟 런타임 실행기의 입출력 및 실행 결과를 담는 DTO 모음.
+    *   [ValidatorConfig.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Models/ValidatorConfig.cs): 검증기 실행 설정을 바인딩하는 구성 모델.
 *   **검증 비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services))**
     *   [FileMappingService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/FileMappingService.cs): 설계서 파일(`*_Spec.md`)과 마이그레이션된 소스 파일을 스캔하여 1:1로 매핑하는 서비스.
     *   [ValidatorAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/ValidatorAiService.cs): AI에게 설계서와 소스코드를 전달하여 의미론적 일치성을 검사하고 GapReport 구조로 파싱하는 서비스.
     *   [SpExecutionService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SpExecutionService.cs): SQL Server DB에서 Stored Procedure를 동적으로 실행하고 결과를 JSON으로 덤프하는 서비스.
     *   [SandboxSeedingService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SandboxSeedingService.cs): 모의 데이터를 샌드박스 DB에 적재(Insert)하고 실행 후 정리(Delete)하는 수명주기 서비스.
     *   [CSharpReflectionRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CSharpReflectionRunner.cs): 마이그레이션된 C# DLL 리플렉션 로드 및 DbTransaction 롤백 자동 격리 실행기.
+    *   [JavaProcessRunner.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/JavaProcessRunner.cs): Java JAR/클래스를 외부 프로세스로 기동하여 stdin/stdout JSON 통신을 수행하는 격리 실행기.
     *   [DataComparisonService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/DataComparisonService.cs): 레거시 vs 타겟 JSON 데이터의 행 수, 컬럼 타입, 개별 값을 1:1 대조하여 마크다운 리포트 생성하는 서비스.
     *   [CodeVerificationOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CodeVerificationOrchestrator.cs): L1(정적) -> L2(AI Gap분석) -> L3(사용자 승인) 흐름 제어 오케스트레이터.
 
@@ -91,7 +99,7 @@
 6.  **3단계 검증 파이프라인의 역할 분리 및 L2 Actor-Critic을 운용하십시오.**
     *   **L1 (정적)**: [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs)에서 Markdig 파서 필수 섹션 검증 및 Mermaid 다이어그램 린팅을 수행하십시오.
     *   **L2 (AI 교차 검토)**: [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs)의 자가 보완 루프(`MaxL2Attempts` 한도 준수)를 제어하고, 이전 실패 원인 및 `GapReport`를 컨텍스트 프롬프트에 동적 주입하십시오.
-    *   **L2 Actor-Critic**: `ActorEffort: "dynamic"` 시 3종 차등 Effort 병렬 생성 ➔ Critic 채점 ➔ Consolidator 앙상블 합성을 가동하십시오. 자가 편향 방지를 위해 Actor와 Critic 모델을 이종(Heterogeneous) 조합으로 다형성 매핑하십시오.
+    *   **L2 Actor-Critic**: `ActorEffort: "dynamic"` 시 3종 차등 Effort 병렬 생성 ➔ Critic 채점 ➔ 최고 점수 후보군 즉시 채택(결함이 없고 90점 이상인 우수 후보가 존재할 경우 Fast-Pass 채택하여 합성 생략) ➔ Consolidator 앙상블 합성을 가동하십시오. 자가 편향 방지를 위해 Actor와 Critic 모델을 이종(Heterogeneous) 조합으로 다형성 매핑하십시오.
     *   **L3 (인간 승인)**: [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs)에서 미리보기 및 DB 역동기화를 제어하되, 무인 배치 모드(`isBatchMode: true`) 환경에서는 L3 프롬프트 단계를 생략하고 자동으로 우회 승인하십시오.
     *   **진행도 시각화**: 진행률 시각화([IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs)) 통합 시 Core가 UI에 직접 의존하지 않는 비결합 설계를 유지하고, TUI 구현부(`ConsoleProgressScope`)에서는 렌더링 루프와의 충돌 방지를 위해 `ConcurrentDictionary`와 `TaskCompletionSource`를 적용하여 백그라운드 태스크 방식으로 격리 갱신하십시오.
     *   **신규 공급자 확장**: 새로운 LLM 공급자 연동 시, [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs)를 상속받아 클라이언트를 구현하고 [AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs)에 등록하십시오.
