@@ -168,7 +168,26 @@ namespace ReSet.Core.Services.Clients
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
-                return root.GetProperty("content")[0].GetProperty("text").GetString() ?? string.Empty;
+
+                // 에러 응답 확인
+                if (root.TryGetProperty("error", out var errorElement))
+                {
+                    var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
+                    throw new InvalidOperationException($"Claude API 에러 응답 수신: {errMsg}");
+                }
+
+                if (!root.TryGetProperty("content", out var contentElement) || contentElement.GetArrayLength() == 0)
+                {
+                    throw new InvalidOperationException("Claude API 응답 데이터 내에 content 속성이 존재하지 않거나 비어 있습니다.");
+                }
+
+                var firstContent = contentElement[0];
+                if (!firstContent.TryGetProperty("text", out var textElement))
+                {
+                    throw new InvalidOperationException("Claude API 응답 content 내에 text 속성이 존재하지 않습니다.");
+                }
+
+                return textElement.GetString() ?? string.Empty;
             }
         }
     }

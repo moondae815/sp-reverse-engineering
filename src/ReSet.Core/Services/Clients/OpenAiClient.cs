@@ -115,7 +115,31 @@ namespace ReSet.Core.Services.Clients
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
-                return root.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+
+                // 에러 응답 확인
+                if (root.TryGetProperty("error", out var errorElement))
+                {
+                    var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
+                    throw new InvalidOperationException($"OpenAI API 에러 응답 수신: {errMsg}");
+                }
+
+                if (!root.TryGetProperty("choices", out var choicesElement) || choicesElement.GetArrayLength() == 0)
+                {
+                    throw new InvalidOperationException("OpenAI API 응답 데이터 내에 choices 속성이 존재하지 않거나 비어 있습니다.");
+                }
+
+                var firstChoice = choicesElement[0];
+                if (!firstChoice.TryGetProperty("message", out var messageElement))
+                {
+                    throw new InvalidOperationException("OpenAI API 응답 choices 내에 message 속성이 존재하지 않습니다.");
+                }
+
+                if (!messageElement.TryGetProperty("content", out var contentElement))
+                {
+                    throw new InvalidOperationException("OpenAI API 응답 message 내에 content 속성이 존재하지 않습니다.");
+                }
+
+                return contentElement.GetString() ?? string.Empty;
             }
         }
     }
