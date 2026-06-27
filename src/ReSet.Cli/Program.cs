@@ -508,7 +508,7 @@ namespace ReSet.Cli
                         var schema = parts[0];
                         var name = parts[1];
 
-                        var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                        var (specMarkdown, spDef, reviewResult) = await orchestrator.RunPipelineAsync(
                             connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, outputDir, enableCache, globalCts.Token);
 
                         if (string.IsNullOrEmpty(specMarkdown))
@@ -539,7 +539,7 @@ namespace ReSet.Cli
                         await SaveOutputsAsync(
                             spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name, provider, modelName);
+                            schema, name, provider, modelName, reviewResult);
 
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
@@ -662,7 +662,7 @@ namespace ReSet.Cli
 
                         try
                         {
-                            var (specMarkdown, spDef) = await orchestrator.RunPipelineAsync(
+                            var (specMarkdown, spDef, reviewResult) = await orchestrator.RunPipelineAsync(
                                 connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, outputDir, enableCache, activeCts.Token);
 
                             if (string.IsNullOrEmpty(specMarkdown))
@@ -682,7 +682,7 @@ namespace ReSet.Cli
                             await SaveOutputsAsync(
                                 spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                                 metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                                schema, name, provider, modelName);
+                                schema, name, provider, modelName, reviewResult);
 
                             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                             AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -1065,7 +1065,8 @@ namespace ReSet.Cli
             string schema,
             string name,
             string provider,
-            string modelName)
+            string modelName,
+            ReviewResult? review)
         {
             if (spDef != null)
             {
@@ -1135,10 +1136,27 @@ namespace ReSet.Cli
                 }
             }
 
-            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+            string yamlFrontMatter = "";
+            string scoreHeader = "";
+            if (review != null)
+            {
+                yamlFrontMatter = $@"---
+TargetCode: {schema}.{name}.cs
+AiConfidenceScore: {review.NormalizedScore}
+AccuracyScore: {review.ScoreAccuracy}/10
+CrudScore: {review.ScoreCrud}/10
+ReadabilityScore: {review.ScoreReadability}/10
+ExceptionScore: {review.ScoreException}/10
+---
+
+";
+                scoreHeader = $"> **AI 최종 신뢰도**: {review.NormalizedScore}/100점 (정합성: {review.ScoreAccuracy}, CRUD: {review.ScoreCrud}, 가독성: {review.ScoreReadability}, 예외: {review.ScoreException})\n";
+            }
+
+            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n" + scoreHeader + "\n";
 
             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
-            await File.WriteAllTextAsync(outputFileName, metadataHeader + specMarkdown);
+            await File.WriteAllTextAsync(outputFileName, yamlFrontMatter + metadataHeader + specMarkdown);
 
             if (!string.IsNullOrEmpty(migrationPlan))
             {

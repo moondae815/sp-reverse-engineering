@@ -88,8 +88,44 @@ namespace ReSet.Cli
 
         public async Task<HumanReviewResult> RequestHumanReviewAsync(string selectedOption, string specificationMarkdown)
         {
+            int score = 100;
+            int acc = 10, crud = 10, read = 10, ex = 10;
+            bool scoreFound = false;
+
+            // YAML Front Matter에서 점수 추출 시도
+            if (specificationMarkdown.StartsWith("---"))
+            {
+                var endOfYaml = specificationMarkdown.IndexOf("---", 3);
+                if (endOfYaml > 0)
+                {
+                    var yamlBlock = specificationMarkdown.Substring(3, endOfYaml - 3);
+                    var lines = yamlBlock.Split('\n');
+                    foreach (var line in lines)
+                    {
+                        var parts = line.Split(':', 2);
+                        if (parts.Length == 2)
+                        {
+                            var key = parts[0].Trim();
+                            var val = parts[1].Trim();
+                            if (key == "AiConfidenceScore" && int.TryParse(val, out int scoreVal)) { score = scoreVal; scoreFound = true; }
+                            else if (key == "AccuracyScore" && int.TryParse(val.Split('/')[0], out int accVal)) acc = accVal;
+                            else if (key == "CrudScore" && int.TryParse(val.Split('/')[0], out int crudVal)) crud = crudVal;
+                            else if (key == "ReadabilityScore" && int.TryParse(val.Split('/')[0], out int readVal)) read = readVal;
+                            else if (key == "ExceptionScore" && int.TryParse(val.Split('/')[0], out int exVal)) ex = exVal;
+                        }
+                    }
+                }
+            }
+
+            string scoreText = "";
+            if (scoreFound)
+            {
+                var color = score >= 90 ? "green" : (score >= 70 ? "yellow" : "red");
+                scoreText = $" | [bold {color}]AI 신뢰도: {score}/100점 (정합성:{acc}, CRUD:{crud}, 가독성:{read}, 예외:{ex})[/]";
+            }
+
             AnsiConsole.WriteLine();
-            AnsiConsole.Write(new Rule($"[yellow]{selectedOption} 생성된 기능 명세서[/]") { Justification = Justify.Left });
+            AnsiConsole.Write(new Rule($"[yellow]{selectedOption}{scoreText}[/]") { Justification = Justify.Left });
             AnsiConsole.Write(new Text(specificationMarkdown));
             AnsiConsole.Write(new Rule().RuleStyle("grey"));
             AnsiConsole.WriteLine();

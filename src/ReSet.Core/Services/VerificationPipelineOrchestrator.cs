@@ -68,7 +68,7 @@ namespace ReSet.Core.Services
             _maxAttempts = _maxL2Attempts == -1 ? -1 : 1 + _maxL2Attempts;
         }
 
-        public async Task<(string? SpecMarkdown, SpDefinition? SpDef)> RunPipelineAsync(
+        public async Task<(string? SpecMarkdown, SpDefinition? SpDef, ReviewResult? Review)> RunPipelineAsync(
             string connectionString,
             string schema,
             string name,
@@ -82,6 +82,7 @@ namespace ReSet.Core.Services
         {
             var selectedOption = $"{schema}.{name}";
             SpDefinition? spDef = null;
+            ReviewResult? finalReview = null;
 
             Log.Information("[파이프라인] SP 분석 시작 - SP: {SpName}, Provider: {Provider}, MaxDepth: {MaxDepth}, BatchMode: {IsBatchMode}",
                 selectedOption, provider, maxDepth, isBatchMode);
@@ -102,7 +103,7 @@ namespace ReSet.Core.Services
             if (spDef == null)
             {
                 Log.Warning("[파이프라인] SP 정의를 가져오지 못해 파이프라인을 중단합니다 - SP: {SpName}", selectedOption);
-                return (null, null);
+                return (null, null, null);
             }
 
             if (spDef.Warnings.Count > 0)
@@ -125,7 +126,15 @@ namespace ReSet.Core.Services
                         if (System.IO.File.Exists(specFilePath))
                         {
                             var cachedSpec = await System.IO.File.ReadAllTextAsync(specFilePath, cancellationToken);
-                            return (cachedSpec, spDef);
+                            var mockReview = new ReviewResult
+                            {
+                                HasDefects = false,
+                                ScoreAccuracy = 10,
+                                ScoreCrud = 10,
+                                ScoreReadability = 10,
+                                ScoreException = 10
+                            };
+                            return (cachedSpec, spDef, mockReview);
                         }
                     }
                     else
@@ -167,7 +176,7 @@ namespace ReSet.Core.Services
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - 하이브리드 후보 생성 중 실패: {ex.Message}");
-                        return (null, spDef);
+                        return (null, spDef, null);
                     }
                 }
 
@@ -197,19 +206,20 @@ namespace ReSet.Core.Services
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - Critic 검토 중 실패: {ex.Message}");
-                        return (null, spDef);
+                        return (null, spDef, null);
                     }
                 }
 
-                // 완벽한 후보(L1 & L2 무결) 발견 시 Fast-pass 즉시 채택
+                // 완벽한 후보(L1 & L2 무결 & 신뢰도 90점 이상) 발견 시 Fast-pass 즉시 채택
                 bool fastPassTriggered = false;
                 for (int i = 0; i < candidates.Length; i++)
                 {
                     var l1Check = _validator.Validate(candidates[i]);
-                    if (l1Check.IsValid && !reviews[i].HasDefects)
+                    if (l1Check.IsValid && !reviews[i].HasDefects && reviews[i].NormalizedScore >= 90)
                     {
-                        _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 완벽한 후보군(후보 {i+1})이 발견되어 즉시 채택합니다.");
+                        _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 완벽한 후보군(후보 {i+1}, AI 신뢰도: [bold green]{reviews[i].NormalizedScore}[/]/100점)이 발견되어 즉시 채택합니다.");
                         specificationMarkdown = candidates[i];
+                        finalReview = reviews[i];
                         fastPassTriggered = true;
                         break;
                     }
@@ -221,18 +231,26 @@ namespace ReSet.Core.Services
                     var sbConsolidation = new StringBuilder();
                     sbConsolidation.AppendLine("당신은 제공된 여러 개의 Stored Procedure 분석 명세서 후보를 종합하여, 각 후보의 우수 영역을 취합하고 결점을 개선하여 단일한 완벽한 명세서로 합성(Consolidation)하는 전문 조립 아키텍트입니다.");
                     sbConsolidation.AppendLine();
-                    sbConsolidation.AppendLine("[제공된 명세서 후보 목록]");
+                    sbConsolidation.AppendLine("[제공된 명세서 후보 목록 및 평가 점수]");
                     for (int i = 0; i < candidates.Length; i++)
                     {
                         sbConsolidation.AppendLine($"--- [후보 {i+1}] ---");
+                        sbConsolidation.AppendLine($"- 종합 평가 점수: {reviews[i].NormalizedScore}점 / 100점 (40점 만점 기준 {reviews[i].TotalScore}점)");
+                        sbConsolidation.AppendLine($"  * 비즈니스 정합성 (ScoreAccuracy): {reviews[i].ScoreAccuracy}/10점");
+                        sbConsolidation.AppendLine($"  * CRUD 및 데이터 매핑 (ScoreCrud): {reviews[i].ScoreCrud}/10점");
+                        sbConsolidation.AppendLine($"  * Mermaid 다이어그램 완성도 (ScoreReadability): {reviews[i].ScoreReadability}/10점");
+                        sbConsolidation.AppendLine($"  * 예외 처리 및 트랜잭션 (ScoreException): {reviews[i].ScoreException}/10점");
+                        sbConsolidation.AppendLine($"- Critic 결함 피드백: {reviews[i].FeedbackComment ?? "결함 없음"}");
+                        sbConsolidation.AppendLine();
+                        sbConsolidation.AppendLine("[본문 내용]");
                         sbConsolidation.AppendLine(candidates[i]);
-                        sbConsolidation.AppendLine($"[후보 {i+1}에 대한 Critic 결함 피드백]: {reviews[i].FeedbackComment ?? "결함 없음"}");
                         sbConsolidation.AppendLine();
                     }
                     sbConsolidation.AppendLine();
                     sbConsolidation.AppendLine("[합성 및 병합 지침]");
-                    sbConsolidation.AppendLine("1. 각 후보에서 가장 잘 작성된 섹션(Mermaid 다이어그램, CRUD 표, 매핑 정보 등)을 엄선하여 조화롭게 병합하십시오.");
-                    sbConsolidation.AppendLine("2. Critic 피드백으로 지적된 모든 결함 사항을 최종 명세서에서 완전히 수정하십시오.");
+                    sbConsolidation.AppendLine("1. 각 카테고리별 세부 평가 점수를 바탕으로, 해당 부문에서 가장 높은 점수(만점에 가까운 점수)를 받은 후보의 내용을 '진실의 원천(Source of Truth)'으로 채택하여 조립하십시오.");
+                    sbConsolidation.AppendLine("   - 예: ScoreAccuracy(정합성)가 가장 높은 후보의 로직 설명을 바탕으로 삼고, ScoreReadability(다이어그램)가 가장 높은 후보의 Mermaid 다이어그램을 병합합니다.");
+                    sbConsolidation.AppendLine("2. 각 후보에 지적된 Critic 결함 피드백(Critic Feedback) 내용을 명밀히 분석하여 최종 합성 명세서에서 완전히 수정 및 보완하십시오.");
                     sbConsolidation.AppendLine("3. 5대 필수 대분류 헤더 명칭(## 개요, ## 파라미터 목록, ## CRUD 분석, ## 로직 흐름 요약, ## 비즈니스 흐름 시각화)을 그대로 사용하여 문서를 구성하십시오.");
                     sbConsolidation.AppendLine("4. 최종 결과물만 다듬어 마크다운으로 직접 출력하십시오. 추가적인 사족이나 인사말은 절대 포함하지 마십시오.");
 
@@ -244,7 +262,7 @@ namespace ReSet.Core.Services
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - 최종 합성 생성 실패: {ex.Message}");
-                        return (null, spDef);
+                        return (null, spDef, null);
                     }
 
                     // 합성본 기계적 검증 (L1) 1회 수행
@@ -289,7 +307,7 @@ namespace ReSet.Core.Services
 
                     if (!genSuccess || string.IsNullOrEmpty(specificationMarkdown))
                     {
-                        return (null, spDef);
+                        return (null, spDef, null);
                     }
 
                     // L1: 기계적 무결성 검사
@@ -364,6 +382,7 @@ namespace ReSet.Core.Services
                     if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
                     {
                         Log.Information("[파이프라인] L1+L2 검증 최종 통과 - SP: {SpName}, 최종 시도 횟수: {Attempt}", selectedOption, attempt);
+                        finalReview = l2Result;
                         _userInteraction.NotifyValidationSuccess(selectedOption);
                         break;
                     }
@@ -402,11 +421,11 @@ namespace ReSet.Core.Services
                             await ApplyMetadataCleansingSqlAsync(connectionString, selectedOption, outputDirectory, cancellationToken);
                         }
 
-                        return (specificationMarkdown, spDef);
+                        return (specificationMarkdown, spDef, finalReview);
                     }
                     else if (reviewResult.Decision == UserDecision.Cancel)
                     {
-                        return (null, spDef);
+                        return (null, spDef, null);
                     }
                     else if (reviewResult.Decision == UserDecision.ProvideFeedback)
                     {
@@ -450,7 +469,7 @@ namespace ReSet.Core.Services
                 }
             }
 
-            return (specificationMarkdown, spDef);
+            return (specificationMarkdown, spDef, finalReview);
         }
 
         public async Task<string?> RunConsolidatedPipelineAsync(

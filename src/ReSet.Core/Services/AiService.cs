@@ -147,18 +147,30 @@ namespace ReSet.Core.Services
         public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 SQL Server Stored Procedure 기능 명세서의 완성도를 검증하는 수석 아키텍트이자 리뷰어 에이전트입니다.
-제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하십시오.
+제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하고 채점하십시오.
 
-[검토 기준]
-1. 명세서에 필수 헤더(개요, 파라미터 목록, CRUD 분석, 로직 흐름 요약, 비즈니스 흐름 시각화)가 다 존재하며 알맞은 내용을 담고 있는가?
-2. 원본 DDL 소스코드와 명세서의 비즈니스 로직(특히 중요 제어 흐름이나 트랜잭션 처리) 사이에 사실과 다르거나 심각한 환각(왜곡)이 존재하지 않는가?
-3. 참조 UDF 및 하위 프로시저 연산 알고리즘 분석이 정상 반영되었는가?
+[검토 및 채점 기준 (각 항목 0~10점 정수 채점)]
+1. 비즈니스 정합성 및 로직 흐름 (ScoreAccuracy):
+   - 원본 DDL 소스코드와 명세서의 비즈니스 로직(분기 조건, 중요 연산 수식, 트랜잭션 정책 등)이 환각(왜곡) 없이 완벽히 일치하는가?
+2. CRUD 및 데이터 매핑 정확성 (ScoreCrud):
+   - SP가 참조하는 테이블/컬럼들과 명세서 내 CRUD 분석 표가 누락 및 오차 없이 정확하게 매핑되어 기술되었는가?
+3. Mermaid 다이어그램 완성도 (ScoreReadability):
+   - 비즈니스 흐름을 설명하는 Mermaid flowchart가 문법 오류 없이 올바르게 작성되었고 가독성이 우수한가?
+4. 예외 처리 및 트랜잭션 격리 (ScoreException):
+   - 오류 처리 패턴(TRY-CATCH) 및 DB 트랜잭션 제어 방식이 명세서에 완전하게 도출되어 있는가?
+
+[결함(Defect) 판단 조건]
+- 4대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 명세서 5대 필수 대분류 헤더(## 개요, ## 파라미터 목록, ## CRUD 분석, ## 로직 흐름 요약, ## 비즈니스 흐름 시각화) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
 
 [답변 작성 형식]
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. 다른 텍스트나 설명, 마크다운 백틱 코드 블록(```json ... ```)을 절대 포함하지 마십시오. 오직 순수 JSON만 반환해야 합니다:
 {
-  ""HasDefects"": true 또는 false (불리언 타입, 따옴표 없이 소문자로 기재),
-  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)""
+  ""HasDefects"": true 또는 false (불리언 타입),
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)"",
+  ""ScoreAccuracy"": 10,
+  ""ScoreCrud"": 10,
+  ""ScoreReadability"": 10,
+  ""ScoreException"": 10
 }";
 
             var userPrompt = $@"
@@ -191,10 +203,19 @@ namespace ReSet.Core.Services
                     var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
                     var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
 
+                    var scoreAccuracy = resultRoot.TryGetProperty("ScoreAccuracy", out var accProp) ? accProp.GetInt32() : 0;
+                    var scoreCrud = resultRoot.TryGetProperty("ScoreCrud", out var crudProp) ? crudProp.GetInt32() : 0;
+                    var scoreReadability = resultRoot.TryGetProperty("ScoreReadability", out var readProp) ? readProp.GetInt32() : 0;
+                    var scoreException = resultRoot.TryGetProperty("ScoreException", out var exProp) ? exProp.GetInt32() : 0;
+
                     return new ReviewResult
                     {
                         HasDefects = hasDefects,
-                        FeedbackComment = feedbackComment
+                        FeedbackComment = feedbackComment,
+                        ScoreAccuracy = scoreAccuracy,
+                        ScoreCrud = scoreCrud,
+                        ScoreReadability = scoreReadability,
+                        ScoreException = scoreException
                     };
                 }
             }
@@ -204,7 +225,11 @@ namespace ReSet.Core.Services
                 return new ReviewResult
                 {
                     HasDefects = true,
-                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
+                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}",
+                    ScoreAccuracy = 0,
+                    ScoreCrud = 0,
+                    ScoreReadability = 0,
+                    ScoreException = 0
                 };
             }
         }
@@ -332,18 +357,30 @@ namespace ReSet.Core.Services
         public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 여러 레거시 SP 분석 명세서들을 종합하여 설계된 통합 배치 전환 계획서(Markdown)의 완성도를 검증하는 수석 배치 아키텍트이자 리뷰어 에이전트입니다.
-제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하십시오.
+제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하고 채점하십시오.
 
-[검토 기준]
-1. 계획서에 필수 4대 헤더(## 통합 배치 아키텍처 개요, ## Mermaid 기반 통합 흐름도, ## 단계별 이행 상세 및 의사코드, ## 통합 데이터 정합성 검증 SQL 세트)가 다 존재하며 알맞은 내용을 담고 있는가?
-2. 각 개별 SP 분석서에 적힌 비즈니스 정합성이 신규 통합 배치 흐름 내에서 훼손되거나 환각(왜곡)이 존재하지 않는가?
-3. 단계별 이행 의사코드, 대량 데이터 청크 페이징 전략, 실패 재시작 가이드가 누락 없이 올바르게 서술되어 있는가?
+[검토 및 채점 기준 (각 항목 0~10점 정수 채점)]
+1. 비즈니스 정합성 및 로직 흐름 (ScoreAccuracy):
+   - 개별 SP 분석서의 비즈니스 로직 및 정산 규칙이 통합 배치 흐름 내에서 누락, 왜곡, 환각 없이 충실히 설계에 반영되었는가?
+2. CRUD 및 데이터 매핑 정확성 (ScoreCrud):
+   - 각 SP가 참조하던 테이블의 CRUD 작업이 통합 데이터 파이프라인에서 적합한 순서 및 배치 청크(Paging) 매핑으로 올바르게 설계되었는가?
+3. Mermaid 다이어그램 완성도 (ScoreReadability):
+   - 통합 배치 흐름도를 묘사하는 Mermaid flowchart가 문법 오류 없이 완전하고, 시각적 가독성이 우수한가?
+4. 예외 처리 및 트랜잭션 격리 (ScoreException):
+   - 통합 배치 수준에서의 실패 지점 재시작(Restartability), 벌크 트랜잭션 격리, 복구 전략이 견고하게 정의되어 있는가?
+
+[결함(Defect) 판단 조건]
+- 4대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 계획서 필수 4대 헤더(## 통합 배치 아키텍처 개요, ## Mermaid 기반 통합 흐름도, ## 단계별 이행 상세 및 의사코드, ## 통합 데이터 정합성 검증 SQL 세트) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
 
 [답변 작성 형식]
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. 다른 텍스트나 설명, 마크다운 백틱 코드 블록(```json ... ```)을 절대 포함하지 마십시오. 오직 순수 JSON만 반환해야 합니다:
 {
-  ""HasDefects"": true 또는 false (불리언 타입, 따옴표 없이 소문자로 기재),
-  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)""
+  ""HasDefects"": true 또는 false (불리언 타입),
+  ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)"",
+  ""ScoreAccuracy"": 10,
+  ""ScoreCrud"": 10,
+  ""ScoreReadability"": 10,
+  ""ScoreException"": 10
 }";
 
             var userPrompt = new StringBuilder();
@@ -382,10 +419,19 @@ namespace ReSet.Core.Services
                     var hasDefects = resultRoot.GetProperty("HasDefects").GetBoolean();
                     var feedbackComment = resultRoot.TryGetProperty("FeedbackComment", out var commentProp) ? commentProp.GetString() : null;
 
+                    var scoreAccuracy = resultRoot.TryGetProperty("ScoreAccuracy", out var accProp) ? accProp.GetInt32() : 0;
+                    var scoreCrud = resultRoot.TryGetProperty("ScoreCrud", out var crudProp) ? crudProp.GetInt32() : 0;
+                    var scoreReadability = resultRoot.TryGetProperty("ScoreReadability", out var readProp) ? readProp.GetInt32() : 0;
+                    var scoreException = resultRoot.TryGetProperty("ScoreException", out var exProp) ? exProp.GetInt32() : 0;
+
                     return new ReviewResult
                     {
                         HasDefects = hasDefects,
-                        FeedbackComment = feedbackComment
+                        FeedbackComment = feedbackComment,
+                        ScoreAccuracy = scoreAccuracy,
+                        ScoreCrud = scoreCrud,
+                        ScoreReadability = scoreReadability,
+                        ScoreException = scoreException
                     };
                 }
             }
@@ -395,7 +441,11 @@ namespace ReSet.Core.Services
                 return new ReviewResult
                 {
                     HasDefects = true,
-                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}"
+                    FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}",
+                    ScoreAccuracy = 0,
+                    ScoreCrud = 0,
+                    ScoreReadability = 0,
+                    ScoreException = 0
                 };
             }
         }

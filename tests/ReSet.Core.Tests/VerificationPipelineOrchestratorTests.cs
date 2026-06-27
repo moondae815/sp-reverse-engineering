@@ -44,7 +44,7 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(reviewResult));
 
             // Act
-            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+            var (resultSpec, resultDef, _) = await _orchestrator.RunPipelineAsync(
                 "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true);
 
             // Assert
@@ -73,7 +73,7 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(reviewResult));
 
             // Act
-            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+            var (resultSpec, resultDef, _) = await _orchestrator.RunPipelineAsync(
                 "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true);
 
             // Assert
@@ -106,7 +106,7 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(reviewResult));
 
             // Act
-            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+            var (resultSpec, resultDef, _) = await _orchestrator.RunPipelineAsync(
                 "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true);
 
             // Assert
@@ -140,7 +140,7 @@ namespace ReSet.Core.Tests
                 );
 
             // Act
-            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+            var (resultSpec, resultDef, _) = await _orchestrator.RunPipelineAsync(
                 "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: false);
 
             // Assert
@@ -254,7 +254,7 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(reviewResult));
 
             // Act
-            var (resultSpec, resultDef) = await _orchestrator.RunPipelineAsync(
+            var (resultSpec, resultDef, _) = await _orchestrator.RunPipelineAsync(
                 "connection_string", "dbo", "USP_Test", 3, "OpenAI", "instructions", isBatchMode: true, outputDirectory: tempOutDir);
 
             // Assert
