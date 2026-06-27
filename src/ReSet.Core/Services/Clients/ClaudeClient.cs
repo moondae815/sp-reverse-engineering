@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Serilog;
 
 namespace ReSet.Core.Services.Clients
 {
@@ -149,7 +150,10 @@ namespace ReSet.Core.Services.Clients
             }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/v1/messages")
+            var requestUri = $"{_endpoint.TrimEnd('/')}/v1/messages";
+            Log.Debug("Claude API 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
+
+            var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
             {
                 Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
             };
@@ -161,10 +165,13 @@ namespace ReSet.Core.Services.Clients
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
+                Log.Error("Claude API HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
+            Log.Debug("Claude API HTTP 응답 수신 완료 - StatusCode: {StatusCode}\n[Response Content]:\n{ResponseContent}", (int)response.StatusCode, responseContent);
+
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
@@ -173,17 +180,20 @@ namespace ReSet.Core.Services.Clients
                 if (root.TryGetProperty("error", out var errorElement))
                 {
                     var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
+                    Log.Error("Claude API 응답 내 error 감지 - Message: {Message}", errMsg);
                     throw new InvalidOperationException($"Claude API 에러 응답 수신: {errMsg}");
                 }
 
                 if (!root.TryGetProperty("content", out var contentElement) || contentElement.GetArrayLength() == 0)
                 {
+                    Log.Error("Claude API 응답 content 속성 누락 또는 빈 배열");
                     throw new InvalidOperationException("Claude API 응답 데이터 내에 content 속성이 존재하지 않거나 비어 있습니다.");
                 }
 
                 var firstContent = contentElement[0];
                 if (!firstContent.TryGetProperty("text", out var textElement))
                 {
+                    Log.Error("Claude API 응답 content[0] 내 text 속성 누락");
                     throw new InvalidOperationException("Claude API 응답 content 내에 text 속성이 존재하지 않습니다.");
                 }
 

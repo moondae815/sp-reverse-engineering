@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Serilog;
 
 namespace ReSet.Core.Services.Clients
 {
@@ -60,6 +61,8 @@ namespace ReSet.Core.Services.Clients
             
             // Assembly Google/Gemini Endpoint URI
             var url = $"{_endpoint.TrimEnd('/')}/v1beta/models/{_modelName}:generateContent?key={_apiKey}";
+            var logUrl = $"{_endpoint.TrimEnd('/')}/v1beta/models/{_modelName}:generateContent?key=******";
+            Log.Debug("Google Gemini API 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", logUrl, jsonPayload);
             
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
@@ -70,10 +73,13 @@ namespace ReSet.Core.Services.Clients
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
+                Log.Error("Google Gemini API HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
+            Log.Debug("Google Gemini API HTTP 응답 수신 완료 - StatusCode: {StatusCode}\n[Response Content]:\n{ResponseContent}", (int)response.StatusCode, responseContent);
+
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
@@ -83,13 +89,16 @@ namespace ReSet.Core.Services.Clients
                 {
                     if (promptFeedback.TryGetProperty("blockReason", out var blockReason))
                     {
-                        throw new InvalidOperationException($"Google Gemini API 요청이 안전 필터에 의해 차단되었습니다. (원인: {blockReason.GetString()})");
+                        var reasonStr = blockReason.GetString();
+                        Log.Error("Google Gemini API 요청이 안전 필터에 의해 차단되었습니다. (원인: {Reason})", reasonStr);
+                        throw new InvalidOperationException($"Google Gemini API 요청이 안전 필터에 의해 차단되었습니다. (원인: {reasonStr})");
                     }
                 }
 
                 // candidates 존재 및 빈 값 여부 확인
                 if (!root.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
                 {
+                    Log.Error("Google Gemini API 응답 candidates 누락 또는 빈 배열");
                     throw new InvalidOperationException("Google Gemini API 응답에서 생성된 후보군(candidates)을 찾을 수 없습니다.");
                 }
 
@@ -102,6 +111,7 @@ namespace ReSet.Core.Services.Clients
                     if (!string.Equals(reason, "STOP", StringComparison.OrdinalIgnoreCase) && 
                         !string.Equals(reason, "MAX_TOKENS", StringComparison.OrdinalIgnoreCase))
                     {
+                        Log.Error("Google Gemini API 생성이 정상 완료되지 않음. finishReason: {Reason}", reason);
                         throw new InvalidOperationException($"Google Gemini API 생성이 정상 완료되지 않았습니다. (이유: {reason})");
                     }
                 }
@@ -109,16 +119,19 @@ namespace ReSet.Core.Services.Clients
                 // content 및 parts, text 탐색 및 반환
                 if (!firstCandidate.TryGetProperty("content", out var contentElement))
                 {
+                    Log.Error("Google Gemini API 응답 candidate 내 content 누락");
                     throw new InvalidOperationException("Google Gemini API 응답 후보군 내에 content 속성이 존재하지 않습니다. (안전 필터 등에 의한 차단 가능성)");
                 }
 
                 if (!contentElement.TryGetProperty("parts", out var partsElement) || partsElement.GetArrayLength() == 0)
                 {
+                    Log.Error("Google Gemini API 응답 content 내 parts 누락 또는 빈 배열");
                     throw new InvalidOperationException("Google Gemini API 응답 content 내에 parts 속성이 존재하지 않거나 비어 있습니다.");
                 }
 
                 if (!partsElement[0].TryGetProperty("text", out var textElement))
                 {
+                    Log.Error("Google Gemini API 응답 parts[0] 내 text 누락");
                     throw new InvalidOperationException("Google Gemini API 응답 parts 내에 text 속성이 존재하지 않습니다.");
                 }
 

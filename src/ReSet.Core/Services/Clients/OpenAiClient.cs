@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Serilog;
 
 namespace ReSet.Core.Services.Clients
 {
@@ -94,7 +95,10 @@ namespace ReSet.Core.Services.Clients
             }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_endpoint.TrimEnd('/')}/chat/completions")
+            var requestUri = $"{_endpoint.TrimEnd('/')}/chat/completions";
+            Log.Debug("OpenAI API 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
+
+            var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
             {
                 Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
             };
@@ -108,10 +112,13 @@ namespace ReSet.Core.Services.Clients
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
+                Log.Error("OpenAI API HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
+            Log.Debug("OpenAI API HTTP 응답 수신 완료 - StatusCode: {StatusCode}\n[Response Content]:\n{ResponseContent}", (int)response.StatusCode, responseContent);
+
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
@@ -120,22 +127,26 @@ namespace ReSet.Core.Services.Clients
                 if (root.TryGetProperty("error", out var errorElement))
                 {
                     var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
+                    Log.Error("OpenAI API 응답 내 error 감지 - Message: {Message}", errMsg);
                     throw new InvalidOperationException($"OpenAI API 에러 응답 수신: {errMsg}");
                 }
 
                 if (!root.TryGetProperty("choices", out var choicesElement) || choicesElement.GetArrayLength() == 0)
                 {
+                    Log.Error("OpenAI API 응답 choices 속성 누락 또는 빈 배열");
                     throw new InvalidOperationException("OpenAI API 응답 데이터 내에 choices 속성이 존재하지 않거나 비어 있습니다.");
                 }
 
                 var firstChoice = choicesElement[0];
                 if (!firstChoice.TryGetProperty("message", out var messageElement))
                 {
+                    Log.Error("OpenAI API 응답 choices[0] 내 message 속성 누락");
                     throw new InvalidOperationException("OpenAI API 응답 choices 내에 message 속성이 존재하지 않습니다.");
                 }
 
                 if (!messageElement.TryGetProperty("content", out var contentElement))
                 {
+                    Log.Error("OpenAI API 응답 message 내 content 속성 누락");
                     throw new InvalidOperationException("OpenAI API 응답 message 내에 content 속성이 존재하지 않습니다.");
                 }
 

@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using ReSet.Core.Models;
+using Serilog;
 
 namespace ReSet.Core.Services
 {
@@ -132,7 +133,15 @@ namespace ReSet.Core.Services
                 userPrompt += $"\n\n[이전 시도에 대한 검증 오류/수정 피드백 로그]:\n{feedbackLog}\n위 검토 및 수정 의견을 전적으로 수용하여 명세서 내용을 정교하게 수정하고 오류를 바로잡아 다시 작성해 주십시오.";
             }
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
+            Log.Information("AI 명세서 생성 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
+
+            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
+
+            Log.Information("AI 명세서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+
+            return response;
         }
 
         public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default)
@@ -164,10 +173,17 @@ namespace ReSet.Core.Services
 위 마크다운 명세서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.
 ";
 
+            Log.Information("AI 개별 명세서 리뷰 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
+
             var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort, cancellationToken);
+
+            Log.Information("AI 개별 명세서 리뷰 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, responseContent?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
             try
             {
                 var jsonString = ExtractJson(responseContent);
+                Log.Debug("[추출된 JSON 내용]: {JsonString}", jsonString);
 
                 using (var resultDoc = JsonDocument.Parse(jsonString))
                 {
@@ -184,6 +200,7 @@ namespace ReSet.Core.Services
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "JSON 검토 보고서 파싱 중 오류 발생");
                 return new ReviewResult
                 {
                     HasDefects = true,
@@ -255,7 +272,15 @@ namespace ReSet.Core.Services
 위 레거시 배치 SP 정보를 바탕으로 {targetLanguage} 기준의 '배치 전환 계획 설계서'를 작성해 주십시오.
 ";
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort: null, cancellationToken: cancellationToken);
+            Log.Information("AI 배치 전환 계획서 생성 요청 전송 - SP: {Schema}.{Name}, TargetLanguage: {TargetLanguage}", spDef.Schema, spDef.Name, targetLanguage);
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
+
+            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort: null, cancellationToken: cancellationToken);
+
+            Log.Information("AI 배치 전환 계획서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+
+            return response;
         }
 
         public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, string? effort = null, CancellationToken cancellationToken = default)
@@ -293,7 +318,15 @@ namespace ReSet.Core.Services
 
             userPrompt.AppendLine("위 개별 명세서들의 정보를 완벽히 분석하여, 지침에 맞추어 단일 통합 배치 전환 계획서를 구성해 주십시오.");
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort, cancellationToken);
+            Log.Information("AI 통합 배치 계획서 생성 요청 전송 - JobName: {JobName}, TargetLanguage: {TargetLanguage}, Effort: {Effort}", jobName, targetLanguage, effort ?? "Default");
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
+
+            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort, cancellationToken);
+
+            Log.Information("AI 통합 배치 계획서 생성 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, response?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+
+            return response;
         }
 
         public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, string? effort = null, CancellationToken cancellationToken = default)
@@ -331,10 +364,17 @@ namespace ReSet.Core.Services
             userPrompt.AppendLine();
             userPrompt.AppendLine("위 계획서의 완결성 및 정확성을 검토 기준에 맞게 성실히 분석한 뒤 JSON 포맷으로 답해주십시오.");
 
+            Log.Information("AI 통합 배치 계획서 리뷰 요청 전송 - JobName: {JobName}, Effort: {Effort}", jobName, effort ?? "Default");
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
+
             var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, effort, cancellationToken);
+
+            Log.Information("AI 통합 배치 계획서 리뷰 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, responseContent?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
             try
             {
                 var jsonString = ExtractJson(responseContent);
+                Log.Debug("[추출된 JSON 내용]: {JsonString}", jsonString);
 
                 using (var resultDoc = JsonDocument.Parse(jsonString))
                 {
@@ -351,6 +391,7 @@ namespace ReSet.Core.Services
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "JSON 통합 검토 보고서 파싱 중 오류 발생");
                 return new ReviewResult
                 {
                     HasDefects = true,
@@ -450,9 +491,15 @@ namespace ReSet.Core.Services
             userPrompt.AppendLine(profilingDataJson);
             userPrompt.AppendLine("```");
             userPrompt.AppendLine();
-            userPrompt.AppendLine("위의 SQL 로직 분기 조건과 프로파일링 JSON 데이터를 1:1 대조 분석하여, 통합 '정산 정책 문서'를 도출해 주십시오.");
+            Log.Information("AI 정산 정책서 생성 요청 전송");
+            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
 
-            return await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort: null, cancellationToken: cancellationToken);
+            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort: null, cancellationToken: cancellationToken);
+
+            Log.Information("AI 정산 정책서 생성 완료 - 응답 길이: {Length}", response?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+
+            return response;
         }
     }
 }
