@@ -132,40 +132,59 @@ namespace ReSet.Core.Services
 
             if (string.Equals(_actorEffort, "dynamic", StringComparison.OrdinalIgnoreCase))
             {
-                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 하이브리드 다중 후보군(Low/Medium/High Effort) 병렬 생성 중...");
+                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 하이브리드 다중 후보군(Low/Medium/High Effort) 병렬 생성 및 검토 중...");
                 
-                var tasks = new System.Collections.Generic.List<Task<string>>();
-                tasks.Add(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken));
-                tasks.Add(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken));
-                tasks.Add(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken));
-
                 string[] candidates;
-                try
+                using (var progressScope = _userInteraction.CreateProgressScope("하이브리드 다중 후보군 생성") ?? NullProgressScope.Instance)
                 {
-                    candidates = await Task.WhenAll(tasks);
-                }
-                catch (Exception ex)
-                {
-                    _userInteraction.NotifyError($"{selectedOption} - 하이브리드 후보 생성 중 실패: {ex.Message}");
-                    return (null, spDef);
+                    progressScope.AddTask("low_gen", "Low Effort Spec 생성");
+                    progressScope.AddTask("medium_gen", "Medium Effort Spec 생성");
+                    progressScope.AddTask("high_gen", "High Effort Spec 생성");
+
+                    var tasks = new System.Collections.Generic.List<Task<string>>();
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), progressScope, "low_gen"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), progressScope, "medium_gen"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), progressScope, "high_gen"));
+
+                    try
+                    {
+                        candidates = await Task.WhenAll(tasks);
+                    }
+                    catch (Exception ex)
+                    {
+                        _userInteraction.NotifyError($"{selectedOption} - 하이브리드 후보 생성 중 실패: {ex.Message}");
+                        return (null, spDef);
+                    }
                 }
 
                 // 각 후보에 대한 L2 검증 및 채점 수행
-                var reviewTasks = new System.Collections.Generic.List<Task<ReviewResult>>();
-                for (int i = 0; i < candidates.Length; i++)
-                {
-                    reviewTasks.Add(_criticService.ReviewSpecificationAsync(spDef, candidates[i], _criticEffort, cancellationToken));
-                }
-
                 ReviewResult[] reviews;
-                try
+                using (var progressScope = _userInteraction.CreateProgressScope("Critic 검토") ?? NullProgressScope.Instance)
                 {
-                    reviews = await Task.WhenAll(reviewTasks);
-                }
-                catch (Exception ex)
-                {
-                    _userInteraction.NotifyError($"{selectedOption} - Critic 검토 중 실패: {ex.Message}");
-                    return (null, spDef);
+                    var reviewTasks = new System.Collections.Generic.List<Task<ReviewResult>>();
+                    for (int i = 0; i < candidates.Length; i++)
+                    {
+                        var taskKey = $"critic_{i}";
+                        var taskName = i switch
+                        {
+                            0 => "Low Effort Spec 검토",
+                            1 => "Medium Effort Spec 검토",
+                            2 => "High Effort Spec 검토",
+                            _ => $"후보군 {i+1} Spec 검토"
+                        };
+                        progressScope.AddTask(taskKey, taskName);
+                        reviewTasks.Add(WrapWithProgress(_criticService.ReviewSpecificationAsync(spDef, candidates[i], _criticEffort, cancellationToken), progressScope, taskKey));
+                    }
+
+                    try
+                    {
+                        reviews = await Task.WhenAll(reviewTasks);
+                    }
+                    catch (Exception ex)
+                    {
+                        _userInteraction.NotifyError($"{selectedOption} - Critic 검토 중 실패: {ex.Message}");
+                        return (null, spDef);
+                    }
                 }
 
                 // 완벽한 후보(L1 & L2 무결) 발견 시 Fast-pass 즉시 채택
@@ -667,6 +686,22 @@ namespace ReSet.Core.Services
             catch (Exception ex)
             {
                 _userInteraction.NotifyError($"DB 메타데이터 설명 역반영 중 오류 발생: {ex.Message}");
+            }
+        }
+
+        private async Task<T> WrapWithProgress<T>(Task<T> underlyingTask, IMultiProgressScope scope, string taskKey)
+        {
+            scope.UpdateTask(taskKey, 10);
+            try
+            {
+                var result = await underlyingTask;
+                scope.CompleteTask(taskKey);
+                return result;
+            }
+            catch
+            {
+                scope.FailTask(taskKey);
+                throw;
             }
         }
     }

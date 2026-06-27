@@ -55,47 +55,83 @@ namespace ReSet.Core.Services.Clients
                 maxTokens = 8192; // Claude 3.5 / 3.7 Sonnet 및 Haiku 등 최신 모델 한도
             }
 
-            bool enableThinking = !string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6");
+            bool is4thGen = lowerModel.Contains("4-") || lowerModel.Contains("4.");
+            bool is37Gen = lowerModel.Contains("3-7") || lowerModel.Contains("3.7");
+            bool enableThinking = (is4thGen || is37Gen) && (!string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6"));
             object requestBody;
 
             if (enableThinking)
             {
-                int budgetTokens = 4000; // 기본값
-                if (!string.IsNullOrWhiteSpace(effort))
+                if (is4thGen)
                 {
-                    budgetTokens = effort.ToLowerInvariant() switch
+                    string? apiEffort = null;
+                    if (!string.IsNullOrWhiteSpace(effort))
                     {
-                        "low" => 2000,
-                        "medium" => 4000,
-                        "high" => 16000,
-                        "xhigh" => 32000,
-                        _ => 4000
+                        apiEffort = effort.ToLowerInvariant() switch
+                        {
+                            "low" => "low",
+                            "medium" => "medium",
+                            "high" => "high",
+                            "xhigh" => "max",
+                            _ => "medium"
+                        };
+                    }
+
+                    var requestMap = new System.Collections.Generic.Dictionary<string, object>
+                    {
+                        { "model", _modelName },
+                        { "system", systemPrompt },
+                        { "messages", new[] { new { role = "user", content = userPrompt } } },
+                        { "max_tokens", maxTokens },
+                        { "temperature", 1.0 },
+                        { "thinking", new { type = "adaptive" } }
+                    };
+
+                    if (apiEffort != null)
+                    {
+                        requestMap.Add("output_config", new { effort = apiEffort });
+                    }
+
+                    requestBody = requestMap;
+                }
+                else
+                {
+                    int budgetTokens = 4000; // 기본값
+                    if (!string.IsNullOrWhiteSpace(effort))
+                    {
+                        budgetTokens = effort.ToLowerInvariant() switch
+                        {
+                            "low" => 2000,
+                            "medium" => 4000,
+                            "high" => 16000,
+                            "xhigh" => 32000,
+                            _ => 4000
+                        };
+                    }
+
+                    if (budgetTokens >= maxTokens)
+                    {
+                        budgetTokens = maxTokens - 1000;
+                        if (budgetTokens < 1000) budgetTokens = 1000;
+                    }
+
+                    requestBody = new
+                    {
+                        model = _modelName,
+                        system = systemPrompt,
+                        messages = new[]
+                        {
+                            new { role = "user", content = userPrompt }
+                        },
+                        max_tokens = maxTokens,
+                        temperature = 1.0,
+                        thinking = new
+                        {
+                            type = "enabled",
+                            budget_tokens = budgetTokens
+                        }
                     };
                 }
-
-                if (budgetTokens >= maxTokens)
-                {
-                    budgetTokens = maxTokens - 1000;
-                    if (budgetTokens < 1000) budgetTokens = 1000;
-                }
-
-                // Adaptive Thinking 필수/지원 모델 처리 (thinking 활성화 시 temperature는 반드시 1.0이어야 함)
-                requestBody = new
-                {
-                    model = _modelName,
-                    system = systemPrompt,
-                    messages = new[]
-                    {
-                        new { role = "user", content = userPrompt }
-                    },
-                    max_tokens = maxTokens,
-                    temperature = 1.0,
-                    thinking = new
-                    {
-                        type = "adaptive",
-                        budget_tokens = budgetTokens
-                    }
-                };
             }
             else
             {

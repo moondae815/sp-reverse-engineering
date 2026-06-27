@@ -75,12 +75,18 @@ namespace ReSet.Core.Services.Clients
             {
                 if (!string.IsNullOrWhiteSpace(effort))
                 {
-                    requestBody.Add("reasoning_effort", effort.ToLowerInvariant());
+                    var apiEffort = effort.ToLowerInvariant() switch
+                    {
+                        "low" => "low",
+                        "medium" => "medium",
+                        "high" => "high",
+                        "xhigh" => "high",
+                        _ => "medium"
+                    };
+                    requestBody.Add("reasoning_effort", apiEffort);
                 }
-                else
-                {
-                    requestBody.Add("temperature", 1.0f);
-                }
+                // o1/o3 추론 모델 계열은 temperature 파라미터를 보내는 것 자체가 에러가 발생할 수 있으므로 
+                // reasoning 모델인 경우 temperature 필드를 완전히 제외합니다.
             }
             else
             {

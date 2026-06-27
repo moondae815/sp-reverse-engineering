@@ -109,5 +109,102 @@ namespace ReSet.Cli
             var result = AnsiConsole.Confirm($"[bold yellow]{selectedOption}[/] - AI가 보완한 설명(Extended Properties) 목록을 실제 데이터베이스에 동기화(Sync)하시겠습니까?", false);
             return Task.FromResult(result);
         }
+
+        public IMultiProgressScope CreateProgressScope(string title)
+        {
+            return new ConsoleProgressScope(title);
+        }
+    }
+
+    public class ConsoleProgressScope : IMultiProgressScope
+    {
+        private readonly Task _progressTask;
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, ProgressTask> _tasks = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string desc, double val, bool comp, bool fail)> _pendingUpdates = new();
+        private readonly TaskCompletionSource _tcs = new();
+        private readonly string _title;
+
+        public ConsoleProgressScope(string title)
+        {
+            _title = title;
+            _progressTask = Task.Run(async () =>
+            {
+                await AnsiConsole.Progress()
+                    .Columns(new ProgressColumn[]
+                    {
+                        new TaskDescriptionColumn(),
+                        new ProgressBarColumn(),
+                        new PercentageColumn(),
+                        new RemainingTimeColumn(),
+                        new SpinnerColumn(),
+                    })
+                    .StartAsync(async ctx =>
+                    {
+                        while (!_tcs.Task.IsCompleted || !_pendingUpdates.IsEmpty)
+                        {
+                            var keys = new List<string>(_pendingUpdates.Keys);
+                            foreach (var name in keys)
+                            {
+                                if (_pendingUpdates.TryRemove(name, out var item))
+                                {
+                                    var (desc, val, comp, fail) = item;
+                                    if (!_tasks.TryGetValue(name, out var task))
+                                    {
+                                        task = ctx.AddTask(desc, autoStart: true);
+                                        _tasks[name] = task;
+                                    }
+
+                                    task.Description = desc;
+                                    task.Value = val;
+
+                                    if (comp)
+                                    {
+                                        task.Value = 100.0;
+                                        task.StopTask();
+                                    }
+                                    if (fail)
+                                    {
+                                        task.Description = $"[red]실패:[/] {desc}";
+                                        task.StopTask();
+                                    }
+                                }
+                            }
+                            await Task.Delay(100);
+                        }
+                    });
+            });
+        }
+
+        public void AddTask(string taskName, string description)
+        {
+            _pendingUpdates[taskName] = (description, 0.0, false, false);
+        }
+
+        public void UpdateTask(string taskName, double value, string? description = null)
+        {
+            _pendingUpdates.AddOrUpdate(taskName, 
+                (description ?? taskName, value, false, false),
+                (k, old) => (description ?? old.desc, value, old.comp, old.fail));
+        }
+
+        public void CompleteTask(string taskName)
+        {
+            _pendingUpdates.AddOrUpdate(taskName, 
+                (taskName, 100.0, true, false),
+                (k, old) => (old.desc, 100.0, true, false));
+        }
+
+        public void FailTask(string taskName)
+        {
+            _pendingUpdates.AddOrUpdate(taskName, 
+                (taskName, 0.0, false, true),
+                (k, old) => (old.desc, old.val, false, true));
+        }
+
+        public void Dispose()
+        {
+            _tcs.TrySetResult();
+            _progressTask.GetAwaiter().GetResult();
+        }
     }
 }

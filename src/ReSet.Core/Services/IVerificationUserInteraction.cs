@@ -29,5 +29,8 @@ namespace ReSet.Core.Services
 
         // AI가 유추한 메타데이터 설명을 DB에 동기화할지 사용자 동의 요청
         Task<bool> ConfirmMetadataSyncAsync(string selectedOption);
+
+        // 멀티태스크 진행률 상황 표시 스코프 생성
+        IMultiProgressScope CreateProgressScope(string title);
     }
 }
