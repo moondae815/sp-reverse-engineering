@@ -132,7 +132,7 @@ ReSet/
   },
   "AiSettings": {
     "Provider": "Claude",          // 활성화할 AI 제공자 ("OpenAI" | "Google" | "Claude" | "Ollama")
-    "ModelName": "cladue-sonnet-4-6", // 사용할 LLM 모델명
+    "ModelName": "claude-sonnet-4-6", // 사용할 LLM 모델명
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
     "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
@@ -144,7 +144,7 @@ ReSet/
     },
     "Consolidator": {
       "Provider": "Claude",        // [Actor-Critic] 최종 합성을 담당할 Consolidator의 AI 제공자
-      "ModelName": "cladue-sonnet-4-6",
+      "ModelName": "claude-sonnet-4-6",
       "Effort": "medium"           // [Actor-Critic] Consolidator의 추론 강도
     },
     "Providers": {
@@ -220,7 +220,7 @@ ReSet/
 {
   "AiSettings": {
     "Provider": "Claude",
-    "ModelName": "cladue-sonnet-4-6",
+    "ModelName": "claude-sonnet-4-6",
     "Temperature": 0.1,
     "MaxL2Attempts": 2,
     "TimeoutSeconds": 300,         // AI API 호출 시 HttpClient 타임아웃 시간 (초 단위, 기본값: 300)
