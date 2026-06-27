@@ -11,7 +11,7 @@
 | 컴포넌트 (프로젝트) | 모듈 (클래스/인터페이스) | 주요 아키텍처적 역할 및 기능 |
 | :--- | :--- | :--- |
 | **ReSet.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs) | CLI 아규먼트 파싱, DI 구성, 대화형 및 배치 실행 모드 제어, Multi-SP 물리 선택 순서 보장 순차 선택 루프 흐름 및 CancellationTokenSource 연동 |
-| | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링, DB 동기화 동의(ConfirmMetadataSyncAsync) 및 Markup.Escape 예외 방지 |
+| | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링, DB 동기화 동의(ConfirmMetadataSyncAsync) 및 Markup.Escape 예외 방지. 내부 `ConsoleProgressScope` 구현 포함 |
 | | [SessionManager](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/SessionManager.cs) | 직전 로그인 정보 로컬 세션 파일 기억 관리 및 즉각적인 연결 정보(서버, DB명) 수정 기능 제공 |
 | | [CodingEngineFactory](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/CodingEngineFactory.cs) | 설정 파일에 기반해 다형적 외부 코딩 에이전트(`ICodingEngine`)를 구성하고 생성하는 팩토리 클래스 |
 | **ReSet.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs) | 시스템 메타데이터 쿼리, DFS 기반 재귀적 의존성 탐색, 확장 속성 주석 수집, 설명 누락 여부(IsDescriptionMissing) 판단, CancellationToken 기반 비동기 취소 지원 및 Warnings 수집 |
@@ -25,6 +25,8 @@
 | | [CacheManager](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리 |
 | | [ICodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICodingEngine.cs) | 외부 코딩 에이전트 연동용 마이그레이션 생성기 추상 인터페이스 |
 | | [ExternalCliCodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체 |
+| | [IMultiProgressScope](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs) | 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스 |
+| | [NullProgressScope](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs) | 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체 |
 | | [ISettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ISettlementPolicyService.cs) | 정산 정책 문서 생성기 추상 인터페이스 |
 | | [SettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs) | DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 활용한 통합 정산 정책서 생성 서비스 |
 | **ReSet.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어 |
@@ -287,6 +289,15 @@ graph TD
     
     Consolidator --> Output["최종 완성본 마크다운 명세서"]
 ```
+
+### 15. 비결합 진행도 시각화 및 동시성 제어
+* **Clean Architecture 기반 UI 비결합**: Core 비즈니스 로직은 특정 뷰 기술(Spectre.Console 등)에 종속되지 않도록 진행률 추적 수단을 `IMultiProgressScope` 추상화 뒤로 은닉했습니다. 이로 인해 유닛 테스트 실행 시에는 Mocking에 유연하게 대응하며 아무 동작도 하지 않는 `NullProgressScope`를 주입하여 널 참조 크래시를 온전히 방어합니다.
+* **TUI 동시성 렌더링**: CLI 모드에서 실제로 구동되는 `ConsoleProgressScope`는 메인 태스크 동작 스레드와 Spectre.Console 렌더링 스레드의 교착 및 충돌을 방지하기 위해 `ConcurrentDictionary`와 `TaskCompletionSource`를 사용합니다. 비동기로 누적된 펜딩 태스크 갱신 건들을 백그라운드 렌더링 태스크가 100ms 간격으로 소거(TryRemove)하며 부드럽고 안전하게 상태를 실시간 업데이트합니다.
+
+### 16. TUI 비파괴식 파일 로깅 시스템 (Serilog File Sink)
+* **콘솔 UI 파괴 방지**: TUI 인터랙티브 메뉴 및 진행도 바가 로그 텍스트 출력으로 인해 번잡하게 깨지는 것을 막도록 Serilog의 콘솔 싱크를 끄고, **오직 파일 전용(File Sink)으로만 로그가 적재**되도록 아키텍처를 제한했습니다.
+* **로깅 라이프사이클 및 설정 동적화**: `appsettings.json` 내 `LoggingSettings`를 배치하여 로그 디렉토리 및 일별 롤링 보존 기준(기본 31일)을 제어하며, `Program.ConfigureLogging`을 통해 폴더 자동 생성을 예외 격리하고 메인 종료 단계에서 `Log.CloseAndFlush()`로 자원을 안전하게 회수합니다.
+* **마크업 자동 정화(StripMarkup)**: 로그에 들어가기 직전에 Spectre.Console 용 스타일 마크업 태그들을 정규식으로 안전하게 치환·제거하여 정밀한 순수 텍스트 상태로 파일을 보존함으로써, 실행 정보의 가독성과 영속성을 보장합니다.
 
 ---
 

@@ -30,6 +30,8 @@
     *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
     *   [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICacheManager.cs) 포함).
     *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
+    *   [IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs): 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스.
+    *   [NullProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs): 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체.
 
 ### 2. CLI 실행 엔트리: [ReSet.Cli](file:///home/moondae/git-root/ReSet/src/ReSet.Cli)
 *   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/Program.cs): CLI 진입점이자 TUI 메뉴 제어 및 흐름 오케스트레이션을 담당합니다.
@@ -78,6 +80,11 @@
 5.  **동적 SQL 하이브리드 의존성 탐색 및 예외 격리를 수행하십시오.**
     *   Stored Procedure DDL 내에서 동적 SQL 실행 패턴(`EXEC`, `sp_executesql`)이 탐색되면, 정적 의존성 수집의 한계를 극복하기 위해 Regex 텍스트 추출과 `sys.objects` 대조를 결합한 하이브리드 기법을 사용하십시오.
     *   동적 SQL 분석 과정의 쿼리 수행 또는 권한 오류 시 전체 프로세스가 중단되지 않도록 Soft Fail 정책을 적용해 예외를 격리하십시오.
+6.  **AI API 응답 검증 및 KeyNotFoundException 예외 방지**:
+    *   Google Gemini, Claude, OpenAI 등 모든 AI API 클라이언트 호출 응답 파싱 시, 안전 필터 차단(Safety Block, Recitation) 또는 장애로 결과 필드가 비정상/누락 수신되었을 때 발생하는 `KeyNotFoundException`("The given key was not present in the dictionary.") 크래시를 완벽히 차단하십시오.
+    *   반드시 JSON 요소를 바로 꺼내지 말고 `TryGetProperty`로 존재 유무를 확인하고, 비정상 수신 시 상세한 거부/에러 사유를 담아 `InvalidOperationException`을 던져 투명하게 알려야 합니다.
+    *   OpenAI의 o1/o3 등 추론 모델(Reasoning Model) 호출 시에는 `400 BadRequestError`를 방지하기 위해 `temperature` 파라미터를 요청 본문에서 생략하고 `reasoning_effort`를 API 표준(low, medium, high)으로 안전하게 변환 매핑해야 합니다.
+    *   Claude의 4세대 Adaptive Thinking 모델 호출 시에는 `budget_tokens`를 제외하고 `output_config.effort`로 사고 강도를 위임해 에러를 원천 차단하십시오.
 
 ### 🎨 범주 3. 인터페이스 및 Spectre.Console 예외 회피 (UI/UX)
 6.  **Spectre.Console 렌더링 충돌 예방을 위해 Escape 처리를 준수하십시오.**
@@ -92,7 +99,10 @@
     *   로그인 시 로컬 세션 파일(`.session.json`)로부터 정보를 불러온 경우에도, 사용자가 원할 경우 appsettings.json을 수정하지 않고 즉석에서 서버 주소 및 데이터베이스 이름을 수정하여 다른 대상 데이터베이스에 접속할 수 있도록 입력 기회를 제공해야 합니다.
 9.  **Multi-SP 통합 계획 순서 보장 (물리 선택 순서 보장) 루프를 유지하십시오.**
     *   배치 마이그레이션 통합 전환 계획서 수립 시, 계획서 내 배치 스텝의 순서는 사용자가 의도하여 선택한 순서대로 기입되어야 합니다.
-    *   이를 달성하기 위해 한 번에 여러 개를 체크하는 다중 선택 대신, 사용자가 원하는 순서대로 하나씩 추가하고 완료 키를 눌러 종료하는 순차 선택 루프 방식으로 수집 흐름을 통제해야 합니다.
+    *   이를 달성하기 위해 한 번에 여러 개를 체크하는 다중 선택 대신, 사용자가 원하는 순차대로 하나씩 추가하고 완료 키를 눌러 종료하는 순차 선택 루프 방식으로 수집 흐름을 통제해야 합니다.
+10. **TUI 비파괴식 Serilog 파일 로깅 및 마크업 자동 정화**:
+    *   프로그램 실행 로그를 파일로 기록할 때, 대화형 TUI 화면과 진행 바가 출력 로그로 인해 깨지는 현상을 방지하도록 Serilog를 **오직 파일 저장 전용(File Sink)**으로만 제한 가동하십시오.
+    *   로그 파일에 기록하기 직전에 Spectre.Console의 스타일 마크업 태그(예: `[yellow]`, `[/]`)가 로그 파일에 지저분하게 섞이지 않도록 정규식을 활용해 자동 정화(StripMarkup)해야 하며, 로그 수명주기 관리를 위해 프로그램 종료 시 `Serilog.Log.CloseAndFlush()` 호출을 수행해야 합니다.
 
 ### ⚙️ 범주 4. 검증 오케스트레이션 및 파이프라인 흐름 (Verification Workflow)
 10. **3단계 검증 파이프라인의 명확한 역할을 분리하십시오.**
@@ -104,6 +114,10 @@
     *   무인 배치 모드(`isBatchMode: true`) 환경에서는 통합 배치 전환 계획서 검증 시 L3 단계(사용자 승인) 프롬프트 대기 단계를 생략하고 자동으로 우회 승인하도록 흐름을 통제하십시오.
 12. **신규 AI 공급자 추가 가이드를 따르십시오.**
     *   새로운 LLM 공급자 연동이 필요한 경우, [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs)를 상속하여 클라이언트를 생성하고, [AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs) 및 `appsettings.json` 내 `AiSettings`에 매핑 설정을 신규 노드로 추가해 주십시오.
+13. **비결합 멀티태스크 진행도 시각화 및 동시성 격리**:
+    *   비동기 작업들의 진행률 시각화(`IMultiProgressScope`) 통합 시, Core 비즈니스 서비스가 특정 UI 라이브러리에 직접 의존하지 않도록 추상 인터페이스를 준수해야 합니다.
+    *   실제 TUI 구현부(`ConsoleProgressScope`)에서는 렌더링 루프와 비즈니스 비동기 태스크 간의 충돌 및 데드락을 원천 격리하기 위해 `ConcurrentDictionary`와 `TaskCompletionSource`를 적용하여 백그라운드 태스크 방식으로 안전하게 화면을 갱신해야 합니다.
+    *   진행 바 래핑은 `WrapWithProgress` 헬퍼 방식을 적용하여 예외 발생 시 `FailTask`가 확실히 격리 호출되도록 설계하십시오.
 
 ### 🔒 범주 5. 타겟 런타임 격리 및 리소스 정리 (Lifecycle & Sandbox)
 13. **타겟 러너 트랜잭션 격리 및 프로세스 타임아웃을 적용하십시오.**

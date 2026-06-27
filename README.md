@@ -43,6 +43,13 @@
 ### 6. 통합 정산 정책 문서 도출 (Settlement Policy Rulebook)
 * **정적/동적 하이브리드 정책 도출**: 레거시 DB 내 Stored Procedure 코드(DDL)에 숨겨진 비즈니스 분기 조건(예: `WHERE Status = 'S02'`)과 실제 공통 코드 및 마스터 설정 테이블에 적재되어 있는 데이터(예: `S02 = 정산보류`)를 1:1 결합 및 분석(Data Profiling)하여, 실무진과 개발진 모두 즉시 참고할 수 있는 통합 '정산 정책서(Settlement Rulebook)'를 자동 작성합니다.
 
+### 7. 실시간 병렬 태스크 진행률 시각화 (CLI Progress)
+* **비결합 멀티태스크 진행률 추적**: 관심사 분리(Clean Architecture) 원칙에 입각하여 Core 비즈니스 로직은 화면 렌더링에 관여하지 않고, 추상화된 `IMultiProgressScope` 인터페이스와 `NullProgressScope`를 주입받아 비동기 진행률 정보를 통보합니다. TUI 프로젝트 단에서는 `Spectre.Console`의 `Progress` 컴포넌트와 연동되어 백그라운드 렌더링 스레드를 제어하며 실시간 진행도 바(Bar)와 경과 시간 정보를 출력합니다.
+
+### 8. 영속적인 실행 로깅 시스템 (Serilog File Sink & Clean Logging)
+* **TUI 비파괴식 Serilog 파일 로깅**: TUI 대화형 화면 및 진행 바가 로깅 출력으로 인해 깨지지 않도록 Serilog는 **오직 파일 전용(File Sink)**으로만 분리 가동됩니다. `appsettings.json` 설정을 통해 로깅 대상 디렉토리, 기록 등급, 보존 주기를 자유롭게 지정할 수 있습니다.
+* **마크업 자동 정화 유틸리티**: 로그 파일에 기록하기 직전에 Spectre.Console 마크업 스타일 태그(예: `[yellow]`, `[/]`)를 자동 탐색하여 완전 제거(StripMarkup)함으로써, 로그 텍스트 파일의 가독성과 영속성을 보장합니다.
+
 ---
 
 ## 📊 핵심 아키텍처 및 워크플로우 (Core Workflow)
@@ -199,6 +206,11 @@ ReSet/
         "Endpoint": "http://localhost:11434" // 로컬 Ollama 엔드포인트
       }
     }
+  },
+  "LoggingSettings": {
+    "LogDirectory": "./output/logs",       // 실행 로그가 저장될 출력 디렉터리
+    "MinimumLevel": "Information",         // 최소 기록 로그 레벨 (Verbose | Debug | Information | Warning | Error | Fatal)
+    "RetainedFileCountLimit": 31           // 로그 파일 최대 보존 개수 (일별 롤링 파일 갯수)
   },
   "OutputSettings": {
     "Directory": "./output",       // 명세서 파일이 저장될 출력 디렉터리
