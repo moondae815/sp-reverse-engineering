@@ -210,19 +210,41 @@ namespace ReSet.Core.Services
                     }
                 }
 
+                if (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null)
+                {
+                    _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - Effort별 Spec 검토 완료:");
+                    _userInteraction.NotifyStatus($"  - Low Spec: [bold]{reviews[0].NormalizedScore}[/]점 (정합성:{reviews[0].ScoreAccuracy}, CRUD:{reviews[0].ScoreCrud}, 시각화:{reviews[0].ScoreReadability}, 예외:{reviews[0].ScoreException})");
+                    _userInteraction.NotifyStatus($"  - Medium Spec: [bold]{reviews[1].NormalizedScore}[/]점 (정합성:{reviews[1].ScoreAccuracy}, CRUD:{reviews[1].ScoreCrud}, 시각화:{reviews[1].ScoreReadability}, 예외:{reviews[1].ScoreException})");
+                    _userInteraction.NotifyStatus($"  - High Spec: [bold]{reviews[2].NormalizedScore}[/]점 (정합성:{reviews[2].ScoreAccuracy}, CRUD:{reviews[2].ScoreCrud}, 시각화:{reviews[2].ScoreReadability}, 예외:{reviews[2].ScoreException})");
+                }
+
                 // 완벽한 후보(L1 & L2 무결 & 신뢰도 90점 이상) 발견 시 Fast-pass 즉시 채택
                 bool fastPassTriggered = false;
+                int bestCandidateIndex = -1;
+                int highestScore = -1;
+
                 for (int i = 0; i < candidates.Length; i++)
                 {
                     var l1Check = _validator.Validate(candidates[i]);
-                    if (l1Check.IsValid && !reviews[i].HasDefects && reviews[i].NormalizedScore >= 90)
+                    if (l1Check.IsValid && reviews![i] != null && !reviews![i]!.HasDefects && reviews![i]!.NormalizedScore >= 90)
                     {
-                        _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 완벽한 후보군(후보 {i+1}, AI 신뢰도: [bold green]{reviews[i].NormalizedScore}[/]/100점)이 발견되어 즉시 채택합니다.");
-                        specificationMarkdown = candidates[i];
-                        finalReview = reviews[i];
-                        fastPassTriggered = true;
-                        break;
+                        if (reviews![i]!.NormalizedScore > highestScore)
+                        {
+                            highestScore = reviews![i]!.NormalizedScore;
+                            bestCandidateIndex = i;
+                        }
                     }
+                }
+
+                if (bestCandidateIndex != -1)
+                {
+                    string scoreSummary = (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null) 
+                        ? $" (Low: {reviews[0].NormalizedScore}점, Medium: {reviews[1].NormalizedScore}점, High: {reviews[2].NormalizedScore}점)"
+                        : string.Empty;
+                    _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - 완벽한 후보군(후보 {bestCandidateIndex + 1}, AI 신뢰도: [bold green]{highestScore}[/]/100점)이 발견되어 즉시 채택합니다.{scoreSummary}");
+                    specificationMarkdown = candidates[bestCandidateIndex];
+                    finalReview = reviews![bestCandidateIndex];
+                    fastPassTriggered = true;
                 }
 
                 if (!fastPassTriggered)
@@ -234,13 +256,15 @@ namespace ReSet.Core.Services
                     sbConsolidation.AppendLine("[제공된 명세서 후보 목록 및 평가 점수]");
                     for (int i = 0; i < candidates.Length; i++)
                     {
+                        var rev = reviews![i];
+                        if (rev == null) continue;
                         sbConsolidation.AppendLine($"--- [후보 {i+1}] ---");
-                        sbConsolidation.AppendLine($"- 종합 평가 점수: {reviews[i].NormalizedScore}점 / 100점 (40점 만점 기준 {reviews[i].TotalScore}점)");
-                        sbConsolidation.AppendLine($"  * 비즈니스 정합성 (ScoreAccuracy): {reviews[i].ScoreAccuracy}/10점");
-                        sbConsolidation.AppendLine($"  * CRUD 및 데이터 매핑 (ScoreCrud): {reviews[i].ScoreCrud}/10점");
-                        sbConsolidation.AppendLine($"  * Mermaid 다이어그램 완성도 (ScoreReadability): {reviews[i].ScoreReadability}/10점");
-                        sbConsolidation.AppendLine($"  * 예외 처리 및 트랜잭션 (ScoreException): {reviews[i].ScoreException}/10점");
-                        sbConsolidation.AppendLine($"- Critic 결함 피드백: {reviews[i].FeedbackComment ?? "결함 없음"}");
+                        sbConsolidation.AppendLine($"- 종합 평가 점수: {rev.NormalizedScore}점 / 100점 (40점 만점 기준 {rev.TotalScore}점)");
+                        sbConsolidation.AppendLine($"  * 비즈니스 정합성 (ScoreAccuracy): {rev.ScoreAccuracy}/10점");
+                        sbConsolidation.AppendLine($"  * CRUD 및 데이터 매핑 (ScoreCrud): {rev.ScoreCrud}/10점");
+                        sbConsolidation.AppendLine($"  * Mermaid 다이어그램 완성도 (ScoreReadability): {rev.ScoreReadability}/10점");
+                        sbConsolidation.AppendLine($"  * 예외 처리 및 트랜잭션 (ScoreException): {rev.ScoreException}/10점");
+                        sbConsolidation.AppendLine($"- Critic 결함 피드백: {rev.FeedbackComment ?? "결함 없음"}");
                         sbConsolidation.AppendLine();
                         sbConsolidation.AppendLine("[본문 내용]");
                         sbConsolidation.AppendLine(candidates[i]);
@@ -254,7 +278,10 @@ namespace ReSet.Core.Services
                     sbConsolidation.AppendLine("3. 5대 필수 대분류 헤더 명칭(## 개요, ## 파라미터 목록, ## CRUD 분석, ## 로직 흐름 요약, ## 비즈니스 흐름 시각화)을 그대로 사용하여 문서를 구성하십시오.");
                     sbConsolidation.AppendLine("4. 최종 결과물만 다듬어 마크다운으로 직접 출력하십시오. 추가적인 사족이나 인사말은 절대 포함하지 마십시오.");
 
-                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 이종 모델 합성 에이전트(Consolidator) 구동 중 ({_consolidatorEffort ?? "medium"} effort)...");
+                    string scoreSummary = (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null) 
+                        ? $" (Low: {reviews[0].NormalizedScore}점, Medium: {reviews[1].NormalizedScore}점, High: {reviews[2].NormalizedScore}점)"
+                        : string.Empty;
+                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 이종 모델 합성 에이전트(Consolidator) 구동 중 ({_consolidatorEffort ?? "medium"} effort)...{scoreSummary}");
                     try
                     {
                         specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), null, _consolidatorEffort ?? "medium", cancellationToken);
