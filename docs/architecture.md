@@ -255,7 +255,7 @@ graph TD
     L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI
     L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
     
-    L1Check -- "성공" --> L2Review["AI 교차 리뷰 분석 요청"]
+    L1Check -- "성공" --> L2Review["L2: AI 교차 리뷰 분석 요청<br/>(※ dynamic 모드 시 3.1절의<br/>Actor-Critic 워크플로우 연동)"]
     L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
     
     L2Check -- "실패" --> L2FailAttempt{"attempt < maxAttempts?"}
@@ -284,6 +284,9 @@ graph TD
 
 ### 3.1. Level 2 Actor-Critic 상세 협업 워크플로우
 3단계 검증 파이프라인의 **Level 2 (AI 교차 리뷰)** 단계에서 `ActorEffort: "dynamic"`이 적용되었을 때, 다중 모델의 병렬 생성 및 채점, 최고 득점자 Fast-Pass 판정, 최종 조립(Consolidation)이 이루어지는 내부 에이전트 협업 시퀀스입니다.
+
+> [!NOTE]
+> `ActorEffort`가 dynamic이 아닌 단일 모드(단일 모델 지정)인 경우, 이 병렬 협업 프로세스는 생략되며 3단계 검증 파이프라인 다이어그램에 표기된 단일 생성-리뷰 루프가 가동됩니다.
 
 ```mermaid
 graph TD
