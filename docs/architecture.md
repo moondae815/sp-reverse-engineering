@@ -140,22 +140,45 @@ graph TD
 ```mermaid
 graph TD
     StartPipeline["파이프라인 시작<br/>(SpDefinition + Instructions)"] --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
-    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
+    InitAttempt --> ModeCheck{"dynamic 모드 여부?"}
+
+    %% dynamic 모드: 다중 Actor-Critic 병렬 협업 경로
+    ModeCheck -- "예 (dynamic)" --> Sampler["1단계: 차등 Effort 기반 다중 Actor 병렬 구동"]
+    Sampler --> ActorA["후보 1: Low Effort<br/>(비즈니스 요약)"]
+    Sampler --> ActorB["후보 2: Medium Effort<br/>(CRUD 매핑)"]
+    Sampler --> ActorC["후보 3: High Effort<br/>(예외/시각화 상세)"]
     
+    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(100점 환산 점수 도출)"]
+    CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
+    
+    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(Low > Medium > High 동점 우선순위)"] --> SuccessSpec["최종 사양서 확정 (합성 생략)"]
+    CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출"]
+    BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(후보군 강점 조립 및 결점 보완)"]
+    Consolidator --> ConsOutput["최종 합성 사양서 생성"]
+    
+    SuccessSpec & ConsOutput --> CheckL1Final{"L1 정적 검사 통과?"}
+    CheckL1Final -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> ReturnSpec["최종 명세서 확정"]
+    CheckL1Final -- "성공" --> ReturnSpec
+
+    %% 단일 모드: L1/L2 순차 자가 보완 루프 경로
+    ModeCheck -- "아니오 (단일)" --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
     CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(Markdig AST 구조 확인 & mmdc 컴파일)?"}
     
     L1Check -- "실패" --> L1FailAttempt{"attempt < maxAttempts?"}
     L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI
-    L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
+    L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> SingleReturnSpec
     
     L1Check -- "성공" --> L2Review["L2: AI 교차 리뷰 분석 요청"]
     L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
     
     L2Check -- "실패" --> L2FailAttempt{"attempt < maxAttempts?"}
     L2FailAttempt -- "예" --> SetL2Feedback["L2 피드백 세팅 및 시도 횟수 증가"] --> CallAI
-    L2FailAttempt -- "아니오" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
+    L2FailAttempt -- "아니오" --> L2Abort["L2 검증 최종 실패 알림"] --> SingleReturnSpec
     
-    L2Check -- "성공" --> L3Check{"배치 모드인가?"}
+    L2Check -- "성공" --> SingleReturnSpec["명세서 확정"]
+
+    %% L3 인간 개입 및 저장/동기화 경로로 병합
+    ReturnSpec & SingleReturnSpec --> L3Check{"배치 모드인가?"}
     L1Abort --> L3Check
     L2Abort --> L3Check
     
@@ -171,7 +194,7 @@ graph TD
     HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
     
     RegenerateAI --> L1ReCheck{"L1 정적 검사 통과?"}
-    L1ReCheck -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
+    L1ReCheck -- "실패" --> SetL1ReFeedback2["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
     L1ReCheck -- "성공" --> HumanReview
 ```
 
@@ -183,28 +206,7 @@ graph TD
 #### 4.3.2. Level 2: AI 교차 리뷰 (L2 Actor-Critic)
 * **동적 모드 분기**: `ActorEffort` 설정값에 따라 검증 및 생성 경로가 이원화됩니다.
   * **단일 모드**: 지정된 LLM 모델을 사용해 1차 사양서를 빌드한 후, 이종 Critic 에이전트에게 4대 평가 기준(비즈니스 정합성, CRUD 데이터 매핑, 다이어그램 가독성, 예외 및 트랜잭션)을 바탕으로 교차 리뷰를 수행하도록 요청합니다. 결함 발견 시 `maxAttempts` 한도 내에서 피드백 로그를 누적하며 자가 수정 루프를 가동합니다.
-  * **dynamic 모드 (병렬 협업)**: 다형성 및 앙상블 효과를 극대화하는 dynamic 아키텍처 경로입니다.
-
-```mermaid
-graph TD
-    Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 병렬 구동"]
-    
-    Sampler --> ActorA["후보 1: Low Effort<br/>(비즈니스 흐름 요약 속도 최적화)"]
-    Sampler --> ActorB["후보 2: Medium Effort<br/>(CRUD 매핑 및 표준적 범위 균형)"]
-    Sampler --> ActorC["후보 3: High Effort<br/>(예외 케이스 및 시각화 상세화)"]
-    
-    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(NormalizedScore 100점 환산 및 결함 유무 도출)"]
-    
-    CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
-    
-    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(동점 발생 시 생성 효율성에 따라<br/>Low > Medium > High 순으로 우선순위 부여)"] --> SuccessOutput["최종 마크다운 명세서 채택 (합성 생략)"]
-    
-    CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: 1의 요약 + 2의 CRUD 표 + 3의 Mermaid)"]
-    
-    BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(각 후보의 강점을 병합하고 결합 결점 보완)"]
-    
-    Consolidator --> ConsOutput["최종 합성 마크다운 명세서"]
-```
+  * **dynamic 모드 (병렬 협업)**: 다형성 및 앙상블 효과를 극대화하는 dynamic 아키텍처 경로입니다. (상세 협업 시퀀스는 상위 통합 검증 파이프라인 흐름도 참고)
 
 * **차등 Effort 병렬 생성 (1단계)**: 동일한 SP 정의에 대해 `low`, `medium`, `high` 추론 강도를 병렬 구동하여 서로 다른 장점을 가진 3종의 후보 사양서를 확보합니다.
 * **Critic 채점 및 Fast-Pass 판정 (2단계)**: Critic 에이전트가 각 후보에 대해 정량 채점(4대 기준 각 10점, 총 40점 만점)을 실시하고 100점 만점으로 정규화합니다. L1 검증을 통과하고 Critic 결함이 없으며 90점 이상인 후보가 있다면 **Fast-Pass로 최고 점수 후보를 즉시 채택**하고 합성을 생략합니다. (동점 시 저-Effort 우선순위)
