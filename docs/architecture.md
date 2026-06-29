@@ -73,6 +73,85 @@
   * `ActorEffort: "dynamic"` 설정이 활성화되면, 분석가(Actor)가 `Low`, `Medium`, `High` 추론 강도를 적용하여 3종의 상이한 후보 분석서를 병렬로 생성합니다.
   * 생성된 후보들은 L1 정적 검사 후 **Critic 에이전트**에게 주입되어 4대 평가 기준(비즈니스 정합성, CRUD 데이터 매핑, 다이어그램 가독성, 예외/트랜잭션)에 기반해 정량 채점(각 10점, 총 40점 만점) 및 결점 피드백을 부여받습니다.
   * 결함이 없고 100점 환산 기준 90점 이상인 후보가 있을 경우 **Fast-Pass 즉시 채택**하며, 그렇지 않은 경우 **Consolidator 에이전트**가 각 후보군의 세부 항목별 득점 가중치를 가이드로 받아 최상의 섹션들을 한 문장 단위로 조립(Consolidation)하는 구조를 취합니다. 각 에이전트의 구체적 모델 및 공급자는 설정에서 자유롭게 지정 및 연동 가능하며, 이종 모델(예: Claude 계열 Actor와 GPT 계열 Critic 앙상블 등)을 매핑하여 온도 조절 제약을 극복하고 자가 편향을 소거하도록 권장됩니다.
+
+##### 3단계 검증 파이프라인 상세 흐름도 (Micro Flow)
+```mermaid
+graph TD
+    StartPipeline["파이프라인 시작<br/>(SpDefinition + Instructions)"] --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
+    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
+    
+    CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(Markdig AST 구조 확인 & mmdc 컴파일)?"}
+    
+    L1Check -- "실패" --> L1FailAttempt{"attempt < maxAttempts?"}
+    L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI
+    L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
+    
+    L1Check -- "성공" --> L2Review["L2: AI 교차 리뷰 분석 요청"]
+    L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
+    
+    L2Check -- "실패" --> L2FailAttempt{"attempt < maxAttempts?"}
+    L2FailAttempt -- "예" --> SetL2Feedback["L2 피드백 세팅 및 시도 횟수 증가"] --> CallAI
+    L2FailAttempt -- "아니오" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
+    
+    L2Check -- "성공" --> L3Check{"배치 모드인가?"}
+    L1Abort --> L3Check
+    L2Abort --> L3Check
+    
+    L3Check -- "예 (Batch)" --> ReturnSuccess["결과 반환 및 저장 단계로 진행"]
+    
+    L3Check -- "아니오 (TUI)" --> HumanReview["L3: 사용자 검토 요청<br/>(미리보기 화면 렌더링)"]
+    HumanReview --> HumanDecision{"사용자 결정?"}
+    
+    HumanDecision -- "1. 승인 (Approve)" --> ConfirmSync{"DB에 역동기화<br/>(MS_Description)? (Y/N)"}
+    ConfirmSync -- "Yes" --> ExecSync["DB Extended Property 역반영 스크립트 실행"] --> ReturnSuccess
+    ConfirmSync -- "No" --> ReturnSuccess
+    HumanDecision -- "3. 취소 (Cancel)" --> ReturnCancel["저장 없이 이탈 (분석 건너뛰기)"]
+    HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
+    
+    RegenerateAI --> L1ReCheck{"L1 정적 검사 통과?"}
+    L1ReCheck -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
+    L1ReCheck -- "성공" --> HumanReview
+```
+
+#### 3.1. Level 2 Actor-Critic 상세 협업 워크플로우
+3단계 검증 파이프라인의 **Level 2 (AI 교차 리뷰)** 단계에서 `ActorEffort: "dynamic"`이 적용되었을 때, 다중 모델의 병렬 생성 및 채점, 최고 득점자 Fast-Pass 판정, 최종 조립(Consolidation)이 이루어지는 내부 에이전트 협업 시퀀스입니다.
+
+> [!NOTE]
+> `ActorEffort: "dynamic"` 모드는 파이프라인 시작(1차 생성 단계)에서부터 다중 에이전트 병렬 협업이 적용되는 독립적인 실행 경로입니다. 단일 모드로 구동할 경우에는 3단계 신뢰성 검증 파이프라인에 묘사된 순차 자가 보완 루프가 작동하게 됩니다.
+
+```mermaid
+graph TD
+    Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 병렬 구동"]
+    
+    Sampler --> ActorA["후보 1: Low Effort<br/>(비즈니스 흐름 요약 속도 최적화)"]
+    Sampler --> ActorB["후보 2: Medium Effort<br/>(CRUD 매핑 및 표준적 범위 균형)"]
+    Sampler --> ActorC["후보 3: High Effort<br/>(예외 케이스 및 시각화 상세화)"]
+    
+    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(NormalizedScore 100점 환산 및 결함 유무 도출)"]
+    
+    CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
+    
+    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(동점 발생 시 생성 효율성에 따라<br/>Low > Medium > High 순으로 우선순위 부여)"] --> SuccessOutput["최종 마크다운 명세서 채택 (합성 생략)"]
+    
+    CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: 1의 요약 + 2의 CRUD 표 + 3의 Mermaid)"]
+    
+    BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(각 후보의 강점을 병합하고 결합 결점 보완)"]
+    
+    Consolidator --> ConsOutput["최종 합성 마크다운 명세서"]
+```
+
+##### 🔄 상세 실행 원칙
+1. **차등 Effort 병렬 생성 (1단계 - Sampler & Actors)**
+   - 동일한 SP 정의에 대하여 `low`, `medium`, `high` 3가지의 차등 Effort 옵션을 가진 생성 태스크들을 병렬로 구동하여 각기 강점이 다른 세 개의 명세서 후보군을 획득합니다.
+2. **독립적 Critic 평가 및 채점 (2단계 - Critic)**
+   - 생성된 3종 후보군에 대해 Critic 에이전트가 4대 평가 기준(비즈니스 정합성, CRUD 데이터 매핑, 다이어그램 가독성, 예외 및 트랜잭션 - 각 10점 만점, 총 40점 만점)을 토대로 독립 채점을 실시하고 100점 만점(`NormalizedScore`)으로 환산합니다. 동시에 Critic Feedback(결함 내용) 유무를 분석합니다.
+3. **최고 득점자 Fast-Pass 판정**
+   - 3종 후보군 중 **"L1 정적 검사 통과 및 L2 Critic 결함이 없고, 90점 이상"**인 후보들을 필터링합니다.
+   - 만족하는 후보가 존재할 경우, 그중 **가장 높은 NormalizedScore를 획득한 최고 득점 후보**를 선별하여 즉시 채택(Fast-Pass)하고 합성 프로세스를 생략합니다.
+   - 동점자 발생 시에는 생성 비용 및 속도적 측면을 고려하여 `Low` > `Medium` > `High` 순서로 우선권을 가집니다.
+4. **이종 모델 합성 (3단계 - Consolidator)**
+   - Fast-Pass 조건을 만족하는 완벽한 후보가 단 하나도 없는 경우에만 3단계 Consolidation으로 진입합니다.
+   - 각 영역별(ScoreAccuracy, ScoreCrud, ScoreReadability, ScoreException) 최고 득점을 기록한 후보의 파트를 진실의 원천(Source of Truth)으로 삼아, Consolidator 에이전트가 단일한 고품질 병합 명세서로 재구성합니다.
 * **다단계 검증 구조**: AI 분석 및 합성을 거친 명세서의 기계적 무결성을 재검사하기 위해 Level 1(기계적 정적 검사), Level 2(AI 리뷰어 상호 교사), Level 3(개발자 검토 및 승인)의 3단계 파이프라인이 연쇄적으로 작동합니다.
 * **CancellationToken 전파 및 취소 안전성**: 대량의 SP 데이터 수집이나 원격 AI 응답 대기가 장시간 블로킹되거나 무한 대기가 발생하는 것을 방지합니다. `Program`의 메인 컨트롤러부터 `VerificationPipelineOrchestrator`, `AiService`, `DbMetadataService` 등 모든 비동기 호출 경로로 `CancellationToken`을 전파하였고, CLI 환경에서 `Ctrl+C` 입력 감지 시 `CancellationTokenSource`를 즉시 취소하여 안전하게 예외를 격리하고 메인 루프를 복구합니다.
 
@@ -237,90 +316,6 @@ graph TD
     CheckNext -- "예" --> LoopStart
     CheckNext -- "아니오" --> End["종료"]
 ```
-
----
-
-## 🔍 3단계 검증 파이프라인 상세 (Verification Pipeline Details)
-
-AI가 생성한 1차 명세서의 신뢰성과 무결성을 검증하고, 오류 발견 시 자가 수정(`Self-Correction`) 및 사용자 피드백을 적용하는 상세 검증(Micro) 흐름도입니다.
-
-```mermaid
-graph TD
-    StartPipeline["파이프라인 시작<br/>(SpDefinition + Instructions)"] --> InitAttempt["시도 횟수 초기화 (attempt = 1)"]
-    InitAttempt --> CallAI["AI 리버스 엔지니어링 요청<br/>(GenerateSpecificationAsync)"]
-    
-    CallAI --> L1Check{"L1: 기계적 무결성 검증<br/>(Markdig AST 구조 확인 & mmdc 컴파일)?"}
-    
-    L1Check -- "실패" --> L1FailAttempt{"attempt < maxAttempts?"}
-    L1FailAttempt -- "예" --> SetL1Feedback["L1 피드백 세팅 및 시도 횟수 증가"] --> CallAI
-    L1FailAttempt -- "아니오" --> L1Abort["L1 검증 최종 실패 알림"] --> L3Check
-    
-    L1Check -- "성공" --> L2Review["L2: AI 교차 리뷰 분석 요청<br/>(※ dynamic 모드 시 3.1절의<br/>Actor-Critic 워크플로우 연동)"]
-    L2Review --> L2Check{"L2: AI 리뷰 통과<br/>(결함/누락 없음)?"}
-    
-    L2Check -- "실패" --> L2FailAttempt{"attempt < maxAttempts?"}
-    L2FailAttempt -- "예" --> SetL2Feedback["L2 피드백 세팅 및 시도 횟수 증가"] --> CallAI
-    L2FailAttempt -- "아니오" --> L2Abort["L2 검증 최종 실패 알림"] --> L3Check
-    
-    L2Check -- "성공" --> L3Check{"배치 모드인가?"}
-    L1Abort --> L3Check
-    L2Abort --> L3Check
-    
-    L3Check -- "예 (Batch)" --> ReturnSuccess["결과 반환 및 저장 단계로 진행"]
-    
-    L3Check -- "아니오 (TUI)" --> HumanReview["L3: 사용자 검토 요청<br/>(미리보기 화면 렌더링)"]
-    HumanReview --> HumanDecision{"사용자 결정?"}
-    
-    HumanDecision -- "1. 승인 (Approve)" --> ConfirmSync{"DB에 역동기화<br/>(MS_Description)? (Y/N)"}
-    ConfirmSync -- "Yes" --> ExecSync["DB Extended Property 역반영 스크립트 실행"] --> ReturnSuccess
-    ConfirmSync -- "No" --> ReturnSuccess
-    HumanDecision -- "3. 취소 (Cancel)" --> ReturnCancel["저장 없이 이탈 (분석 건너뛰기)"]
-    HumanDecision -- "2. 피드백 (Feedback)" --> RegenerateAI["피드백 반영 AI 재생성 요청"]
-    
-    RegenerateAI --> L1ReCheck{"L1 정적 검사 통과?"}
-    L1ReCheck -- "실패" --> SetL1ReFeedback["L1 피드백 반영 자가 수정 (1회)"] --> HumanReview
-    L1ReCheck -- "성공" --> HumanReview
-```
-
-### 3.1. Level 2 Actor-Critic 상세 협업 워크플로우
-3단계 검증 파이프라인의 **Level 2 (AI 교차 리뷰)** 단계에서 `ActorEffort: "dynamic"`이 적용되었을 때, 다중 모델의 병렬 생성 및 채점, 최고 득점자 Fast-Pass 판정, 최종 조립(Consolidation)이 이루어지는 내부 에이전트 협업 시퀀스입니다.
-
-> [!NOTE]
-> `ActorEffort`가 dynamic이 아닌 단일 모드(단일 모델 지정)인 경우, 이 병렬 협업 프로세스는 생략되며 3단계 검증 파이프라인 다이어그램에 표기된 단일 생성-리뷰 루프가 가동됩니다.
-
-```mermaid
-graph TD
-    Start["SP DDL 및 의존성 입력"] --> Sampler["1단계: 차등 Effort 기반 다중 Actor 병렬 구동"]
-    
-    Sampler --> ActorA["후보 1: Low Effort<br/>(비즈니스 흐름 요약 속도 최적화)"]
-    Sampler --> ActorB["후보 2: Medium Effort<br/>(CRUD 매핑 및 표준적 범위 균형)"]
-    Sampler --> ActorC["후보 3: High Effort<br/>(예외 케이스 및 시각화 상세화)"]
-    
-    ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(NormalizedScore 100점 환산 및 결함 유무 도출)"]
-    
-    CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
-    
-    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(동점 발생 시 생성 효율성에 따라<br/>Low > Medium > High 순으로 우선순위 부여)"] --> SuccessOutput["최종 마크다운 명세서 채택 (합성 생략)"]
-    
-    CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출<br/>(예: 1의 요약 + 2의 CRUD 표 + 3의 Mermaid)"]
-    
-    BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(각 후보의 강점을 병합하고 결합 결점 보완)"]
-    
-    Consolidator --> ConsOutput["최종 합성 마크다운 명세서"]
-```
-
-#### 🔄 상세 실행 원칙
-1. **차등 Effort 병렬 생성 (1단계 - Sampler & Actors)**
-   - 동일한 SP 정의에 대하여 `low`, `medium`, `high` 3가지의 차등 Effort 옵션을 가진 생성 태스크들을 병렬로 구동하여 각기 강점이 다른 세 개의 명세서 후보군을 획득합니다.
-2. **독립적 Critic 평가 및 채점 (2단계 - Critic)**
-   - 생성된 3종 후보군에 대해 Critic 에이전트가 4대 평가 기준(비즈니스 정합성, CRUD 데이터 매핑, 다이어그램 가독성, 예외 및 트랜잭션 - 각 10점 만점, 총 40점 만점)을 토대로 독립 채점을 실시하고 100점 만점(`NormalizedScore`)으로 환산합니다. 동시에 Critic Feedback(결함 내용) 유무를 분석합니다.
-3. **최고 득점자 Fast-Pass 판정**
-   - 3종 후보군 중 **"L1 정적 검사 통과 및 L2 Critic 결함이 없고, 90점 이상"**인 후보들을 필터링합니다.
-   - 만족하는 후보가 존재할 경우, 그중 **가장 높은 NormalizedScore를 획득한 최고 득점 후보**를 선별하여 즉시 채택(Fast-Pass)하고 합성 프로세스를 생략합니다.
-   - 동점자 발생 시에는 생성 비용 및 속도적 측면을 고려하여 `Low` > `Medium` > `High` 순서로 우선권을 가집니다.
-4. **이종 모델 합성 (3단계 - Consolidator)**
-   - Fast-Pass 조건을 만족하는 완벽한 후보가 단 하나도 없는 경우에만 3단계 Consolidation으로 진입합니다.
-   - 각 영역별(ScoreAccuracy, ScoreCrud, ScoreReadability, ScoreException) 최고 득점을 기록한 후보의 파트를 진실의 원천(Source of Truth)으로 삼아, Consolidator 에이전트가 단일한 고품질 병합 명세서로 재구성합니다.
 
 ### 15. 비결합 진행도 시각화 및 동시성 제어
 * **Clean Architecture 기반 UI 비결합**: Core 비즈니스 로직은 특정 뷰 기술(Spectre.Console 등)에 종속되지 않도록 진행률 추적 수단을 `IMultiProgressScope` 추상화 뒤로 은닉했습니다. 이로 인해 유닛 테스트 실행 시에는 Mocking에 유연하게 대응하며 아무 동작도 하지 않는 `NullProgressScope`를 주입하여 널 참조 크래시를 온전히 방어합니다.
