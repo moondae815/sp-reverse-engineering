@@ -26,6 +26,12 @@ namespace ReSet.Core.Tests
             _orchestrator = new VerificationPipelineOrchestrator(_dbService, _aiService, _validator, _userInteraction);
         }
 
+        private static async IAsyncEnumerable<StreamingChunk> ToAsyncStream(string content)
+        {
+            yield return new StreamingChunk(ChunkType.Text, content);
+            await Task.CompletedTask;
+        }
+
         [Fact]
         public async Task RunPipelineAsync_SuccessOnFirstTry_ReturnsSpecification()
         {
@@ -36,8 +42,8 @@ namespace ReSet.Core.Tests
 
             // 올바른 마크다운 명세서 형식 (MechanicalValidator 검증 필수 헤더 포함)
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
-                .Returns(Task.FromResult(specMarkdown));
+            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(ToAsyncStream(specMarkdown));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -65,8 +71,8 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(spDef));
 
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
-                .Returns(Task.FromResult(specMarkdown));
+            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(ToAsyncStream(specMarkdown));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -95,10 +101,10 @@ namespace ReSet.Core.Tests
             // 2차 생성: 올바른 형식 -> L1 성공
             var goodSpec = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
 
-            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
+            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
                 .Returns(
-                    _ => Task.FromResult(badSpec),   // 1차 호출
-                    _ => Task.FromResult(goodSpec)  // 2차 호출
+                    _ => ToAsyncStream(badSpec),   // 1차 호출
+                    _ => ToAsyncStream(goodSpec)  // 2차 호출
                 );
 
             var reviewResult = new ReviewResult { HasDefects = false };
@@ -125,8 +131,8 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(spDef));
 
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
-                .Returns(Task.FromResult(specMarkdown));
+            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(ToAsyncStream(specMarkdown));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -246,8 +252,8 @@ namespace ReSet.Core.Tests
 
             // AI가 유추 주석 패턴을 포함한 명세서 반환
             var specMarkdown = "## 개요\n이것은 테스트입니다. [AI 추론 보완: dbo.Orders.TotAmt - 순 결제액]\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>())
-                .Returns(Task.FromResult(specMarkdown));
+            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(ToAsyncStream(specMarkdown));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)

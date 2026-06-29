@@ -32,6 +32,7 @@
 | | [IMultiProgressScope](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs) | 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스 |
 | | [NullProgressScope](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs) | 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체 |
 | | [HumanReviewResult](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/HumanReviewResult.cs) | L3 인간 검토 단계의 결과(승인/피드백/취소)와 피드백 메시지를 담는 도메인 모델 |
+| | [StreamingChunk](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs) | 스트리밍 응답의 텍스트 조각과 추론(Thinking) 데이터를 구분하여 전송하는 구조화된 스트리밍 chunk 도메인 모델 |
 | | [CacheEntry](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/CacheEntry.cs) | SHA-256 복합 해시 및 캐시 타임스탬프를 보존하는 증분 캐시 항목 메타데이터 모델 |
 | | [ISettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ISettlementPolicyService.cs) | 정산 정책 문서 생성기 추상 인터페이스 |
 | | [SettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs) | DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 활용한 통합 정산 정책서 생성 서비스 |

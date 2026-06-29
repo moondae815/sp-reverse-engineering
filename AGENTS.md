@@ -22,6 +22,7 @@
     *   [SpDefinition.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/SpDefinition.cs): 분석된 SP 메타데이터(소스코드 DDL, 컬럼, 의존성 등)를 관리하는 루트 데이터 클래스.
     *   [DependencyInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/DependencyInfo.cs): 재귀적으로 수집된 DB 개체(테이블, 뷰, 다른 SP 등) 의존성을 표현하는 모델.
     *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보, 한글 설명 및 설명 누락 유무(IsDescriptionMissing)를 수집하는 모델.
+    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs): AI 스트리밍 응답 시 텍스트 조각 및 추론(Thinking) 데이터를 분리 수집하기 위한 데이터 모델.
 *   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services))**
     *   [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
     *   [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiService.cs)) 구현체.
@@ -30,6 +31,7 @@
     *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
     *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
     *   [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICacheManager.cs) 포함).
+    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs) 및 AI 스트리밍 응답: 각 AI 클라이언트 스트리밍 수신 시 JSON chunk 원문 데이터(Raw Line)는 `Log.Verbose`가 아닌 `Log.Debug` 레벨로 기록하여 기본 디버그 실행 수준에서도 안정적으로 파일 로그에 트레이스가 보존되도록 조치하십시오.
     *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
     *   [IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs): 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스.
     *   [NullProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs): 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체.
@@ -91,6 +93,7 @@
     *   **유효 디렉토리 유도**: 필수 폴더 경로가 없을 경우 종료하기보다 TUI 상에서 사용자 재입력을 유도하되, `TextPrompt.ShowChoices(false)`를 결합해 슬래시('/') 기호가 구분선으로 오작동하여 화면이 깨지는 현상을 차단하십시오. (경로 기준점은 항상 `Directory.GetCurrentDirectory()` 활용)
     *   **연결 정보 즉석 수정**: 로그인 성공 후에도 [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) 상에서 appsettings.json을 수정하지 않고 즉석에서 서버 주소 및 DB명을 갱신하여 대상 DB에 교체 접속할 수 있도록 입력 기회를 제공하십시오.
     *   **배치 단계 순서 보장**: 다중 선택 UI의 순서 유실 문제를 차단하기 위해 순차 선택 루프 방식으로 배치 계획 스텝 순서를 확보하십시오.
+    *   **TUI 상태 정보 강화**: Actor를 dynamic이 아닌 단일 모드로 실행할 때, CLI 출력 화면에 모델명 뿐만 아니라 활성 추론 강도(Effort) 값도 유기적으로 함께 노출되도록 구현하십시오.
 5.  **TUI 비파괴식 Serilog 파일 로깅 및 마크업 자동 정화를 준수하십시오.**
     *   진행 상황 로그 파일 기록 시 대화형 TUI 화면과 진행 바가 깨지지 않도록 Serilog를 **오직 파일 저장 전용(File Sink)**으로 가동하십시오.
     *   로그 기록 직전에는 Spectre.Console 스타일 마크업 태그들을 정규식을 활용해 자동 정화(StripMarkup)해야 하며, 프로세스 종료 시 `Serilog.Log.CloseAndFlush()` 호출로 리소스를 정리하십시오.
@@ -173,7 +176,7 @@ dotnet test
 개발 에이전트는 코드 수정을 마치고 작업을 제출하기 전에 다음 항목을 직접 자가 검증해야 합니다.
 
 - [ ] `dotnet build` 명령어를 통한 컴파일 경고/에러가 0개인지 확인했는가?
-- [ ] `dotnet test` 명령어를 실행하여 66개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
+- [ ] `dotnet test` 명령어를 실행하여 70개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
 - [ ] API Key 등 비공개 자격증명이 소스코드나 `appsettings.json`에 하드코딩되지 않고 `appsettings.local.json` 또는 로컬 환경 변수로 격리되었는가?
 - [ ] DB 메타데이터, AI 결과 원문 등을 Spectre.Console TUI에 출력할 때 모든 출력 부에 `Markup.Escape()` 조치를 적용했는가?
 - [ ] Stored Procedure 실행 및 외부 샌드박스 데이터 수집 시, DB 연결 실패 시 예외 격리(Soft Fail 및 DTO FAIL 상태 주입) 처리가 정상 적용되었는가?
