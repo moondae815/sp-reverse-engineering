@@ -105,7 +105,7 @@ graph TD
     %% 4단계: 산출물 내보내기 및 현대화 전환 설계
     subgraph Save ["4. 결과 저장 및 현대화 설계 (Export)"]
         VerificationPipeline -- "승인 및 완료" --> ExportRaw["원천 데이터 다중 포맷 덤프<br/>(JSON, TXT, DDL 파일 트리)"]
-        ExportRaw --> SaveSpec["최종 Markdown 명세서 파일 저장<br/>([Schema].[SP이름]_Spec.md)"]
+        ExportRaw --> SaveSpec["명세서 파일 저장<br/>([Schema].[SP이름]_Spec.md)"]
         SaveSpec --> GenMigrationCheck{"현대화 전환 계획 생성 활성화?"}
         GenMigrationCheck -- "예" --> GenMigration["배치 전환 계획서 작성<br/>([Schema].[SP이름]_BatchMigrationPlan.md)"]
         GenMigrationCheck -- "아니오" --> CheckNext
@@ -152,13 +152,13 @@ graph TD
     ActorA & ActorB & ActorC --> CriticEvaluator["2단계: Critic 에이전트 채점 및 결함 분석<br/>(100점 환산 점수 도출)"]
     CriticEvaluator --> CheckFastPass{"L1/L2 무결 &<br/>90점 이상 후보 존재?"}
     
-    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(Low > Medium > High 동점 우선순위)"] --> SuccessSpec["최종 명세서 확정 (합성 생략)"]
+    CheckFastPass -- "Yes (Fast-Pass)" --> ChooseBest["최고 득점 후보 선정 및 즉시 채택<br/>(Low > Medium > High 동점 우선순위)"] --> SuccessSpec["명세서 확정 (합성 생략)"]
     CheckFastPass -- "No" --> BestSections["각 후보의 우수 파트 조합 지시서 도출"]
     BestSections --> Consolidator["3단계: Consolidation 에이전트 구동<br/>(후보군 강점 조립 및 결점 보완)"]
-    Consolidator --> ConsOutput["최종 합성 명세서 생성"]
+    Consolidator --> ConsOutput["합성 명세서 생성"]
     
     SuccessSpec & ConsOutput --> CheckL1Final{"L1 정적 검사 통과?"}
-    CheckL1Final -- "실패" --> SetL1ReFeedback["L1 자가 수정 (1회)"] --> ReturnSpec["최종 명세서 확정"]
+    CheckL1Final -- "실패" --> SetL1ReFeedback["L1 자가 수정 (1회)"] --> ReturnSpec["명세서 확정"]
     CheckL1Final -- "성공" --> ReturnSpec
 
     %% 단일 모드: L1/L2 순차 자가 수정 루프 경로
