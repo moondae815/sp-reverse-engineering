@@ -2,6 +2,8 @@ using System;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using ReSet.Core.Models;
 
 namespace ReSet.Core.Services.Clients
 {
@@ -19,6 +21,11 @@ namespace ReSet.Core.Services.Clients
         public Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
             return _openAiClient.ChatAsync(systemPrompt, userPrompt, temperature, effort, cancellationToken);
+        }
+
+        public IAsyncEnumerable<StreamingChunk> StreamChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
+        {
+            return _openAiClient.StreamChatAsync(systemPrompt, userPrompt, temperature, effort, cancellationToken);
         }
     }
 }

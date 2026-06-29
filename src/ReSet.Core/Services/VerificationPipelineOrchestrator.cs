@@ -2,6 +2,7 @@ using System;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using Microsoft.Data.SqlClient;
 using ReSet.Core.Models;
 using Serilog;
@@ -161,13 +162,17 @@ namespace ReSet.Core.Services
                 using (var progressScope = _userInteraction.CreateProgressScope("하이브리드 다중 후보군 생성") ?? NullProgressScope.Instance)
                 {
                     progressScope.AddTask("Low Effort Spec 생성", "Low Effort Spec 생성");
-                    progressScope.AddTask("Medium Effort Spec 생성", "Medium Effort Spec 생성");
-                    progressScope.AddTask("High Effort Spec 생성", "High Effort Spec 생성");
 
                     var tasks = new System.Collections.Generic.List<Task<string>>();
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), progressScope, "Low Effort Spec 생성"));
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), progressScope, "Medium Effort Spec 생성"));
-                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), progressScope, "High Effort Spec 생성"));
+                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), "Low Spec", cancellationToken), progressScope, "Low Effort Spec 생성"));
+
+                    await Task.Delay(1000, cancellationToken);
+                    progressScope.AddTask("Medium Effort Spec 생성", "Medium Effort Spec 생성");
+                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), "Medium Spec", cancellationToken), progressScope, "Medium Effort Spec 생성"));
+
+                    await Task.Delay(1000, cancellationToken);
+                    progressScope.AddTask("High Effort Spec 생성", "High Effort Spec 생성");
+                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), "High Spec", cancellationToken), progressScope, "High Effort Spec 생성"));
 
                     try
                     {
@@ -187,6 +192,11 @@ namespace ReSet.Core.Services
                     var reviewTasks = new System.Collections.Generic.List<Task<ReviewResult>>();
                     for (int i = 0; i < candidates.Length; i++)
                     {
+                        if (i > 0)
+                        {
+                            await Task.Delay(1000, cancellationToken);
+                        }
+
                         var taskName = i switch
                         {
                             0 => "Low Effort Spec 검토",
@@ -318,10 +328,11 @@ namespace ReSet.Core.Services
 
                     Log.Information("[파이프라인] AI 명세서 생성 시작 - SP: {SpName}, 시도: {Attempt}, Provider: {Provider}, Model: {Model}",
                         selectedOption, attempt, provider, _modelName);
-                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}) [[{attemptText}]]...");
+                    var effortText = !string.IsNullOrWhiteSpace(_actorEffort) ? $", Effort: {_actorEffort}" : "";
+                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}{effortText}) [[{attemptText}]]...");
                     try
                     {
-                        specificationMarkdown = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, effort: null, cancellationToken: cancellationToken);
+                        specificationMarkdown = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken), "Single Spec", cancellationToken);
                         genSuccess = true;
                         Log.Debug("[파이프라인] AI 명세서 생성 성공 - SP: {SpName}, 시도: {Attempt}, 응답 길이: {Length}자",
                             selectedOption, attempt, specificationMarkdown.Length);
@@ -467,7 +478,7 @@ namespace ReSet.Core.Services
                         string reSpec = string.Empty;
                         try
                         {
-                            reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, humanFeedbackLog, effort: null, cancellationToken: cancellationToken);
+                            reSpec = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, humanFeedbackLog, _actorEffort, cancellationToken), "Single Spec (Refinement)", cancellationToken);
                         }
                         catch (Exception ex)
                         {
@@ -486,7 +497,7 @@ namespace ReSet.Core.Services
                             _userInteraction.NotifyStatus("피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.");
                             try
                             {
-                                reSpec = await _aiService.GenerateSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, effort: null, cancellationToken: cancellationToken);
+                                reSpec = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, _actorEffort, cancellationToken), "Single Spec (Self-Correction)", cancellationToken);
                             }
                             catch { }
                         }
@@ -791,6 +802,48 @@ namespace ReSet.Core.Services
                 scope.FailTask(taskKey);
                 throw;
             }
+        }
+
+        private async Task<string> ConsumeStreamAndLogAsync(
+            IAsyncEnumerable<StreamingChunk> stream, 
+            string contextLabel, 
+            CancellationToken cancellationToken)
+        {
+            var fullContent = new StringBuilder();
+            var currentLineBuffer = new StringBuilder();
+
+            await foreach (var chunk in stream.WithCancellation(cancellationToken))
+            {
+                fullContent.Append(chunk.Content);
+
+                if (chunk.Type == ChunkType.Thinking)
+                {
+                    currentLineBuffer.Append(chunk.Content);
+                    var contentStr = currentLineBuffer.ToString();
+                    if (contentStr.Contains("\n"))
+                    {
+                        var lines = contentStr.Split('\n');
+                        for (int i = 0; i < lines.Length - 1; i++)
+                        {
+                            var cleanLine = lines[i].TrimEnd('\r');
+                            if (!string.IsNullOrWhiteSpace(cleanLine))
+                            {
+                                Log.Information("[{Label} Thinking]: {Line}", contextLabel, cleanLine);
+                            }
+                        }
+                        currentLineBuffer.Clear();
+                        currentLineBuffer.Append(lines[lines.Length - 1]);
+                    }
+                }
+            }
+
+            var lastLine = currentLineBuffer.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(lastLine))
+            {
+                Log.Information("[{Label} Thinking]: {Line}", contextLabel, lastLine);
+            }
+
+            return fullContent.ToString();
         }
     }
 }
