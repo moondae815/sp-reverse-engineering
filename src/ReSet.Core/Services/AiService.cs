@@ -14,6 +14,9 @@ namespace ReSet.Core.Services
         private readonly IAiClient _aiClient;
         private readonly float _temperature;
 
+        public string ProviderName => _aiClient.ProviderName;
+        public string ModelName => _aiClient.ModelName;
+
         public AiService(IAiClient aiClient, float temperature)
         {
             _aiClient = aiClient ?? throw new ArgumentNullException(nameof(aiClient));

@@ -18,6 +18,9 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
+        public string ProviderName => "Google";
+        public string ModelName => _modelName;
+
         public GoogleClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));

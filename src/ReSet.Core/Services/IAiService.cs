@@ -7,6 +7,8 @@ namespace ReSet.Core.Services
 {
     public interface IAiService
     {
+        string ProviderName { get; }
+        string ModelName { get; }
         Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default);
         IAsyncEnumerable<StreamingChunk> StreamSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default);
         Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default);

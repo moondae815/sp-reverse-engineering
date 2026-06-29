@@ -21,6 +21,8 @@ namespace ReSet.Core.Services.Clients
                 "claude" => new ClaudeClient(client, apiKey, endpoint, modelName),
                 "anthropic" => new ClaudeClient(client, apiKey, endpoint, modelName),
                 "google" => new GoogleClient(client, apiKey, endpoint, modelName),
+                "z.ai" => new ZaiClient(client, apiKey, endpoint, modelName),
+                "zai" => new ZaiClient(client, apiKey, endpoint, modelName),
                 _ => throw new NotSupportedException($"지원되지 않는 AI Provider입니다: {provider}")
             };
         }

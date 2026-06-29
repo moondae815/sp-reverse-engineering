@@ -12,63 +12,38 @@ using Serilog;
 
 namespace ReSet.Core.Services.Clients
 {
-    public class OpenAiClient : IAiClient
+    public class ZaiClient : IAiClient
     {
         private readonly HttpClient _httpClient;
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        public string ProviderName => "OpenAI";
+        public string ProviderName => "Z.ai";
         public string ModelName => _modelName;
 
-        public OpenAiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
+        public ZaiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _apiKey = apiKey;
             _modelName = modelName;
 
-            var ep = string.IsNullOrWhiteSpace(endpoint) ? "https://api.openai.com/v1" : endpoint.Trim();
-            if (ep.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+            var ep = string.IsNullOrWhiteSpace(endpoint) ? "https://api.z.ai/api" : endpoint.Trim();
+            if (ep.EndsWith("/paas/v4/chat/completions", StringComparison.OrdinalIgnoreCase))
             {
-                ep = ep.Substring(0, ep.Length - "/chat/completions".Length).TrimEnd('/');
+                ep = ep.Substring(0, ep.Length - "/paas/v4/chat/completions".Length).TrimEnd('/');
             }
             _endpoint = ep;
         }
 
         public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
+            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("z.ai"))
             {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+                throw new ArgumentException("Z.ai API 키가 설정되지 않았습니다.");
             }
 
-            var lowerModel = _modelName.ToLowerInvariant();
-            float targetTemp = temperature;
-
-            // gpt-5.x 모델 중 x가 5 이상인 모델 및 o1, o3 모델은 temperature = 1.0f 필수 제약 적용
-            var versionMatch = System.Text.RegularExpressions.Regex.Match(lowerModel, @"gpt-?5\.(\d+)");
-            bool isGpt55OrHigher = false;
-            if (versionMatch.Success && int.TryParse(versionMatch.Groups[1].Value, out int minorVersion))
-            {
-                if (minorVersion >= 5)
-                {
-                    isGpt55OrHigher = true;
-                }
-            }
-
-            bool isReasoningEnforcedModel = 
-                lowerModel.StartsWith("o1") || 
-                lowerModel.StartsWith("o3") ||
-                lowerModel.Contains("gpt-5") ||
-                isGpt55OrHigher;
-
-            if (isReasoningEnforcedModel)
-            {
-                targetTemp = 1.0f; // 최신 추론 모델 및 GPT-5.5+ 계열 API 제약 대응 (1.0만 허용)
-            }
-
-            var requestBody = new System.Collections.Generic.Dictionary<string, object>
+            var requestBody = new Dictionary<string, object>
             {
                 { "model", _modelName },
                 { "messages", new[]
@@ -79,31 +54,26 @@ namespace ReSet.Core.Services.Clients
                 }
             };
 
-            if (isReasoningEnforcedModel)
+            if (!string.IsNullOrWhiteSpace(effort))
             {
-                if (!string.IsNullOrWhiteSpace(effort))
+                var apiEffort = effort.ToLowerInvariant() switch
                 {
-                    var apiEffort = effort.ToLowerInvariant() switch
-                    {
-                        "low" => "low",
-                        "medium" => "medium",
-                        "high" => "high",
-                        "xhigh" => "high",
-                        _ => "medium"
-                    };
-                    requestBody.Add("reasoning_effort", apiEffort);
-                }
-                // o1/o3 추론 모델 계열은 temperature 파라미터를 보내는 것 자체가 에러가 발생할 수 있으므로 
-                // reasoning 모델인 경우 temperature 필드를 완전히 제외합니다.
+                    "low" => "minimal",
+                    "medium" => "high",
+                    "high" => "max",
+                    _ => "high"
+                };
+                requestBody.Add("reasoning_effort", apiEffort);
+                requestBody.Add("thinking", new { type = "enabled" });
             }
             else
             {
-                requestBody.Add("temperature", targetTemp);
+                requestBody.Add("temperature", temperature);
             }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var requestUri = $"{_endpoint.TrimEnd('/')}/chat/completions";
-            Log.Debug("OpenAI API 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
+            var requestUri = $"{_endpoint.TrimEnd('/')}/paas/v4/chat/completions";
+            Log.Debug("Z.ai API 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
 
             var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
             {
@@ -119,36 +89,35 @@ namespace ReSet.Core.Services.Clients
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                Log.Error("OpenAI API HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
+                Log.Error("Z.ai API HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
                 throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
-            Log.Debug("OpenAI API HTTP 응답 수신 완료 - StatusCode: {StatusCode}\n[Response Content]:\n{ResponseContent}", (int)response.StatusCode, responseContent);
+            Log.Debug("Z.ai API HTTP 응답 수신 완료 - StatusCode: {StatusCode}\n[Response Content]:\n{ResponseContent}", (int)response.StatusCode, responseContent);
 
             using (var doc = JsonDocument.Parse(responseContent))
             {
                 var root = doc.RootElement;
 
-                // 에러 응답 확인
                 if (root.TryGetProperty("error", out var errorElement))
                 {
                     var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
-                    Log.Error("OpenAI API 응답 내 error 감지 - Message: {Message}", errMsg);
-                    throw new InvalidOperationException($"OpenAI API 에러 응답 수신: {errMsg}");
+                    Log.Error("Z.ai API 응답 내 error 감지 - Message: {Message}", errMsg);
+                    throw new InvalidOperationException($"Z.ai API 에러 응답 수신: {errMsg}");
                 }
 
                 if (!root.TryGetProperty("choices", out var choicesElement) || choicesElement.GetArrayLength() == 0)
                 {
-                    Log.Error("OpenAI API 응답 choices 속성 누락 또는 빈 배열");
-                    throw new InvalidOperationException("OpenAI API 응답 데이터 내에 choices 속성이 존재하지 않거나 비어 있습니다.");
+                    Log.Error("Z.ai API 응답 choices 속성 누락 또는 빈 배열");
+                    throw new InvalidOperationException("Z.ai API 응답 데이터 내에 choices 속성이 존재하지 않거나 비어 있습니다.");
                 }
 
                 var firstChoice = choicesElement[0];
                 if (!firstChoice.TryGetProperty("message", out var messageElement))
                 {
-                    Log.Error("OpenAI API 응답 choices[0] 내 message 속성 누락");
-                    throw new InvalidOperationException("OpenAI API 응답 choices 내에 message 속성이 존재하지 않습니다.");
+                    Log.Error("Z.ai API 응답 choices[0] 내 message 속성 누락");
+                    throw new InvalidOperationException("Z.ai API 응답 choices 내에 message 속성이 존재하지 않습니다.");
                 }
 
                 if (messageElement.TryGetProperty("reasoning_content", out var reasoningElement))
@@ -156,14 +125,14 @@ namespace ReSet.Core.Services.Clients
                     var reasoningContent = reasoningElement.GetString();
                     if (!string.IsNullOrWhiteSpace(reasoningContent))
                     {
-                        Log.Information("[OpenAI Reasoning Process]:\n{Reasoning}", reasoningContent);
+                        Log.Information("[Z.ai Reasoning Process]:\n{Reasoning}", reasoningContent);
                     }
                 }
 
                 if (!messageElement.TryGetProperty("content", out var contentElement))
                 {
-                    Log.Error("OpenAI API 응답 message 내 content 속성 누락");
-                    throw new InvalidOperationException("OpenAI API 응답 message 내에 content 속성이 존재하지 않습니다.");
+                    Log.Error("Z.ai API 응답 message 내 content 속성 누락");
+                    throw new InvalidOperationException("Z.ai API 응답 message 내에 content 속성이 존재하지 않습니다.");
                 }
 
                 return contentElement.GetString() ?? string.Empty;
@@ -177,36 +146,12 @@ namespace ReSet.Core.Services.Clients
             string? effort = null, 
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
+            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("z.ai"))
             {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
+                throw new ArgumentException("Z.ai API 키가 설정되지 않았습니다.");
             }
 
-            var lowerModel = _modelName.ToLowerInvariant();
-            float targetTemp = temperature;
-
-            var versionMatch = System.Text.RegularExpressions.Regex.Match(lowerModel, @"gpt-?5\.(\d+)");
-            bool isGpt55OrHigher = false;
-            if (versionMatch.Success && int.TryParse(versionMatch.Groups[1].Value, out int minorVersion))
-            {
-                if (minorVersion >= 5)
-                {
-                    isGpt55OrHigher = true;
-                }
-            }
-
-            bool isReasoningEnforcedModel = 
-                lowerModel.StartsWith("o1") || 
-                lowerModel.StartsWith("o3") ||
-                lowerModel.Contains("gpt-5") ||
-                isGpt55OrHigher;
-
-            if (isReasoningEnforcedModel)
-            {
-                targetTemp = 1.0f;
-            }
-
-            var requestBody = new System.Collections.Generic.Dictionary<string, object>
+            var requestBody = new Dictionary<string, object>
             {
                 { "model", _modelName },
                 { "messages", new[]
@@ -218,30 +163,27 @@ namespace ReSet.Core.Services.Clients
                 { "stream", true }
             };
 
-            if (isReasoningEnforcedModel)
+            if (!string.IsNullOrWhiteSpace(effort))
             {
-                if (!string.IsNullOrWhiteSpace(effort))
+                var apiEffort = effort.ToLowerInvariant() switch
                 {
-                    var apiEffort = effort.ToLowerInvariant() switch
-                    {
-                        "low" => "low",
-                        "medium" => "medium",
-                        "high" => "high",
-                        "xhigh" => "high",
-                        _ => "medium"
-                    };
-                    requestBody.Add("reasoning_effort", apiEffort);
-                }
+                    "low" => "minimal",
+                    "medium" => "high",
+                    "high" => "max",
+                    _ => "high"
+                };
+                requestBody.Add("reasoning_effort", apiEffort);
+                requestBody.Add("thinking", new { type = "enabled" });
             }
             else
             {
-                requestBody.Add("temperature", targetTemp);
+                requestBody.Add("temperature", temperature);
             }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var requestUri = $"{_endpoint.TrimEnd('/')}/chat/completions";
+            var requestUri = $"{_endpoint.TrimEnd('/')}/paas/v4/chat/completions";
 
-            Log.Debug("OpenAI API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
+            Log.Debug("Z.ai API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
 
             var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
             {
@@ -260,11 +202,11 @@ namespace ReSet.Core.Services.Clients
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    Log.Error("OpenAI API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
+                    Log.Error("Z.ai API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
                     throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
                 }
 
-                Log.Debug("OpenAI API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
+                Log.Debug("Z.ai API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
 
                 using (var stream = await response.Content.ReadAsStreamAsync())
                 using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
@@ -278,7 +220,7 @@ namespace ReSet.Core.Services.Clients
                             continue;
                         }
 
-                        Log.Debug("OpenAI Streaming Line: {Line}", line);
+                        Log.Debug("Z.ai Streaming Line: {Line}", line);
 
                         if (line.StartsWith("data: "))
                         {

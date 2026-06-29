@@ -11,6 +11,9 @@ namespace ReSet.Core.Services.Clients
     {
         private readonly OpenAiClient _openAiClient;
 
+        public string ProviderName => "Ollama";
+        public string ModelName => _openAiClient.ModelName;
+
         public OllamaClient(HttpClient httpClient, string endpoint, string modelName)
         {
             var ep = string.IsNullOrWhiteSpace(endpoint) ? "http://localhost:11434" : endpoint.Trim();

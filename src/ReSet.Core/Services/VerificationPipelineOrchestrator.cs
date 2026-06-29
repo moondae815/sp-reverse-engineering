@@ -156,7 +156,9 @@ namespace ReSet.Core.Services
 
             if (string.Equals(_actorEffort, "dynamic", StringComparison.OrdinalIgnoreCase))
             {
-                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 하이브리드 다중 후보군(Low/Medium/High Effort) 병렬 생성 및 검토 중...");
+                var actorInfo = $"Actor: {_aiService.ProviderName} - {_aiService.ModelName}(dynamic effort)";
+                var criticInfo = $"Critic: {_criticService.ProviderName} - {_criticService.ModelName}({_criticEffort ?? "high"} effort)";
+                _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 하이브리드 다중 후보군 병렬 생성 및 검토 중... ({actorInfo} / {criticInfo})");
                 
                 string[] candidates;
                 using (var progressScope = _userInteraction.CreateProgressScope("하이브리드 다중 후보군 생성") ?? NullProgressScope.Instance)
@@ -291,7 +293,7 @@ namespace ReSet.Core.Services
                     string scoreSummary = (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null) 
                         ? $" (Low: {reviews[0].NormalizedScore}점, Medium: {reviews[1].NormalizedScore}점, High: {reviews[2].NormalizedScore}점)"
                         : string.Empty;
-                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 이종 모델 합성 에이전트(Consolidator) 구동 중 ({_consolidatorEffort ?? "medium"} effort)...{scoreSummary}");
+                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 이종 모델 합성 에이전트(Consolidator) 구동 중 ({_consolidatorService.ProviderName} - {_consolidatorService.ModelName}, {_consolidatorEffort ?? "medium"} effort)...{scoreSummary}");
                     try
                     {
                         specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), null, _consolidatorEffort ?? "medium", cancellationToken);
@@ -329,7 +331,7 @@ namespace ReSet.Core.Services
                     Log.Information("[파이프라인] AI 명세서 생성 시작 - SP: {SpName}, 시도: {Attempt}, Provider: {Provider}, Model: {Model}",
                         selectedOption, attempt, provider, _modelName);
                     var effortText = !string.IsNullOrWhiteSpace(_actorEffort) ? $", Effort: {_actorEffort}" : "";
-                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({provider} - {_modelName}{effortText}) [[{attemptText}]]...");
+                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({_aiService.ProviderName} - {_aiService.ModelName}{effortText}) [[{attemptText}]]...");
                     try
                     {
                         specificationMarkdown = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken), "Single Spec", cancellationToken);
@@ -380,7 +382,8 @@ namespace ReSet.Core.Services
                     bool reviewSuccess = false;
 
                     Log.Information("[파이프라인] L2 AI 교차 리뷰 시작 - SP: {SpName}, 시도: {Attempt}", selectedOption, attempt);
-                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({provider} - {_modelName})...");
+                    var criticEffortText = !string.IsNullOrWhiteSpace(_criticEffort) ? $", Effort: {_criticEffort}" : "";
+                    _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 교차 리뷰 분석 중 ({_criticService.ProviderName} - {_criticService.ModelName}{criticEffortText})...");
                     try
                     {
                         l2Result = await _criticService.ReviewSpecificationAsync(spDef, specificationMarkdown, _criticEffort, cancellationToken);
@@ -528,7 +531,8 @@ namespace ReSet.Core.Services
                 var attemptText = attempt == 1 ? "1차 분석" : $"자가 수정 보완 ({attempt}회째)";
                 bool genSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({provider} - {_modelName}) [[{attemptText}]]...");
+                var consolidatorEffortText = !string.IsNullOrWhiteSpace(_consolidatorEffort) ? $", Effort: {_consolidatorEffort}" : "";
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 배치 전환 계획 수립 중 ({_consolidatorService.ProviderName} - {_consolidatorService.ModelName}{consolidatorEffortText}) [[{attemptText}]]...");
                 try
                 {
                     var specsCopy = new System.Collections.Generic.List<(string FileName, string Content)>(specs);
@@ -574,7 +578,8 @@ namespace ReSet.Core.Services
                 ReviewResult? l2Result = null;
                 bool reviewSuccess = false;
 
-                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({provider} - {_modelName})...");
+                var criticEffortText = !string.IsNullOrWhiteSpace(_criticEffort) ? $", Effort: {_criticEffort}" : "";
+                _userInteraction.NotifyStatus($"[yellow]{jobName}[/] - AI 통합 계획 교차 리뷰 분석 중 ({_criticService.ProviderName} - {_criticService.ModelName}{criticEffortText})...");
                 try
                 {
                     l2Result = await _criticService.ReviewConsolidatedPlanAsync(specs, consolidatedPlan, jobName, _criticEffort, cancellationToken);
