@@ -19,21 +19,20 @@
 ## 2. 시스템 구성 및 컴포넌트 아키텍처 (System Components)
 
 ### 2.1. 컴포넌트 레이어링 및 관계
-본 프로그램은 프레젠테이션 레이어(Cli)와 비즈니스 서비스 레이어(Core)로 구성되어 있습니다.
+본 프로그램은 프레젠테이션 레이어(Cli)와 비즈니스 서비스 레이어(Core/Validator)로 구성되어 있습니다.
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                   ReSet.Cli (TUI)                      │
-│   (Spectre.Console, User interaction, CLI controller)  │
-└───────────┬────────────────────────────────┬───────────┘
-            │ DI                               │ DI
-            ▼                                  ▼
-┌──────────────────────────┐      ┌──────────────────────┐
-│        ReSet.Core        │      │  ReSet.Validator.Core│
-│ (Metadata, AI Prompts,   │      │(Target runtime runner│
-│  Orchestrator, Caching)  │      │ Sandbox DB Seeding,  │
-│                          │◄─────┤ Data Comparison)     │
-└──────────────────────────┘      └──────────────────────┘
+┌───────────────────────────────────┐    ┌───────────────────────────────────┐
+│          ReSet.Cli (TUI)          │    │      ReSet.Validator.Cli (TUI)    │
+│  (분석기 실행 엔트리 및 TUI 제어)  │    │  (검증기 실행 엔트리 및 TUI 제어)  │
+└───────────┬───────────────────────┘    └───────────────┬───────────────────┘
+            │ DI                                         │ DI
+            ▼                                            ▼
+┌───────────────────────────┐                ┌───────────────────────────────┐
+│        ReSet.Core         │                │     ReSet.Validator.Core      │
+│  (Metadata, AI Prompts,   │◄───────────────┤ (Target runner, Seeding,      │
+│   Orchestrator, Caching)  │                │  Data Comparison)             │
+└───────────────────────────┘                └───────────────────────────────┘
 ```
 
 ### 2.2. 핵심 모듈 및 클래스 목록
@@ -54,6 +53,8 @@
 | | [CacheManager](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리. |
 | | [ExternalCliCodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 코딩 에이전트(Claude Code, agy 등) 기동, 콘솔 입출력 스트림 공유 및 CancellationToken 기반 강제 프로세스 정리. |
 | | [SettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs) | DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 결합한 통합 정산 정책 정의서 도출. |
+| **ReSet.Validator.Cli**<br/>(TUI/CLI 레이어) | [Program](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/Program.cs) | 검증기 CLI 진입점. 디렉토리 사전 유효성 확인, 솔루션 루트 스캔, Ctrl+C 취소 연동 및 무인 배치 검증 흐름 제어. |
+| | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링. 탭(Tab) 자동완성 디렉토리 입력창(`ShowChoices(false)` 제어) 및 Gap 분석 결과 패널 렌더링. |
 | **ReSet.Validator.Core**<br/>(정합성 검증 레이어) | [CodeVerificationOrchestrator](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CodeVerificationOrchestrator.cs) | L1 정적 검사 -> L2 AI 논리 Gap 검증 및 자체 교정 -> L3 개발자 승인을 조율하는 검증 오케스트레이터. |
 | | [FileMappingService](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/FileMappingService.cs) | 명세서 파일명 및 YAML Front Matter 기반 구현 소스 1:1 매핑 및 경로 자동 보정. |
 | | [CSharpReflectionRunner](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/CSharpReflectionRunner.cs) | C# 프로젝트 DLL 동적 로딩 및 리플렉션 호출, DbTransaction 강제 롤백을 활용한 DB 격리 실행기. |
