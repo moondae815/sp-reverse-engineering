@@ -225,9 +225,33 @@ namespace ReSet.Core.Services
                 if (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null)
                 {
                     _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - Effort별 Spec 검토 완료:");
-                    _userInteraction.NotifyStatus($"  - Low Spec: [bold]{reviews[0].NormalizedScore}[/]점 (정합성:{reviews[0].ScoreAccuracy}, CRUD:{reviews[0].ScoreCrud}, 시각화:{reviews[0].ScoreReadability}, 예외:{reviews[0].ScoreException})");
-                    _userInteraction.NotifyStatus($"  - Medium Spec: [bold]{reviews[1].NormalizedScore}[/]점 (정합성:{reviews[1].ScoreAccuracy}, CRUD:{reviews[1].ScoreCrud}, 시각화:{reviews[1].ScoreReadability}, 예외:{reviews[1].ScoreException})");
-                    _userInteraction.NotifyStatus($"  - High Spec: [bold]{reviews[2].NormalizedScore}[/]점 (정합성:{reviews[2].ScoreAccuracy}, CRUD:{reviews[2].ScoreCrud}, 시각화:{reviews[2].ScoreReadability}, 예외:{reviews[2].ScoreException})");
+                    _userInteraction.NotifyStatus($"  - Low Spec: [bold]{reviews[0]!.NormalizedScore}[/]점 (정합성:{reviews[0]!.ScoreAccuracy}, CRUD:{reviews[0]!.ScoreCrud}, 시각화:{reviews[0]!.ScoreReadability}, 예외:{reviews[0]!.ScoreException})");
+                    if (!string.IsNullOrWhiteSpace(reviews[0]!.FeedbackComment))
+                    {
+                        var commentLines = reviews[0]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in commentLines)
+                        {
+                            _userInteraction.NotifyStatus($"    [grey]* Low Spec Critic 피드백: {EscapeMarkup(line)}[/]");
+                        }
+                    }
+                    _userInteraction.NotifyStatus($"  - Medium Spec: [bold]{reviews[1]!.NormalizedScore}[/]점 (정합성:{reviews[1]!.ScoreAccuracy}, CRUD:{reviews[1]!.ScoreCrud}, 시각화:{reviews[1]!.ScoreReadability}, 예외:{reviews[1]!.ScoreException})");
+                    if (!string.IsNullOrWhiteSpace(reviews[1]!.FeedbackComment))
+                    {
+                        var commentLines = reviews[1]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in commentLines)
+                        {
+                            _userInteraction.NotifyStatus($"    [grey]* Medium Spec Critic 피드백: {EscapeMarkup(line)}[/]");
+                        }
+                    }
+                    _userInteraction.NotifyStatus($"  - High Spec: [bold]{reviews[2]!.NormalizedScore}[/]점 (정합성:{reviews[2]!.ScoreAccuracy}, CRUD:{reviews[2]!.ScoreCrud}, 시각화:{reviews[2]!.ScoreReadability}, 예외:{reviews[2]!.ScoreException})");
+                    if (!string.IsNullOrWhiteSpace(reviews[2]!.FeedbackComment))
+                    {
+                        var commentLines = reviews[2]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in commentLines)
+                        {
+                            _userInteraction.NotifyStatus($"    [grey]* High Spec Critic 피드백: {EscapeMarkup(line)}[/]");
+                        }
+                    }
                 }
 
                 // 완벽한 후보(L1 & L2 무결 & 신뢰도 90점 이상) 발견 시 Fast-pass 즉시 채택
@@ -424,6 +448,14 @@ namespace ReSet.Core.Services
                     {
                         Log.Information("[파이프라인] L1+L2 검증 최종 통과 - SP: {SpName}, 최종 시도 횟수: {Attempt}", selectedOption, attempt);
                         finalReview = l2Result;
+                        if (l2Result != null && !string.IsNullOrWhiteSpace(l2Result.FeedbackComment))
+                        {
+                            var commentLines = l2Result.FeedbackComment.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var line in commentLines)
+                            {
+                                _userInteraction.NotifyStatus($"  [grey]* Critic 피드백: {EscapeMarkup(line)}[/]");
+                            }
+                        }
                         _userInteraction.NotifyValidationSuccess(selectedOption);
                         break;
                     }
@@ -611,6 +643,14 @@ namespace ReSet.Core.Services
                 // 검증을 통과한 경우 루프 탈출
                 if (l1Result.IsValid && (l2Result == null || !l2Result.HasDefects))
                 {
+                    if (l2Result != null && !string.IsNullOrWhiteSpace(l2Result.FeedbackComment))
+                    {
+                        var commentLines = l2Result.FeedbackComment.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in commentLines)
+                        {
+                            _userInteraction.NotifyStatus($"  [grey]* Critic 피드백: {EscapeMarkup(line)}[/]");
+                        }
+                    }
                     _userInteraction.NotifyValidationSuccess(jobName);
                     break;
                 }
@@ -819,9 +859,11 @@ namespace ReSet.Core.Services
 
             await foreach (var chunk in stream.WithCancellation(cancellationToken))
             {
-                fullContent.Append(chunk.Content);
-
-                if (chunk.Type == ChunkType.Thinking)
+                if (chunk.Type == ChunkType.Text)
+                {
+                    fullContent.Append(chunk.Content);
+                }
+                else if (chunk.Type == ChunkType.Thinking)
                 {
                     currentLineBuffer.Append(chunk.Content);
                     var contentStr = currentLineBuffer.ToString();
@@ -849,6 +891,12 @@ namespace ReSet.Core.Services
             }
 
             return fullContent.ToString();
+        }
+
+        private string EscapeMarkup(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return text.Replace("[", "[[").Replace("]", "]]");
         }
     }
 }

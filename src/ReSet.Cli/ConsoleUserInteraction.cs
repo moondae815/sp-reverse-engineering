@@ -75,7 +75,14 @@ namespace ReSet.Cli
         {
             var maxStr = maxAttempts == -1 ? "검증 완료까지" : maxAttempts.ToString();
             AnsiConsole.MarkupLine($"[yellow]{selectedOption} - [[L2 AI 리뷰]] 결함 및 보완 권고 발견 (시도 {attempt}/{maxStr}):[/]");
-            AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(feedbackComment)}[/]");
+            if (!string.IsNullOrWhiteSpace(feedbackComment))
+            {
+                var lines = feedbackComment.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    AnsiConsole.MarkupLine($"  [red]=> {Markup.Escape(line)}[/]");
+                }
+            }
 
             Serilog.Log.Warning($"[{selectedOption}] L2 AI 리뷰 결함 발견 (시도 {attempt}/{maxStr}): {feedbackComment}");
         }
