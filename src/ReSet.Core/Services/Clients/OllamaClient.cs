@@ -13,6 +13,7 @@ namespace ReSet.Core.Services.Clients
 
         public string ProviderName => "Ollama";
         public string ModelName => _openAiClient.ModelName;
+        public string? LastThinkingText => _openAiClient.LastThinkingText;
 
         public OllamaClient(HttpClient httpClient, string endpoint, string modelName)
         {

@@ -18,8 +18,11 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
+        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
+
         public string ProviderName => "Claude";
         public string ModelName => _modelName;
+        public string? LastThinkingText => _lastThinkingText.Value;
 
         public ClaudeClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -37,6 +40,7 @@ namespace ReSet.Core.Services.Clients
 
         public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
+            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
                 throw new ArgumentException("Claude API 키가 설정되지 않았습니다.");
@@ -220,6 +224,7 @@ namespace ReSet.Core.Services.Clients
                 if (!string.IsNullOrWhiteSpace(thinkingText))
                 {
                     Log.Information("[Claude Thinking Process]:\n{Thinking}", thinkingText);
+                    _lastThinkingText.Value = thinkingText;
                 }
 
                 if (resultText == null)

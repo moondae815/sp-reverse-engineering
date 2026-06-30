@@ -227,6 +227,25 @@ namespace ReSet.Core.Services
                     try
                     {
                         reviews = await Task.WhenAll(reviewTasks);
+                        if (reviews != null)
+                        {
+                            for (int i = 0; i < reviews.Length; i++)
+                            {
+                                var candidateLabel = i switch
+                                {
+                                    0 => "Low",
+                                    1 => "Medium",
+                                    2 => "High",
+                                    _ => (i + 1).ToString()
+                                };
+                                if (reviews[i] != null && !string.IsNullOrWhiteSpace(reviews[i]!.ThinkingText))
+                                {
+                                    accumulatedThinking.AppendLine($"=== {candidateLabel} Spec Critic Review Thinking ===");
+                                    accumulatedThinking.AppendLine(reviews[i]!.ThinkingText);
+                                    accumulatedThinking.AppendLine();
+                                }
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -334,6 +353,12 @@ namespace ReSet.Core.Services
                     try
                     {
                         specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), null, _consolidatorEffort ?? "medium", cancellationToken);
+                        if (!string.IsNullOrWhiteSpace(_consolidatorService.LastThinkingText))
+                        {
+                            accumulatedThinking.AppendLine("=== Consolidator Synthesis Thinking ===");
+                            accumulatedThinking.AppendLine(_consolidatorService.LastThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -349,6 +374,12 @@ namespace ReSet.Core.Services
                         try
                         {
                             specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), finalL1.SuggestedPromptFix, _consolidatorEffort ?? "medium", cancellationToken);
+                            if (!string.IsNullOrWhiteSpace(_consolidatorService.LastThinkingText))
+                            {
+                                accumulatedThinking.AppendLine("=== Consolidator Self-Correction Thinking ===");
+                                accumulatedThinking.AppendLine(_consolidatorService.LastThinkingText);
+                                accumulatedThinking.AppendLine();
+                            }
                         }
                         catch { }
                     }
@@ -431,6 +462,12 @@ namespace ReSet.Core.Services
                     {
                         l2Result = await _criticService.ReviewSpecificationAsync(spDef, specificationMarkdown, _criticEffort, cancellationToken);
                         reviewSuccess = true;
+                        if (l2Result != null && !string.IsNullOrWhiteSpace(l2Result.ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine($"=== Attempt {attempt} Critic Review Thinking ===");
+                            accumulatedThinking.AppendLine(l2Result.ThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
                         Log.Debug("[파이프라인] L2 AI 교차 리뷰 완료 - SP: {SpName}, 결함 감지: {HasDefects}",
                             selectedOption, l2Result?.HasDefects);
                     }

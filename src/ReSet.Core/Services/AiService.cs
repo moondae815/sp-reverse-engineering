@@ -16,6 +16,7 @@ namespace ReSet.Core.Services
 
         public string ProviderName => _aiClient.ProviderName;
         public string ModelName => _aiClient.ModelName;
+        public string? LastThinkingText => _aiClient.LastThinkingText;
 
         public AiService(IAiClient aiClient, float temperature)
         {
@@ -253,7 +254,9 @@ namespace ReSet.Core.Services
 
             Log.Information("AI 개별 명세서 리뷰 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, responseContent?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
-            return ParseReviewResult(responseContent, $"{spDef.Schema}.{spDef.Name}");
+            var reviewResult = ParseReviewResult(responseContent, $"{spDef.Schema}.{spDef.Name}");
+            reviewResult.ThinkingText = _aiClient.LastThinkingText;
+            return reviewResult;
         }
 
         public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage, CancellationToken cancellationToken = default)
@@ -430,7 +433,9 @@ namespace ReSet.Core.Services
 
             Log.Information("AI 통합 배치 계획서 리뷰 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, responseContent?.Length ?? 0);
             Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
-            return ParseReviewResult(responseContent, jobName);
+            var reviewResult = ParseReviewResult(responseContent, jobName);
+            reviewResult.ThinkingText = _aiClient.LastThinkingText;
+            return reviewResult;
         }
 
         private static string ExtractJson(string content)

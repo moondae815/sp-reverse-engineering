@@ -19,8 +19,11 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
+        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
+
         public string ProviderName => "Z.ai";
         public string ModelName => _modelName;
+        public string? LastThinkingText => _lastThinkingText.Value;
 
         public ZaiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -38,6 +41,7 @@ namespace ReSet.Core.Services.Clients
 
         public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
+            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("z.ai"))
             {
                 throw new ArgumentException("Z.ai API 키가 설정되지 않았습니다.");
@@ -137,6 +141,7 @@ namespace ReSet.Core.Services.Clients
                 if (!string.IsNullOrWhiteSpace(reasoningContent))
                 {
                     Log.Information("[Z.ai Reasoning Process]:\n{Reasoning}", reasoningContent);
+                    _lastThinkingText.Value = reasoningContent;
                 }
 
                 if (!messageElement.TryGetProperty("content", out var contentElement))

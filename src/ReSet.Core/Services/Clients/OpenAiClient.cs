@@ -18,9 +18,11 @@ namespace ReSet.Core.Services.Clients
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
+        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
 
         public string ProviderName => "OpenAI";
         public string ModelName => _modelName;
+        public string? LastThinkingText => _lastThinkingText.Value;
 
         public OpenAiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -38,6 +40,7 @@ namespace ReSet.Core.Services.Clients
 
         public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
+            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
             {
                 throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
@@ -147,6 +150,7 @@ namespace ReSet.Core.Services.Clients
                         if (!string.IsNullOrWhiteSpace(reasoningText))
                         {
                             Log.Information("[OpenAI Responses API Reasoning Summary]:\n{Reasoning}", reasoningText);
+                            _lastThinkingText.Value = reasoningText;
                         }
 
                         return resultText ?? string.Empty;
@@ -269,6 +273,7 @@ namespace ReSet.Core.Services.Clients
                     if (!string.IsNullOrWhiteSpace(reasoningContent))
                     {
                         Log.Information("[OpenAI Reasoning Process]:\n{Reasoning}", reasoningContent);
+                        _lastThinkingText.Value = reasoningContent;
                     }
 
                     if (!messageElement.TryGetProperty("content", out var contentElement))

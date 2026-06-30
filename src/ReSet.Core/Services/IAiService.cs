@@ -9,6 +9,7 @@ namespace ReSet.Core.Services
     {
         string ProviderName { get; }
         string ModelName { get; }
+        string? LastThinkingText { get; }
         Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default);
         IAsyncEnumerable<StreamingChunk> StreamSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default);
         Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default);
@@ -22,6 +23,7 @@ namespace ReSet.Core.Services
     {
         public bool HasDefects { get; set; }
         public string? FeedbackComment { get; set; }
+        public string? ThinkingText { get; set; }
         
         // 4대 기준별 정량적 평가 점수 (각 0~10점)
         public int ScoreAccuracy { get; set; }     // 비즈니스 정합성
