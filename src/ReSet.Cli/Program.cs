@@ -508,7 +508,7 @@ namespace ReSet.Cli
                         var schema = parts[0];
                         var name = parts[1];
 
-                        var (specMarkdown, spDef, reviewResult) = await orchestrator.RunPipelineAsync(
+                        var (specMarkdown, spDef, reviewResult, thinkingText) = await orchestrator.RunPipelineAsync(
                             connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: true, outputDir, enableCache, globalCts.Token);
 
                         if (string.IsNullOrEmpty(specMarkdown))
@@ -539,7 +539,7 @@ namespace ReSet.Cli
                         await SaveOutputsAsync(
                             spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name, provider, modelName, reviewResult);
+                            schema, name, provider, modelName, reviewResult, thinkingText);
 
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
@@ -662,7 +662,7 @@ namespace ReSet.Cli
 
                         try
                         {
-                            var (specMarkdown, spDef, reviewResult) = await orchestrator.RunPipelineAsync(
+                            var (specMarkdown, spDef, reviewResult, thinkingText) = await orchestrator.RunPipelineAsync(
                                 connectionString, schema, name, maxDepth, provider, instructions, isBatchMode: false, outputDir, enableCache, activeCts.Token);
 
                             if (string.IsNullOrEmpty(specMarkdown))
@@ -682,7 +682,7 @@ namespace ReSet.Cli
                             await SaveOutputsAsync(
                                 spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                                 metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                                schema, name, provider, modelName, reviewResult);
+                                schema, name, provider, modelName, reviewResult, thinkingText);
 
                             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                             AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -1066,7 +1066,8 @@ namespace ReSet.Cli
             string name,
             string provider,
             string modelName,
-            ReviewResult? review)
+            ReviewResult? review,
+            string? thinkingText = null)
         {
             if (spDef != null)
             {
@@ -1179,6 +1180,19 @@ ExceptionScore: {review.ScoreException}/10
                 catch (Exception ex)
                 {
                     AnsiConsole.MarkupLine($"[yellow]코딩 에이전트 가이드라인 번들 저장 중 경고:[/] {Markup.Escape(ex.Message)}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(thinkingText))
+            {
+                try
+                {
+                    var thinkingFileName = Path.Combine(outputDir, $"{schema}.{name}_Thinking.txt");
+                    await File.WriteAllTextAsync(thinkingFileName, thinkingText);
+                }
+                catch (Exception ex)
+                {
+                    AnsiConsole.MarkupLine($"[yellow]추론 로그(Thinking Log) 저장 중 경고:[/] {Markup.Escape(ex.Message)}");
                 }
             }
 

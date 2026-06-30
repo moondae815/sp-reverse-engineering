@@ -358,7 +358,7 @@ namespace ReSet.Core.Services.Clients
                             continue;
                         }
 
-                        Log.Debug("Google Gemini Streaming Line: {Line}", line);
+                        Log.Verbose("Google Gemini Streaming Line: {Line}", line);
 
                         var data = line.Trim();
                         if (data.StartsWith("[")) data = data.Substring(1).Trim();

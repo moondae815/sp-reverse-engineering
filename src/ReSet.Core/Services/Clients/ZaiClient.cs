@@ -220,7 +220,7 @@ namespace ReSet.Core.Services.Clients
                             continue;
                         }
 
-                        Log.Debug("Z.ai Streaming Line: {Line}", line);
+                        Log.Verbose("Z.ai Streaming Line: {Line}", line);
 
                         if (line.StartsWith("data: "))
                         {

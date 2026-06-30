@@ -404,7 +404,7 @@ namespace ReSet.Core.Services.Clients
                             continue;
                         }
 
-                        Log.Debug("Claude Streaming Line: {Line}", line);
+                        Log.Verbose("Claude Streaming Line: {Line}", line);
 
                         if (line.StartsWith("data: "))
                         {

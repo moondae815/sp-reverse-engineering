@@ -278,7 +278,7 @@ namespace ReSet.Core.Services.Clients
                             continue;
                         }
 
-                        Log.Debug("OpenAI Streaming Line: {Line}", line);
+                        Log.Verbose("OpenAI Streaming Line: {Line}", line);
 
                         if (line.StartsWith("data: "))
                         {

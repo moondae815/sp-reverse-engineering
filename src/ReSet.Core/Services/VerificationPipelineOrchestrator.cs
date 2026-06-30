@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Data.SqlClient;
 using ReSet.Core.Models;
 using Serilog;
@@ -69,7 +70,7 @@ namespace ReSet.Core.Services
             _maxAttempts = _maxL2Attempts == -1 ? -1 : 1 + _maxL2Attempts;
         }
 
-        public async Task<(string? SpecMarkdown, SpDefinition? SpDef, ReviewResult? Review)> RunPipelineAsync(
+        public async Task<(string? SpecMarkdown, SpDefinition? SpDef, ReviewResult? Review, string? ThinkingText)> RunPipelineAsync(
             string connectionString,
             string schema,
             string name,
@@ -84,6 +85,7 @@ namespace ReSet.Core.Services
             var selectedOption = $"{schema}.{name}";
             SpDefinition? spDef = null;
             ReviewResult? finalReview = null;
+            var accumulatedThinking = new StringBuilder();
 
             Log.Information("[파이프라인] SP 분석 시작 - SP: {SpName}, Provider: {Provider}, MaxDepth: {MaxDepth}, BatchMode: {IsBatchMode}",
                 selectedOption, provider, maxDepth, isBatchMode);
@@ -104,7 +106,7 @@ namespace ReSet.Core.Services
             if (spDef == null)
             {
                 Log.Warning("[파이프라인] SP 정의를 가져오지 못해 파이프라인을 중단합니다 - SP: {SpName}", selectedOption);
-                return (null, null, null);
+                return (null, null, null, null);
             }
 
             if (spDef.Warnings.Count > 0)
@@ -135,7 +137,7 @@ namespace ReSet.Core.Services
                                 ScoreReadability = 10,
                                 ScoreException = 10
                             };
-                            return (cachedSpec, spDef, mockReview);
+                            return (cachedSpec, spDef, mockReview, null);
                         }
                     }
                     else
@@ -165,7 +167,7 @@ namespace ReSet.Core.Services
                 {
                     progressScope.AddTask("Low Effort Spec 생성", "Low Effort Spec 생성");
 
-                    var tasks = new System.Collections.Generic.List<Task<string>>();
+                    var tasks = new System.Collections.Generic.List<Task<(string Content, string Thinking)>>();
                     tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), "Low Spec", cancellationToken), progressScope, "Low Effort Spec 생성"));
 
                     await Task.Delay(1000, cancellationToken);
@@ -178,12 +180,23 @@ namespace ReSet.Core.Services
 
                     try
                     {
-                        candidates = await Task.WhenAll(tasks);
+                        var candidatesResult = await Task.WhenAll(tasks);
+                        candidates = candidatesResult.Select(x => x.Content).ToArray();
+
+                        accumulatedThinking.AppendLine("=== Low Spec Generation Thinking ===");
+                        accumulatedThinking.AppendLine(candidatesResult[0].Thinking);
+                        accumulatedThinking.AppendLine();
+                        accumulatedThinking.AppendLine("=== Medium Spec Generation Thinking ===");
+                        accumulatedThinking.AppendLine(candidatesResult[1].Thinking);
+                        accumulatedThinking.AppendLine();
+                        accumulatedThinking.AppendLine("=== High Spec Generation Thinking ===");
+                        accumulatedThinking.AppendLine(candidatesResult[2].Thinking);
+                        accumulatedThinking.AppendLine();
                     }
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - 하이브리드 후보 생성 중 실패: {ex.Message}");
-                        return (null, spDef, null);
+                        return (null, spDef, null, null);
                     }
                 }
 
@@ -218,7 +231,7 @@ namespace ReSet.Core.Services
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - Critic 검토 중 실패: {ex.Message}");
-                        return (null, spDef, null);
+                        return (null, spDef, null, null);
                     }
                 }
 
@@ -325,7 +338,7 @@ namespace ReSet.Core.Services
                     catch (Exception ex)
                     {
                         _userInteraction.NotifyError($"{selectedOption} - 최종 합성 생성 실패: {ex.Message}");
-                        return (null, spDef, null);
+                        return (null, spDef, null, null);
                     }
 
                     // 합성본 기계적 검증 (L1) 1회 수행
@@ -358,8 +371,14 @@ namespace ReSet.Core.Services
                     _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({_aiService.ProviderName} - {_aiService.ModelName}{effortText}) [[{attemptText}]]...");
                     try
                     {
-                        specificationMarkdown = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken), "Single Spec", cancellationToken);
+                        var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken), "Single Spec", cancellationToken);
+                        specificationMarkdown = specText;
                         genSuccess = true;
+                        
+                        accumulatedThinking.AppendLine($"=== Attempt {attempt} Generation Thinking ===");
+                        accumulatedThinking.AppendLine(thinkingText);
+                        accumulatedThinking.AppendLine();
+
                         Log.Debug("[파이프라인] AI 명세서 생성 성공 - SP: {SpName}, 시도: {Attempt}, 응답 길이: {Length}자",
                             selectedOption, attempt, specificationMarkdown.Length);
                     }
@@ -371,7 +390,7 @@ namespace ReSet.Core.Services
 
                     if (!genSuccess || string.IsNullOrEmpty(specificationMarkdown))
                     {
-                        return (null, spDef, null);
+                        return (null, spDef, null, null);
                     }
 
                     // L1: 기계적 무결성 검사
@@ -494,11 +513,11 @@ namespace ReSet.Core.Services
                             await ApplyMetadataCleansingSqlAsync(connectionString, selectedOption, outputDirectory, cancellationToken);
                         }
 
-                        return (specificationMarkdown, spDef, finalReview);
+                        return (specificationMarkdown, spDef, finalReview, accumulatedThinking.ToString());
                     }
                     else if (reviewResult.Decision == UserDecision.Cancel)
                     {
-                        return (null, spDef, null);
+                        return (null, spDef, null, null);
                     }
                     else if (reviewResult.Decision == UserDecision.ProvideFeedback)
                     {
@@ -513,7 +532,11 @@ namespace ReSet.Core.Services
                         string reSpec = string.Empty;
                         try
                         {
-                            reSpec = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, humanFeedbackLog, _actorEffort, cancellationToken), "Single Spec (Refinement)", cancellationToken);
+                            var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, humanFeedbackLog, _actorEffort, cancellationToken), "Single Spec (Refinement)", cancellationToken);
+                            reSpec = specText;
+                            accumulatedThinking.AppendLine("=== Human Feedback Refinement Thinking ===");
+                            accumulatedThinking.AppendLine(thinkingText);
+                            accumulatedThinking.AppendLine();
                         }
                         catch (Exception ex)
                         {
@@ -532,7 +555,11 @@ namespace ReSet.Core.Services
                             _userInteraction.NotifyStatus("피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.");
                             try
                             {
-                                reSpec = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, _actorEffort, cancellationToken), "Single Spec (Self-Correction)", cancellationToken);
+                                var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, _actorEffort, cancellationToken), "Single Spec (Self-Correction)", cancellationToken);
+                                reSpec = specText;
+                                accumulatedThinking.AppendLine("=== Human Feedback Self-Correction Thinking ===");
+                                accumulatedThinking.AppendLine(thinkingText);
+                                accumulatedThinking.AppendLine();
                             }
                             catch { }
                         }
@@ -542,7 +569,7 @@ namespace ReSet.Core.Services
                 }
             }
 
-            return (specificationMarkdown, spDef, finalReview);
+            return (specificationMarkdown, spDef, finalReview, accumulatedThinking.ToString());
         }
 
         public async Task<string?> RunConsolidatedPipelineAsync(
@@ -849,12 +876,13 @@ namespace ReSet.Core.Services
             }
         }
 
-        private async Task<string> ConsumeStreamAndLogAsync(
+        private async Task<(string Content, string Thinking)> ConsumeStreamAndLogAsync(
             IAsyncEnumerable<StreamingChunk> stream, 
             string contextLabel, 
             CancellationToken cancellationToken)
         {
             var fullContent = new StringBuilder();
+            var thinkingContent = new StringBuilder();
             var currentLineBuffer = new StringBuilder();
 
             await foreach (var chunk in stream.WithCancellation(cancellationToken))
@@ -865,6 +893,7 @@ namespace ReSet.Core.Services
                 }
                 else if (chunk.Type == ChunkType.Thinking)
                 {
+                    thinkingContent.Append(chunk.Content);
                     currentLineBuffer.Append(chunk.Content);
                     var contentStr = currentLineBuffer.ToString();
                     if (contentStr.Contains("\n"))
@@ -890,7 +919,7 @@ namespace ReSet.Core.Services
                 Log.Information("[{Label} Thinking]: {Line}", contextLabel, lastLine);
             }
 
-            return fullContent.ToString();
+            return (fullContent.ToString(), thinkingContent.ToString());
         }
 
         private string EscapeMarkup(string text)
