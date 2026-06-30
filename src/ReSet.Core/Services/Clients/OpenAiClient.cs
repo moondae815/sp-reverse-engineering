@@ -98,12 +98,21 @@ namespace ReSet.Core.Services.Clients
                 using (var doc = JsonDocument.Parse(responseContent))
                 {
                     var root = doc.RootElement;
-                    if (root.ValueKind == JsonValueKind.Array)
+
+                    // 에러 응답 먼저 확인 (error가 null이 아니거나 존재할 때)
+                    if (root.TryGetProperty("error", out var errorElement) && errorElement.ValueKind == JsonValueKind.Object)
+                    {
+                        var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
+                        throw new InvalidOperationException($"OpenAI Responses API 에러 응답 수신: {errMsg}");
+                    }
+
+                    // root 자체는 Object이고, 실제 결과 목록은 "output" 프로퍼티(Array)에 들어있음
+                    if (root.TryGetProperty("output", out var outputElem) && outputElem.ValueKind == JsonValueKind.Array)
                     {
                         string? resultText = null;
                         string? reasoningText = null;
 
-                        foreach (var item in root.EnumerateArray())
+                        foreach (var item in outputElem.EnumerateArray())
                         {
                             if (item.TryGetProperty("type", out var typeElem))
                             {
@@ -144,12 +153,7 @@ namespace ReSet.Core.Services.Clients
                     }
                     else
                     {
-                        if (root.TryGetProperty("error", out var errorElement))
-                        {
-                            var errMsg = errorElement.TryGetProperty("message", out var msgElement) ? msgElement.GetString() : "알 수 없는 API 오류";
-                            throw new InvalidOperationException($"OpenAI Responses API 에러 응답 수신: {errMsg}");
-                        }
-                        throw new InvalidOperationException("OpenAI Responses API 응답이 JSON 배열 형태가 아닙니다.");
+                        throw new InvalidOperationException("OpenAI Responses API 응답 내에 output 배열 속성이 존재하지 않습니다.");
                     }
                 }
             }
