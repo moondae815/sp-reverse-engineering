@@ -904,7 +904,7 @@ namespace ReSet.Core.Services
                             var cleanLine = lines[i].TrimEnd('\r');
                             if (!string.IsNullOrWhiteSpace(cleanLine))
                             {
-                                Log.Information("[{Label} Thinking]: {Line}", contextLabel, cleanLine);
+                                Log.Verbose("[{Label} Thinking]: {Line}", contextLabel, cleanLine);
                             }
                         }
                         currentLineBuffer.Clear();
@@ -916,7 +916,7 @@ namespace ReSet.Core.Services
             var lastLine = currentLineBuffer.ToString().Trim();
             if (!string.IsNullOrWhiteSpace(lastLine))
             {
-                Log.Information("[{Label} Thinking]: {Line}", contextLabel, lastLine);
+                Log.Verbose("[{Label} Thinking]: {Line}", contextLabel, lastLine);
             }
 
             return (fullContent.ToString(), thinkingContent.ToString());
