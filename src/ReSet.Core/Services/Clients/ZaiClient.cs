@@ -120,13 +120,23 @@ namespace ReSet.Core.Services.Clients
                     throw new InvalidOperationException("Z.ai API 응답 choices 내에 message 속성이 존재하지 않습니다.");
                 }
 
+                string? reasoningContent = null;
                 if (messageElement.TryGetProperty("reasoning_content", out var reasoningElement))
                 {
-                    var reasoningContent = reasoningElement.GetString();
-                    if (!string.IsNullOrWhiteSpace(reasoningContent))
-                    {
-                        Log.Information("[Z.ai Reasoning Process]:\n{Reasoning}", reasoningContent);
-                    }
+                    reasoningContent = reasoningElement.GetString();
+                }
+                else if (messageElement.TryGetProperty("reasoning", out var reasoningAltElement))
+                {
+                    reasoningContent = reasoningAltElement.GetString();
+                }
+                else if (messageElement.TryGetProperty("thinking", out var thinkingAltElement))
+                {
+                    reasoningContent = thinkingAltElement.GetString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(reasoningContent))
+                {
+                    Log.Information("[Z.ai Reasoning Process]:\n{Reasoning}", reasoningContent);
                 }
 
                 if (!messageElement.TryGetProperty("content", out var contentElement))
@@ -247,6 +257,14 @@ namespace ReSet.Core.Services.Clients
                                             if (delta.TryGetProperty("reasoning_content", out var reasoningElem))
                                             {
                                                 reasoning = reasoningElem.GetString();
+                                            }
+                                            else if (delta.TryGetProperty("reasoning", out var reasoningAltElem))
+                                            {
+                                                reasoning = reasoningAltElem.GetString();
+                                            }
+                                            else if (delta.TryGetProperty("thinking", out var thinkingAltElem))
+                                            {
+                                                reasoning = thinkingAltElem.GetString();
                                             }
 
                                             if (delta.TryGetProperty("content", out var contentElem))
