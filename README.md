@@ -2,10 +2,10 @@
 
 [![.NET 10.0](https://img.shields.io/badge/.NET-10.0-blueviolet.svg)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![SQL Server](https://img.shields.io/badge/SQL%20Server-Database-red.svg)](https://www.microsoft.com/sql-server)
-[![AI Providers](https://img.shields.io/badge/AI--Providers-OpenAI%20%7C%20Claude%20%7C%20Google-orange.svg)](#)
+[![AI Providers](https://img.shields.io/badge/AI--Providers-OpenAI%20%7C%20Claude%20%7C%20Google%20%7C%20Ollama%20%7C%20Z.ai-orange.svg)](#)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](#)
 
-본 프로젝트는 **SQL Server**에 저장된 Stored Procedure(SP)를 심층 분석하여, AI(OpenAI, Ollama, Claude, Google Gemini 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
+본 프로젝트는 **SQL Server**에 저장된 Stored Procedure(SP)를 심층 분석하여, AI(OpenAI, Ollama, Claude, Google Gemini, Z.ai 등)를 통해 사용자 정의 지침에 맞춘 마크다운 형식의 기능 명세서를 자동 생성하는 개발자용 터미널 기반 CLI(TUI) 도구입니다.
 
 ---
 
@@ -33,7 +33,7 @@
 * **설계서 vs 구현 소스코드 일치성**: C#/Java 코드를 정적으로 분석하고 AI Gap 분석을 실행하여, 명세서 대비 입출력 파라미터, 연산 분기, 트랜잭션 구현 불일치점(Gap Report)을 도출합니다.
 * **관계지향 모의 데이터(Mock Data) 자동 생성 및 격리 적재**: 보안 규정으로 인해 운영 데이터를 활용할 수 없는 상황에 대처하여, AI가 테이블 DDL과 JOIN문을 파싱해 조인 컬럼 시드 값이 연결된 고품질 모의 데이터(`--gen-mock-data`)를 자동 생성하고, 테스트 실행 시 데이터베이스에 임시 Seeding 한 후 완료 시 자동 복구(Clean-up)합니다.
 * **하이브리드 런타임 수집 & 1:1 대조**: 테스트 케이스 입력을 자동 설계하여 Legacy DB의 SP를 호출하고, 마이그레이션된 소스코드(C# DLL 리플렉션 로드 / Java 외부 프로세스 실행)를 안전하게 트랜잭션 격리(Rollback) 및 타임아웃 하에 구동한 뒤 결과셋 데이터를 1:1로 정밀 비교 대조(`*_CompareReport.md`)합니다.
-* **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Claude, Google, 로컬 Ollama를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
+* **풍부한 AI 공급자 및 TUI 인터랙션**: OpenAI, Claude, Google, 로컬 Ollama, Z.ai를 지원하며, 로컬 세션 보존, 실시간 자동완성 검색/경로 완성, 비동기 작업 취소(`CancellationToken`) 및 견고한 텍스트 이스케이프(`Markup.Escape`)가 적용되어 있습니다.
 
 ### 5. 메타데이터 정화 및 주석 보완 (Cleansing & Annotation)
 * **테이블 스키마 설명 누락 역추론**: 테이블 및 컬럼 설명(`MS_Description`)이 누락된 항목을 `[설명 누락]`으로 식별한 뒤, 해당 컬럼이 활용되는 SP/UDF/뷰 쿼리의 연산 및 대입 문맥을 추론하여 AI가 `[AI 추론 보완: {Schema}.{Table}.{Column} - {설명}]` 형태로 의미를 자동 역추론합니다.
@@ -105,6 +105,7 @@ ReSet/
 └── output/                          # [산출물 폴더] 생성된 스펙, 계획서, 모의 데이터 및 정합성 리포트 저장소
     ├── [SP이름]_Spec.md            # SP 개별 비즈니스 설계 명세서
     ├── [SP이름]_MigrationInstructions.md # 개별 SP 마이그레이션 지시서 번들
+    ├── [SP이름]_Thinking.txt            # AI 모델의 추론 과정 로그 (Critic/Consolidator 추론 과정 포함)
     ├── [JobName]_BatchMigrationPlan.md   # 통합 배치 전환 계획서
     ├── [JobName]_MigrationInstructions.md # 통합 마이그레이션 지시서 번들
     └── validation/                 # 소스코드 정적 검증 및 데이터 정합성 리포트 저장 폴더
@@ -131,7 +132,7 @@ ReSet/
     "MaxDependencyDepth": 3         // 재귀적 의존성 탐색의 최대 깊이 (기본값: 3)
   },
   "AiSettings": {
-    "Provider": "Claude",          // 활성화할 AI 제공자 ("OpenAI" | "Google" | "Claude" | "Ollama")
+    "Provider": "Claude",          // 활성화할 AI 제공자 ("OpenAI" | "Google" | "Claude" | "Ollama" | "Z.ai")
     "ModelName": "claude-sonnet-4-6", // 사용할 LLM 모델명
     "Temperature": 0.2,            // 분석의 일관성을 위해 낮게(0.0 ~ 0.3) 설정을 권장합니다.
     "MaxL2Attempts": 2,            // L2 AI 교차 리뷰 실패 시 추가로 재시도할 자가 보완 횟수 (1 이상의 정수 또는 "unlimited" 지정 시 검증 완료까지 무제한)
@@ -162,6 +163,10 @@ ReSet/
       },
       "Ollama": {
         "Endpoint": "http://localhost:11434" // 로컬 Ollama 엔드포인트
+      },
+      "Z.ai": {
+        "ApiKey": "",              // Z.ai API 키
+        "Endpoint": "https://api.z.ai/api"
       }
     }
   },
@@ -219,7 +224,7 @@ ReSet/
 ```json
 {
   "AiSettings": {
-    "Provider": "Claude",
+    "Provider": "Claude",              // 활성화할 AI 제공자 ("OpenAI" | "Google" | "Claude" | "Ollama" | "Z.ai")
     "ModelName": "claude-sonnet-4-6",
     "Temperature": 0.1,
     "MaxL2Attempts": 2,
@@ -239,6 +244,10 @@ ReSet/
       },
       "Ollama": {
         "Endpoint": "http://localhost:11434"
+      },
+      "Z.ai": {
+        "ApiKey": "",
+        "Endpoint": "https://api.z.ai/api"
       }
     }
   },
@@ -267,6 +276,9 @@ ReSet/
            "ApiKey": "여기에_새로_발급받은_API키_입력"
          },
          "Claude": {
+           "ApiKey": "여기에_새로_발급받은_API키_입력"
+         },
+         "Z.ai": {
            "ApiKey": "여기에_새로_발급받은_API키_입력"
          }
        }

@@ -31,7 +31,7 @@
     *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
     *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
     *   [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICacheManager.cs) 포함).
-    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs) 및 AI 스트리밍 응답: 각 AI 클라이언트 스트리밍 수신 시 JSON chunk 원문 데이터(Raw Line)는 `Log.Verbose`가 아닌 `Log.Debug` 레벨로 기록하여 기본 디버그 실행 수준에서도 안정적으로 파일 로그에 트레이스가 보존되도록 조치하십시오.
+    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs) 및 AI 스트리밍 응답: 각 AI 클라이언트 스트리밍 수신 시 JSON chunk 원문 데이터(Raw Line) 및 실시간 thinking stream 로그는 `Log.Debug`나 `Log.Information`이 아닌 `Log.Verbose` 레벨로 기록하여 기본 디버그 실행 수준에서 TUI 화면이 깨지거나 출력창이 오염되는 것을 차단하고, 상세 분석 로그(Verbose) 시에만 트레이스가 보존되도록 조치하십시오.
     *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
     *   [IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs): 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스.
     *   [NullProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs): 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체.
@@ -83,7 +83,7 @@
     *   **정합성 검증 DB 실행**: [SpExecutionService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SpExecutionService.cs)의 Legacy SQL 실행 수집 시 연결 실패나 쿼리 수행 오류가 나면 크래시하지 말고, 결과 DTO의 테스트 케이스를 `FAIL`로 처리하고 예외 메시지를 `ErrorCode` 필드에 기재하여 직렬화 내보내야 합니다.
     *   **캐싱 및 서브 시스템**: [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs)의 DDL 해시 캐시 조작 및 기타 보조 연동 시 발생하는 모든 예외는 try-catch로 격리하여 마이그레이션 메인 파이프라인의 중단을 예방하십시오.
 3.  **AI API 응답 널 가드(TryGetProperty) 및 모델 파라미터 매핑을 준수하십시오.**
-    *   [ClaudeClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/ClaudeClient.cs), [OpenAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/OpenAiClient.cs), [GoogleClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/GoogleClient.cs) 호출 파싱 시 안전 필터 차단이나 응답 누락으로 인해 `KeyNotFoundException` 크래시가 발생하는 것을 원천 차단하십시오.
+    *   [ClaudeClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/ClaudeClient.cs), [OpenAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/OpenAiClient.cs), [GoogleClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/GoogleClient.cs), [OllamaClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/OllamaClient.cs), [ZaiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/ZaiClient.cs) 호출 파싱 시 안전 필터 차단이나 응답 누락으로 인해 `KeyNotFoundException` 크래시가 발생하는 것을 원천 차단하십시오.
     *   반드시 `TryGetProperty`를 활용해 JSON 필드 유무를 안전하게 확인하고, 비정상 수신 시 `InvalidOperationException`을 던져 투명하게 거절 사유를 노출하십시오.
     *   **모델별 전송 규격 매핑**: OpenAI 추론 모델(o1/o3) 호출 시 `temperature`를 제외하고 `reasoning_effort`를 표준 매핑하고, Claude 4세대 모델 호출 시 `budget_tokens` 대신 `output_config.effort`에 강도를 위임해 400 에러를 방지하십시오.
 
@@ -176,7 +176,7 @@ dotnet test
 개발 에이전트는 코드 수정을 마치고 작업을 제출하기 전에 다음 항목을 직접 자가 검증해야 합니다.
 
 - [ ] `dotnet build` 명령어를 통한 컴파일 경고/에러가 0개인지 확인했는가?
-- [ ] `dotnet test` 명령어를 실행하여 70개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
+- [ ] `dotnet test` 명령어를 실행하여 74개의 단위 테스트가 모두 예외 없이 100% 통과(Passed)하였는가?
 - [ ] API Key 등 비공개 자격증명이 소스코드나 `appsettings.json`에 하드코딩되지 않고 `appsettings.local.json` 또는 로컬 환경 변수로 격리되었는가?
 - [ ] DB 메타데이터, AI 결과 원문 등을 Spectre.Console TUI에 출력할 때 모든 출력 부에 `Markup.Escape()` 조치를 적용했는가?
 - [ ] Stored Procedure 실행 및 외부 샌드박스 데이터 수집 시, DB 연결 실패 시 예외 격리(Soft Fail 및 DTO FAIL 상태 주입) 처리가 정상 적용되었는가?
