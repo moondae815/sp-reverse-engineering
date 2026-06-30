@@ -383,8 +383,21 @@ namespace ReSet.Core.Services.Clients
                                         var root = doc.RootElement;
                                         if (root.TryGetProperty("type", out var typeElem))
                                         {
-                                            var typeStr = typeElem.GetString();
-                                            if (typeStr == "reasoning" && root.TryGetProperty("summary", out var summaryElem) && summaryElem.ValueKind == JsonValueKind.Array)
+                                            var typeStr = typeElem.GetString() ?? string.Empty;
+
+                                            // 1) 추론 델타/요약 파싱
+                                            // 일반적인 스트리밍 델타 형태 (예: response.reasoning.delta, response.reasoning_text.delta 등)
+                                            if (typeStr.Contains("reasoning") && typeStr.Contains("delta") && root.TryGetProperty("delta", out var reasoningDeltaElem))
+                                            {
+                                                reasoning = reasoningDeltaElem.GetString();
+                                            }
+                                            // 혹시 다른 이름의 추론 델타가 오는 경우를 위한 폴백
+                                            else if (typeStr.Contains("thinking") && typeStr.Contains("delta") && root.TryGetProperty("delta", out var thinkingDeltaElem))
+                                            {
+                                                reasoning = thinkingDeltaElem.GetString();
+                                            }
+                                            // 기존 완결형 summary 배열이 오는 경우 대응
+                                            else if (typeStr == "reasoning" && root.TryGetProperty("summary", out var summaryElem) && summaryElem.ValueKind == JsonValueKind.Array)
                                             {
                                                 var sb = new StringBuilder();
                                                 foreach (var sumItem in summaryElem.EnumerateArray())
@@ -396,7 +409,9 @@ namespace ReSet.Core.Services.Clients
                                                 }
                                                 reasoning = sb.ToString();
                                             }
-                                            else if (typeStr == "response.output_text.delta" && root.TryGetProperty("delta", out var deltaElem))
+
+                                            // 2) 최종 명세서 출력 텍스트 파싱
+                                            if (typeStr.Contains("output_text.delta") && root.TryGetProperty("delta", out var deltaElem))
                                             {
                                                 content = deltaElem.GetString();
                                             }
