@@ -1206,9 +1206,20 @@ ExceptionScore: {review.ScoreException}/10
             {
                 try
                 {
-                    var thinkingFileName = Path.Combine(outputDir, $"{schema}.{name}_Thinking.txt");
-                    var thinkingHeader = $"**분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n" +
-                                         "==========================================================================\n\n";
+                    var thinkingFileName = Path.Combine(outputDir, $"{schema}.{name}_Thinking.md");
+                    
+                    // 기존 .txt 파일이 있다면 삭제 처리
+                    var oldTxtFile = Path.Combine(outputDir, $"{schema}.{name}_Thinking.txt");
+                    if (File.Exists(oldTxtFile))
+                    {
+                        try { File.Delete(oldTxtFile); } catch {}
+                    }
+
+                    var thinkingHeader = $"# AI 추론 과정 로그 (Thinking Process Log)\n\n" +
+                                         $"- **기본 분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n" +
+                                         $"- **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n\n" +
+                                         "본 문서는 저장 프로시저 역공학 및 검증 파이프라인 수행 중 사용된 AI 모델들의 추론 과정(Thinking Process)을 기록한 마크다운 문서입니다.\n\n" +
+                                         "---\n\n";
                     await File.WriteAllTextAsync(thinkingFileName, thinkingHeader + thinkingText);
                 }
                 catch (Exception ex)

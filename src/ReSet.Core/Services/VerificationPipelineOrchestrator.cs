@@ -185,24 +185,47 @@ namespace ReSet.Core.Services
                         candidatesResult = candidatesResultResult;
                         candidates = candidatesResult.Select(x => x.Content).ToArray();
 
-                        if (!string.IsNullOrWhiteSpace(candidatesResult[0].ThinkingText))
+                        accumulatedThinking.AppendLine("### [Actor] Low Spec Generation Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: low)");
+                        accumulatedThinking.AppendLine();
+                        if (candidatesResult != null && candidatesResult.Length > 0 && !string.IsNullOrWhiteSpace(candidatesResult[0]?.ThinkingText))
                         {
-                            accumulatedThinking.AppendLine("=== Low Spec Generation Thinking ===");
                             accumulatedThinking.AppendLine(candidatesResult[0].ThinkingText);
-                            accumulatedThinking.AppendLine();
                         }
-                        if (!string.IsNullOrWhiteSpace(candidatesResult[1].ThinkingText))
+                        else
                         {
-                            accumulatedThinking.AppendLine("=== Medium Spec Generation Thinking ===");
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                        }
+                        accumulatedThinking.AppendLine();
+
+                        accumulatedThinking.AppendLine("### [Actor] Medium Spec Generation Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: medium)");
+                        accumulatedThinking.AppendLine();
+                        if (candidatesResult != null && candidatesResult.Length > 1 && !string.IsNullOrWhiteSpace(candidatesResult[1]?.ThinkingText))
+                        {
                             accumulatedThinking.AppendLine(candidatesResult[1].ThinkingText);
-                            accumulatedThinking.AppendLine();
                         }
-                        if (!string.IsNullOrWhiteSpace(candidatesResult[2].ThinkingText))
+                        else
                         {
-                            accumulatedThinking.AppendLine("=== High Spec Generation Thinking ===");
-                            accumulatedThinking.AppendLine(candidatesResult[2].ThinkingText);
-                            accumulatedThinking.AppendLine();
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
                         }
+                        accumulatedThinking.AppendLine();
+
+                        accumulatedThinking.AppendLine("### [Actor] High Spec Generation Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: high)");
+                        accumulatedThinking.AppendLine();
+                        if (candidatesResult != null && candidatesResult.Length > 2 && !string.IsNullOrWhiteSpace(candidatesResult[2]?.ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine(candidatesResult[2].ThinkingText);
+                        }
+                        else
+                        {
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                        }
+                        accumulatedThinking.AppendLine();
                     }
                     catch (Exception ex)
                     {
@@ -249,12 +272,19 @@ namespace ReSet.Core.Services
                                     2 => "High",
                                     _ => (i + 1).ToString()
                                 };
+                                accumulatedThinking.AppendLine($"### [Critic] {candidateLabel} Spec Review Thinking");
+                                accumulatedThinking.AppendLine($"- **AI Provider**: {_criticService.ProviderName}");
+                                accumulatedThinking.AppendLine($"- **AI Model**: {_criticService.ModelName} (Effort: {_criticEffort ?? "default"})");
+                                accumulatedThinking.AppendLine();
                                 if (reviews[i] != null && !string.IsNullOrWhiteSpace(reviews[i]!.ThinkingText))
                                 {
-                                    accumulatedThinking.AppendLine($"=== {candidateLabel} Spec Critic Review Thinking ===");
                                     accumulatedThinking.AppendLine(reviews[i]!.ThinkingText);
-                                    accumulatedThinking.AppendLine();
                                 }
+                                else
+                                {
+                                    accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                                }
+                                accumulatedThinking.AppendLine();
                             }
                         }
                     }
@@ -373,12 +403,19 @@ namespace ReSet.Core.Services
                         specificationMarkdown = consolidatorResult.Content;
                         spDef.RawPromptContext = $"=== [System Prompt] ===\n{consolidatorResult.SystemPrompt}\n\n=== [User Prompt] ===\n{consolidatorResult.UserPrompt}";
 
-                        if (!string.IsNullOrWhiteSpace(consolidatorResult.ThinkingText))
+                        accumulatedThinking.AppendLine("### [Consolidator] Synthesis Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_consolidatorService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_consolidatorService.ModelName} (Effort: {_consolidatorEffort ?? "medium"})");
+                        accumulatedThinking.AppendLine();
+                        if (consolidatorResult != null && !string.IsNullOrWhiteSpace(consolidatorResult.ThinkingText))
                         {
-                            accumulatedThinking.AppendLine("=== Consolidator Synthesis Thinking ===");
                             accumulatedThinking.AppendLine(consolidatorResult.ThinkingText);
-                            accumulatedThinking.AppendLine();
                         }
+                        else
+                        {
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                        }
+                        accumulatedThinking.AppendLine();
                     }
                     catch (Exception ex)
                     {
@@ -397,12 +434,19 @@ namespace ReSet.Core.Services
                             specificationMarkdown = consolidatorSelfFixResult.Content;
                             spDef.RawPromptContext = $"=== [System Prompt] ===\n{consolidatorSelfFixResult.SystemPrompt}\n\n=== [User Prompt] ===\n{consolidatorSelfFixResult.UserPrompt}";
 
-                            if (!string.IsNullOrWhiteSpace(consolidatorSelfFixResult.ThinkingText))
+                            accumulatedThinking.AppendLine("### [Consolidator] Self-Correction Thinking");
+                            accumulatedThinking.AppendLine($"- **AI Provider**: {_consolidatorService.ProviderName}");
+                            accumulatedThinking.AppendLine($"- **AI Model**: {_consolidatorService.ModelName} (Effort: {_consolidatorEffort ?? "medium"})");
+                            accumulatedThinking.AppendLine();
+                            if (consolidatorSelfFixResult != null && !string.IsNullOrWhiteSpace(consolidatorSelfFixResult.ThinkingText))
                             {
-                                accumulatedThinking.AppendLine("=== Consolidator Self-Correction Thinking ===");
                                 accumulatedThinking.AppendLine(consolidatorSelfFixResult.ThinkingText);
-                                accumulatedThinking.AppendLine();
                             }
+                            else
+                            {
+                                accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                            }
+                            accumulatedThinking.AppendLine();
                         }
                         catch { }
                     }
@@ -430,12 +474,19 @@ namespace ReSet.Core.Services
                         spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
                         genSuccess = true;
                         
-                        if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                        accumulatedThinking.AppendLine($"### [Actor] Attempt {attempt} Generation Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: {_actorEffort ?? "default"})");
+                        accumulatedThinking.AppendLine();
+                        if (aiResult != null && !string.IsNullOrWhiteSpace(aiResult.ThinkingText))
                         {
-                            accumulatedThinking.AppendLine($"=== Attempt {attempt} Generation Thinking ===");
                             accumulatedThinking.AppendLine(aiResult.ThinkingText);
-                            accumulatedThinking.AppendLine();
                         }
+                        else
+                        {
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                        }
+                        accumulatedThinking.AppendLine();
 
                         Log.Debug("[파이프라인] AI 명세서 생성 성공 - SP: {SpName}, 시도: {Attempt}, 응답 길이: {Length}자",
                             selectedOption, attempt, specificationMarkdown.Length);
@@ -489,12 +540,19 @@ namespace ReSet.Core.Services
                     {
                         l2Result = await _criticService.ReviewSpecificationAsync(spDef, specificationMarkdown, _criticEffort, cancellationToken);
                         reviewSuccess = true;
+                        accumulatedThinking.AppendLine($"### [Critic] Attempt {attempt} Review Thinking");
+                        accumulatedThinking.AppendLine($"- **AI Provider**: {_criticService.ProviderName}");
+                        accumulatedThinking.AppendLine($"- **AI Model**: {_criticService.ModelName} (Effort: {_criticEffort ?? "default"})");
+                        accumulatedThinking.AppendLine();
                         if (l2Result != null && !string.IsNullOrWhiteSpace(l2Result.ThinkingText))
                         {
-                            accumulatedThinking.AppendLine($"=== Attempt {attempt} Critic Review Thinking ===");
                             accumulatedThinking.AppendLine(l2Result.ThinkingText);
-                            accumulatedThinking.AppendLine();
                         }
+                        else
+                        {
+                            accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                        }
+                        accumulatedThinking.AppendLine();
                         Log.Debug("[파이프라인] L2 AI 교차 리뷰 완료 - SP: {SpName}, 결함 감지: {HasDefects}",
                             selectedOption, l2Result?.HasDefects);
                     }
@@ -600,12 +658,19 @@ namespace ReSet.Core.Services
                             reSpec = aiResult.Content;
                             spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
 
-                            if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                            accumulatedThinking.AppendLine("### [Actor] Human Feedback Refinement Thinking");
+                            accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                            accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: {_actorEffort ?? "default"})");
+                            accumulatedThinking.AppendLine();
+                            if (aiResult != null && !string.IsNullOrWhiteSpace(aiResult.ThinkingText))
                             {
-                                accumulatedThinking.AppendLine("=== Human Feedback Refinement Thinking ===");
                                 accumulatedThinking.AppendLine(aiResult.ThinkingText);
-                                accumulatedThinking.AppendLine();
                             }
+                            else
+                            {
+                                accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                            }
+                            accumulatedThinking.AppendLine();
                         }
                         catch (Exception ex)
                         {
@@ -628,12 +693,19 @@ namespace ReSet.Core.Services
                                 reSpec = aiResult.Content;
                                 spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
 
-                                if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                                accumulatedThinking.AppendLine("### [Actor] Human Feedback Self-Correction Thinking");
+                                accumulatedThinking.AppendLine($"- **AI Provider**: {_aiService.ProviderName}");
+                                accumulatedThinking.AppendLine($"- **AI Model**: {_aiService.ModelName} (Effort: {_actorEffort ?? "default"})");
+                                accumulatedThinking.AppendLine();
+                                if (aiResult != null && !string.IsNullOrWhiteSpace(aiResult.ThinkingText))
                                 {
-                                    accumulatedThinking.AppendLine("=== Human Feedback Self-Correction Thinking ===");
                                     accumulatedThinking.AppendLine(aiResult.ThinkingText);
-                                    accumulatedThinking.AppendLine();
                                 }
+                                else
+                                {
+                                    accumulatedThinking.AppendLine("*(추론 비활성화 또는 추론 기능을 지원하지 않는 모델입니다.)*");
+                                }
+                                accumulatedThinking.AppendLine();
                             }
                             catch { }
                         }

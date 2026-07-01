@@ -89,7 +89,7 @@ namespace ReSet.Core.Services.Clients
                         { "system", systemPrompt },
                         { "messages", new[] { new { role = "user", content = userPrompt } } },
                         { "max_tokens", maxTokens },
-                        { "thinking", new { type = "adaptive" } },
+                        { "thinking", new { type = "adaptive", display = "summarized" } },
                         { "output_config", new { effort = apiEffort } }
                     };
 
@@ -128,7 +128,8 @@ namespace ReSet.Core.Services.Clients
                         thinking = new
                         {
                             type = "enabled",
-                            budget_tokens = budgetTokens
+                            budget_tokens = budgetTokens,
+                            display = "summarized"
                         }
                     };
                 }
