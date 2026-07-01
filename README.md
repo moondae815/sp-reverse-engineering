@@ -15,7 +15,7 @@
 
 ### 1. 지능형 역공학 및 의존성 분석 (Analyzer)
 * **재귀적 하이브리드 의존성 추적**: 깊이 우선 탐색(DFS) 방식으로 SP가 참조하는 테이블, 뷰, UDF 및 타 SP를 재귀 추적하여 전체 의존성 구조를 파악합니다. (권한 오류 발생 시 경고 기록 후 안전한 Soft Fail 제공)
-* **스키마 및 주석 자동 수집**: 데이터 타입, Null 여부, PK/FK 관계뿐만 아니라 시스템 설명(`MS_Description`)까지 긁어와 AI 분석용 도메인 맥락으로 자동 주입합니다.
+* **스키마 및 주석 자동 수집**: 데이터 타입, Null 여부, PK/FK 관계뿐만 아니라 컬럼의 Identity, 기본값 정의, 테이블 인덱스 메타데이터 및 시스템 설명(`MS_Description`)까지 긁어와 AI 분석용 도메인 맥락으로 자동 주입합니다.
 * **다중 포맷 메타데이터 수출**: 분석에 사용된 원천 데이터를 구조화된 JSON, 프롬프트 텍스트, 그리고 개별 객체 단위 DDL/MD 파일 구조로 자동 분산 저장(Dump)합니다.
 
 ### 2. 3단계 신뢰성 검증 파이프라인 (Verification)
@@ -105,7 +105,8 @@ ReSet/
 └── output/                          # [산출물 폴더] 생성된 스펙, 계획서, 모의 데이터 및 정합성 리포트 저장소
     ├── [SP이름]_Spec.md            # SP 개별 비즈니스 설계 명세서
     ├── [SP이름]_MigrationInstructions.md # 개별 SP 마이그레이션 지시서 번들
-    ├── [SP이름]_Thinking.txt            # AI 모델의 추론 과정 로그 (Critic/Consolidator 추론 과정 포함)
+    ├── [SP이름]_Thinking.md            # AI 모델의 추론 과정 로그 (Critic/Consolidator 추론 과정 포함)
+    ├── [SP이름]_RawContext.md          # AI 모델에 실제 전송된 조립 완료 프롬프트 원문 마크다운
     ├── [JobName]_BatchMigrationPlan.md   # 통합 배치 전환 계획서
     ├── [JobName]_MigrationInstructions.md # 통합 마이그레이션 지시서 번들
     └── validation/                 # 소스코드 정적 검증 및 데이터 정합성 리포트 저장 폴더
@@ -179,7 +180,7 @@ ReSet/
     "Directory": "./output",       // 명세서 파일이 저장될 출력 디렉터리
     "InstructionsFile": "./instructions.md", // 분석 규칙 지침 파일 명칭
     "SaveRawJson": true,           // [설정] SpDefinition JSON 파일 저장 여부
-    "SaveRawContext": true,        // [설정] 조립된 프롬프트 텍스트 원문 저장 여부
+    "SaveRawContext": true,        // [설정] 조립된 프롬프트 마크다운 원문 저장 여부
     "SaveRawFiles": true,          // [설정] 의존성 개별 객체 파일/폴더 분산 덤프 여부
     "EnableCache": true            // [설정] DDL 해시 기반 로컬 증분 분석 캐싱 활성화 여부
   },

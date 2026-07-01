@@ -43,13 +43,13 @@
 | | [ConsoleUserInteraction](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/ConsoleUserInteraction.cs) | Spectre.Console 기반 TUI 렌더링, L3 인간 개입형 검토 UI 제공, Warnings 경고 패널 렌더링, DB 동기화 동의(`ConfirmMetadataSyncAsync`) 제어. |
 | | [SessionManager](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/SessionManager.cs) | 로컬 세션 파일(`.session.json`)을 활용한 직전 로그인 정보 관리 및 서버·DB명 즉시 수정 기능 제공. |
 | | [CliArgs](file:///home/moondae/git-root/ReSet/src/ReSet.Cli/CliArgs.cs) | CLI 아규먼트 파싱 결과(`--conn`, `--sp`, `--all`, `--job-name` 등)를 담는 데이터 모델. |
-| **ReSet.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs) | SQL Server 메타데이터 수집, DFS 기반 재귀적 의존성 탐색, 확장 속성(`MS_Description`) 주석 및 DDL 추출. |
+| **ReSet.Core**<br/>(핵심 비즈니스 레이어) | [DbMetadataService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs) | SQL Server 메타데이터 수집, DFS 기반 재귀적 의존성 탐색, 확장 속성(`MS_Description`) 주석, Identity/DefaultValue 및 인덱스 정보 수집, DDL 추출. |
 | | [AiService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs) | LLM 프롬프트 조립(설명 누락 컬럼 역추론 및 코드-주석 불일치 감지 규칙 포함), 주입받은 `IAiClient`를 통한 AI API 호출 및 JSON 파싱. |
-| | [IAiClient](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs) | AI 모델 간의 공통 텍스트 통신 및 스트리밍을 정의하는 추상 인터페이스. |
+| | [IAiClient](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs) | AI 모델 간의 공통 텍스트 통신 및 추론(Thinking) 데이터 취합 결과를 다루는 추상 인터페이스. |
 | | [Clients (OpenAi, Claude, Google, Ollama, Zai)](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/) | OpenAI, Anthropic, Google, Ollama, Z.ai 등 공급자별 네이티브 규격 채팅 HttpClient 통신 모듈. |
 | | [MechanicalValidator](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs) | Markdig AST 기반 마크다운 필수 구조 분석 및 mermaid-cli 연동을 통한 다이어그램 문법 실시간 컴파일 검증. |
 | | [VerificationPipelineOrchestrator](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs) | CancellationToken을 전파하는 L1/L2 자동화 자가 수정 루프 및 L3 인간 개입 워크플로우 오케스트레이션. |
-| | [MetadataExporter](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs) | JSON 덤프, 프롬프트 로그, 개별 DDL 파일 내보내기 및 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 생성. |
+| | [MetadataExporter](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs) | JSON 덤프, Raw 프롬프트 마크다운(`*_RawContext.md`), 개별 DDL 파일 내보내기 및 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 생성. |
 | | [CacheManager](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs) | SHA-256 해시 기반 로컬 증분 분석 캐싱 및 색인(`.sp_cache_index.json`) 보존/조회 관리. |
 | | [ExternalCliCodingEngine](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs) | CLI 기반 외부 코딩 에이전트(Claude Code, agy 등) 기동, 콘솔 입출력 스트림 공유 및 CancellationToken 기반 강제 프로세스 정리. |
 | | [SettlementPolicyService](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/SettlementPolicyService.cs) | DDL 상수 분석 및 DB 마스터 데이터 프로파일링을 결합한 통합 정산 정책 정의서 도출. |
@@ -130,7 +130,7 @@ graph TD
 * **소프트 페일(Soft Fail)**: 특정 UDF의 스키마나 DDL 조회 시 권한 누락 등으로 발생한 비치명적 예외는 프로세스를 정지시키지 않고 `SpDefinition.Warnings` 리스트에 누적하여 스킵 처리합니다. 경고 내역은 TUI 경고 패널과 AI 프롬프트에 동시 전달되어 불완전한 메타데이터 기반 하에서도 차선의 명세서를 도출하도록 돕습니다.
 
 ### 4.2. MS_Description 확장 속성 맵핑 및 AI 보완
-* **한글 도메인 지식 맵핑**: 데이터베이스의 확장 속성인 `MS_Description`에 등록된 컬럼 주석과 테이블 설명을 상세 스키마 정보 테이블에 자동 맵핑하여 AI에 전달합니다. 이를 통해 코드 분석 시 단순 영문 약어(예: `STAT_CD`)의 업무상 의미(예: `상태코드`)를 직관적으로 해석하게 돕습니다.
+* **한글 도메인 지식 맵핑**: 데이터베이스의 확장 속성인 `MS_Description`에 등록된 컬럼 주석과 테이블 설명을 상세 스키마 정보 테이블에 자동 맵핑하여 AI에 전달합니다. 추가적으로 컬럼의 Identity 여부, 기본값 정의(`DefaultValue`), 그리고 테이블 인덱스 메타데이터(인덱스명, 타입, Unique/PK 여부, 구성 컬럼)까지 함께 수집하여 전달함으로써 분석의 정확도를 높입니다. 이를 통해 코드 분석 시 단순 영문 약어(예: `STAT_CD`)의 업무상 의미(예: `상태코드`)를 직관적으로 해석하게 돕습니다.
 * **설명 누락 컬럼 역추론**: 스키마 조회 시 한글 주석이 누락된 항목은 `IsDescriptionMissing`으로 마킹됩니다. AI는 SP/뷰/UDF 연산 문맥을 분석하여 컬럼의 용도를 유추하며, 명세서 본문에 `[AI 추론 보완: Schema.Table.Column - 유추된설명]` 포맷으로 강제 노출하도록 프롬프트 규칙에 바인딩됩니다.
 * **코드-주석 불일치 감지**: 소스코드에 삽입된 자연어 주석과 실제 실행되는 쿼리 연산 로직 사이에 모순이 감지되는 경우, 실제 쿼리 코드를 진실의 원천으로 삼아 명세서를 작성하되, 개요 섹션 최상단에 `[🚨 주석 불일치 경고] {모순내용}` 경고 문구를 포함시키도록 설계되었습니다.
 * **보완 스크립트 추출**: 분석 완료 시, AI가 역추론한 컬럼 설명 정보를 활용해 `sp_addextendedproperty` 및 `sp_updateextendedproperty` 쿼리가 조립된 SQL 정화 스크립트 파일(`*_MetadataCleansing.sql`)을 디렉토리에 항상 파일로 덤프해 보존합니다.
@@ -216,15 +216,15 @@ graph TD
 #### 4.3.3. Level 3: 개발자 최종 검토 및 동기화 (L3 Human-in-the-loop)
 * **피드백 수동 반영**: TUI 화면에 명세서 미리보기가 렌더링되며 개발자가 '승인', '취소', '피드백 입력' 중 하나를 선택합니다. 피드백 입력 시 사용자의 상세 요구사항을 컨텍스트에 추가하여 명세서를 재생성하고, 재생성된 결과물에 대해 L1 정적 검사 및 AI 자가 수정 루프를 1회 더 구동해 안정성을 유지합니다.
 * **DB 동기화 제어**: 최종 승인 단계에서 개발자에게 DB 역반영 동의 여부를 확인하여, 동의할 경우에만 보완 SQL 스크립트(`*_MetadataCleansing.sql`)를 호출하여 대상 데이터베이스의 Extended Properties 속성 주석을 정화합니다.
-* **추론 로그 보존**: 파이프라인 진행 과정에서 축적된 모든 AI 모델의 깊은 생각/추론 내용(Thinking log) 및 Critic/Consolidator 리뷰 추론 텍스트를 취합하여 `{Schema}.{Name}_Thinking.txt` 파일로 자동 기록하여 보존합니다.
+* **추론 로그 보존**: 파이프라인 진행 과정에서 축적된 모든 AI 모델의 깊은 생각/추론 내용(Thinking log) 및 Critic/Consolidator 리뷰 추론 텍스트를 취합하여 `{Schema}.{Name}_Thinking.md` 파일로 자동 기록하여 보존합니다.
 
 ### 4.4. 다중 AI 공급자(Multi-LLM Provider) 추상화
 * **Decoupling 계약**: LLM 통신과 페이로드 직렬화 사양을 `IAiClient` 계약 뒤로 격리하였습니다. 비즈니스 파이프라인인 `AiService`는 하위 전송 메커니즘을 인지하지 않습니다.
 * **공급자별 독립 클라이언트**:
-  * **OpenAiClient**: OpenAI 공식 SDK, gpt-5 Responses API, o1/o3 추론 모델 규격(`reasoning_effort` 등) 대응.
-  * **ClaudeClient**: Anthropic Messages API 페이로드 규격 및 Claude 4세대(`output_config.effort`) 대응.
+  * **OpenAiClient**: OpenAI 공식 SDK, gpt-5 Responses API 지원, o1/o3 추론 모델 규격(`reasoning_effort` 기본값 "medium" 지정 등) 대응 및 스트리밍 폐지 대응.
+  * **ClaudeClient**: Anthropic Messages API 페이로드 규격 및 Claude 4세대/5세대(`output_config.effort` 및 `thinking` 내 `display = "summarized"` 옵션을 통한 빈 생각 블록 방지) 대응, temperature 생략 대응.
   * **GoogleClient**: Google AI Studio API Key 주입 및 SystemInstruction 구조 대응.
-  * **OllamaClient**: 로컬 실행형 LLM 통신을 위한 Ollama REST API 규격 대응.
+  * **OllamaClient**: 로컬 실행형 LLM 통신을 위한 Ollama REST API 규격 대응 및 Gemma 4 공식 생각 토큰(<|channel>thought)과 일반 <think> 태그의 수동 파싱 및 본문 분리 지원.
   * **ZaiClient**: Z.ai AI 플랫폼 연동 규격 및 추론 과정(Reasoning Process) 수집 대응.
 * **설정 기반 동적 DI**: `appsettings.json` 내 `Providers` 맵핑 값을 읽어 `AiClientFactory`가 적합한 전용 클라이언트를 빌드해 `AiService`에 주입하는 런타임 다형성을 확보했습니다.
 

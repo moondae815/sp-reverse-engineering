@@ -21,17 +21,18 @@
 *   **도메인 모델 ([Models](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models))**
     *   [SpDefinition.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/SpDefinition.cs): 분석된 SP 메타데이터(소스코드 DDL, 컬럼, 의존성 등)를 관리하는 루트 데이터 클래스.
     *   [DependencyInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/DependencyInfo.cs): 재귀적으로 수집된 DB 개체(테이블, 뷰, 다른 SP 등) 의존성을 표현하는 모델.
-    *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보, 한글 설명 및 설명 누락 유무(IsDescriptionMissing)를 수집하는 모델.
-    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs): AI 스트리밍 응답 시 텍스트 조각 및 추론(Thinking) 데이터를 분리 수집하기 위한 데이터 모델.
+    *   [ColumnInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/ColumnInfo.cs): 컬럼명, 데이터타입, PK/FK 정보, 한글 설명, 설명 누락 유무(IsDescriptionMissing) 및 Identity/DefaultValue 정보를 수집하는 모델.
+    *   [TableIndexInfo.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/TableIndexInfo.cs): 테이블 인덱스 메타데이터(인덱스명, 타입, Unique, PK 여부, 구성 컬럼)를 관리하는 모델.
+    *   [AiResult.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/AiResult.cs): AI 응답 내용(Content) 및 추론 텍스트(ThinkingText), 요청된 시스템/사용자 프롬프트 콘텍스트를 모아 관리하는 데이터 모델.
 *   **비즈니스 서비스 ([Services](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services))**
     *   [DbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/DbMetadataService.cs): SQL Server 메타데이터(Extended Properties, DDL, 의존성 관계)를 DFS 재귀 탐색을 활용해 수집하는 인터페이스([IDbMetadataService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IDbMetadataService.cs)) 구현체.
     *   [AiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/AiService.cs): 수집한 정보를 프롬프트로 다듬어 AI 공급자에 분석 요청을 보내는 인터페이스([IAiService.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiService.cs)) 구현체.
     *   [IAiClient.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IAiClient.cs): AI 모델 간의 공통 텍스트 통신 계약 정의 인터페이스 및 프로바이더별 클라이언트 팩토리([AiClientFactory.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/Clients/AiClientFactory.cs)).
     *   [MechanicalValidator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MechanicalValidator.cs): Markdig 파서 및 Mermaid 린터를 활용해 산출물 뼈대 및 다이어그램 문법을 정적 검증하는 클래스.
     *   [VerificationPipelineOrchestrator.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/VerificationPipelineOrchestrator.cs): 3단계 검증 파이프라인의 오케스트레이션을 담당.
-    *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, TXT 프롬프트, 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
+    *   [MetadataExporter.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/MetadataExporter.cs): 원본 DB 메타데이터를 JSON, Raw 프롬프트 마크다운(`*_RawContext.md`), 개별 DDL/MD 파일 등으로 보존하고, 외부 코딩 에이전트용 가이드라인 번들(`*_MigrationInstructions.md`) 및 통합 마이그레이션 지시서 번들(`{JobName}_MigrationInstructions.md`)을 생성하는 기능 구현체.
     *   [CacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/CacheManager.cs): SHA-256 해시 기반 로컬 증분 분석 캐싱 서비스 구현체 ([ICacheManager.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ICacheManager.cs) 포함).
-    *   [StreamingChunk.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Models/StreamingChunk.cs) 및 AI 스트리밍 응답: 각 AI 클라이언트 스트리밍 수신 시 JSON chunk 원문 데이터(Raw Line) 및 실시간 thinking stream 로그는 `Log.Debug`나 `Log.Information`이 아닌 `Log.Verbose` 레벨로 기록하여 기본 디버그 실행 수준에서 TUI 화면이 깨지거나 출력창이 오염되는 것을 차단하고, 상세 분석 로그(Verbose) 시에만 트레이스가 보존되도록 조치하십시오.
+    *   AI 응답 수집 및 로그 격리: AI 클라이언트 호출 결과에서 추출된 추론(Thinking) 텍스트는 수집 후 TUI 화면을 오염시키지 않도록 `Log.Verbose` 또는 파일 전용 로그에만 기록되게 하고, 기본 실행 수준에서는 실시간 노출을 차단하여 TUI 화면 깨짐을 원천적으로 차단하십시오.
     *   [ExternalCliCodingEngine.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/ExternalCliCodingEngine.cs): CLI 기반 외부 에이전트 프로세스(Claude, agy, codex 등) 기동 및 콘솔 상속 연동 구현체.
     *   [IMultiProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/IMultiProgressScope.cs): 멀티태스크 진행률 상황 보고를 위한 추상 인터페이스.
     *   [NullProgressScope.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Core/Services/NullProgressScope.cs): 유닛 테스트 및 무인 모드 등에서 UI 미출력을 보장하고 NullReferenceException을 막는 방어적 널 객체 구현체.
@@ -126,6 +127,10 @@
     *   **클렌징 스크립트 및 동기화**: AI 분석 성공 완료 시 보완 스크립트 파일(`*_MetadataCleansing.sql`)을 항상 무인으로 자동 생성 및 갱신하되, 실제 DB 정화는 TUI 최종 승인 및 동의 시에만 실행하십시오.
     *   **C# 보간 중괄호 이스케이프**: 프롬프트 텍스트 내부의 중괄호(`{}`)는 C# 보간 기호($) 해석 오류를 막기 위해 반드시 이중 중괄호(`{{}}`)로 이스케이프해야 합니다.
     *   **정산 정책서**: SP DDL의 상수 분기 조건 분석과 테이블 데이터 프로파일링 정보를 결합해 정산 정책서(Settlement Rulebook)를 도출하고, 지정된 5대 헤더 구조를 엄격히 준수하도록 설계하십시오.
+    *   **컬럼 매핑 표 축약 금지**: CRUD 분석 및 데이터 컬럼 매핑 표 작성 시, '외 다수' 또는 '등'과 같이 컬럼 목록이나 매핑 관계를 임의로 축약하거나 생략하지 말고, 실제 대상 물리 컬럼과 이에 매핑되는 원천값을 누락 없이 1:1 대조 표에 완전하게 기술하십시오.
+    *   **DDL 기반 제약 조건 작성**: 프로시저 파라미터나 컬럼 제약 조건에 대해 임의로 'NOT NULL'과 같은 주관적 단정을 짓지 말고, 오직 DDL 소스코드에 명시되어 있는 타입 제약 및 기본값 정의를 기반으로만 사실적으로 기술하십시오.
+    *   **NOLOCK 힌트 격리 반영**: 레거시 쿼리 내에서 `WITH(NOLOCK)` 또는 `NOLOCK` 등의 테이블 읽기 힌트가 사용된 경우, 그에 따른 더티 리드(Dirty Read) 가능성과 같은 데이터 격리 및 정합성 특성을 명세서 내 예외 처리/제약 사항 또는 트랜잭션 설명부에 반영하십시오.
+    *   **복합 필터의 정확한 해석**: `NOT IN`, `ISNULL` 등이 결합된 복합 필터/분기 조건을 해석할 때 논리적 환각을 철저히 배제하고 정확하게 기술하십시오. (예: '특정 값만 포함'이 아니라 '제외된 값 외의 모든 값 및 NULL 치환값 포함'으로 정확히 서술)
 
 ---
 
