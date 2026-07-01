@@ -158,40 +158,51 @@ namespace ReSet.Core.Services
 
             if (string.Equals(_actorEffort, "dynamic", StringComparison.OrdinalIgnoreCase))
             {
+                string[] candidates;
+                AiResult[]? candidatesResult = null;
                 var actorInfo = $"Actor: {_aiService.ProviderName} - {_aiService.ModelName}(dynamic effort)";
                 var criticInfo = $"Critic: {_criticService.ProviderName} - {_criticService.ModelName}({_criticEffort ?? "high"} effort)";
                 _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 하이브리드 다중 후보군 병렬 생성 및 검토 중... ({actorInfo} / {criticInfo})");
                 
-                string[] candidates;
                 using (var progressScope = _userInteraction.CreateProgressScope("하이브리드 다중 후보군 생성") ?? NullProgressScope.Instance)
                 {
                     progressScope.AddTask("Low Effort Spec 생성", "Low Effort Spec 생성");
 
-                    var tasks = new System.Collections.Generic.List<Task<(string Content, string Thinking)>>();
-                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), "Low Spec", cancellationToken), progressScope, "Low Effort Spec 생성"));
+                    var tasks = new System.Collections.Generic.List<Task<AiResult>>();
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "low", cancellationToken), progressScope, "Low Effort Spec 생성"));
 
                     await Task.Delay(1000, cancellationToken);
                     progressScope.AddTask("Medium Effort Spec 생성", "Medium Effort Spec 생성");
-                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), "Medium Spec", cancellationToken), progressScope, "Medium Effort Spec 생성"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "medium", cancellationToken), progressScope, "Medium Effort Spec 생성"));
 
                     await Task.Delay(1000, cancellationToken);
                     progressScope.AddTask("High Effort Spec 생성", "High Effort Spec 생성");
-                    tasks.Add(WrapWithProgress(ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), "High Spec", cancellationToken), progressScope, "High Effort Spec 생성"));
+                    tasks.Add(WrapWithProgress(_aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, "high", cancellationToken), progressScope, "High Effort Spec 생성"));
 
                     try
                     {
-                        var candidatesResult = await Task.WhenAll(tasks);
+                        var candidatesResultResult = await Task.WhenAll(tasks);
+                        candidatesResult = candidatesResultResult;
                         candidates = candidatesResult.Select(x => x.Content).ToArray();
 
-                        accumulatedThinking.AppendLine("=== Low Spec Generation Thinking ===");
-                        accumulatedThinking.AppendLine(candidatesResult[0].Thinking);
-                        accumulatedThinking.AppendLine();
-                        accumulatedThinking.AppendLine("=== Medium Spec Generation Thinking ===");
-                        accumulatedThinking.AppendLine(candidatesResult[1].Thinking);
-                        accumulatedThinking.AppendLine();
-                        accumulatedThinking.AppendLine("=== High Spec Generation Thinking ===");
-                        accumulatedThinking.AppendLine(candidatesResult[2].Thinking);
-                        accumulatedThinking.AppendLine();
+                        if (!string.IsNullOrWhiteSpace(candidatesResult[0].ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine("=== Low Spec Generation Thinking ===");
+                            accumulatedThinking.AppendLine(candidatesResult[0].ThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
+                        if (!string.IsNullOrWhiteSpace(candidatesResult[1].ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine("=== Medium Spec Generation Thinking ===");
+                            accumulatedThinking.AppendLine(candidatesResult[1].ThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
+                        if (!string.IsNullOrWhiteSpace(candidatesResult[2].ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine("=== High Spec Generation Thinking ===");
+                            accumulatedThinking.AppendLine(candidatesResult[2].ThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -313,6 +324,12 @@ namespace ReSet.Core.Services
                     specificationMarkdown = candidates[bestCandidateIndex];
                     finalReview = reviews![bestCandidateIndex];
                     fastPassTriggered = true;
+
+                    if (candidatesResult != null && bestCandidateIndex < candidatesResult.Length)
+                    {
+                        var bestResult = candidatesResult[bestCandidateIndex];
+                        spDef.RawPromptContext = $"=== [System Prompt] ===\n{bestResult.SystemPrompt}\n\n=== [User Prompt] ===\n{bestResult.UserPrompt}";
+                    }
                 }
 
                 if (!fastPassTriggered)
@@ -352,11 +369,14 @@ namespace ReSet.Core.Services
                     _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - 이종 모델 합성 에이전트(Consolidator) 구동 중 ({_consolidatorService.ProviderName} - {_consolidatorService.ModelName}, {_consolidatorEffort ?? "medium"} effort)...{scoreSummary}");
                     try
                     {
-                        specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), null, _consolidatorEffort ?? "medium", cancellationToken);
-                        if (!string.IsNullOrWhiteSpace(_consolidatorService.LastThinkingText))
+                        var consolidatorResult = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), null, _consolidatorEffort ?? "medium", cancellationToken);
+                        specificationMarkdown = consolidatorResult.Content;
+                        spDef.RawPromptContext = $"=== [System Prompt] ===\n{consolidatorResult.SystemPrompt}\n\n=== [User Prompt] ===\n{consolidatorResult.UserPrompt}";
+
+                        if (!string.IsNullOrWhiteSpace(consolidatorResult.ThinkingText))
                         {
                             accumulatedThinking.AppendLine("=== Consolidator Synthesis Thinking ===");
-                            accumulatedThinking.AppendLine(_consolidatorService.LastThinkingText);
+                            accumulatedThinking.AppendLine(consolidatorResult.ThinkingText);
                             accumulatedThinking.AppendLine();
                         }
                     }
@@ -373,11 +393,14 @@ namespace ReSet.Core.Services
                         _userInteraction.NotifyStatus("합성본에서 정적 에러가 검출되어 AI 자가 수정 1회 진행합니다.");
                         try
                         {
-                            specificationMarkdown = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), finalL1.SuggestedPromptFix, _consolidatorEffort ?? "medium", cancellationToken);
-                            if (!string.IsNullOrWhiteSpace(_consolidatorService.LastThinkingText))
+                            var consolidatorSelfFixResult = await _consolidatorService.GenerateSpecificationAsync(spDef, sbConsolidation.ToString(), finalL1.SuggestedPromptFix, _consolidatorEffort ?? "medium", cancellationToken);
+                            specificationMarkdown = consolidatorSelfFixResult.Content;
+                            spDef.RawPromptContext = $"=== [System Prompt] ===\n{consolidatorSelfFixResult.SystemPrompt}\n\n=== [User Prompt] ===\n{consolidatorSelfFixResult.UserPrompt}";
+
+                            if (!string.IsNullOrWhiteSpace(consolidatorSelfFixResult.ThinkingText))
                             {
                                 accumulatedThinking.AppendLine("=== Consolidator Self-Correction Thinking ===");
-                                accumulatedThinking.AppendLine(_consolidatorService.LastThinkingText);
+                                accumulatedThinking.AppendLine(consolidatorSelfFixResult.ThinkingText);
                                 accumulatedThinking.AppendLine();
                             }
                         }
@@ -402,13 +425,17 @@ namespace ReSet.Core.Services
                     _userInteraction.NotifyStatus($"[yellow]{selectedOption}[/] - AI 리버스 엔지니어링 수행 중 ({_aiService.ProviderName} - {_aiService.ModelName}{effortText}) [[{attemptText}]]...");
                     try
                     {
-                        var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken), "Single Spec", cancellationToken);
-                        specificationMarkdown = specText;
+                        var aiResult = await _aiService.GenerateSpecificationAsync(spDef, instructions, feedbackLog, _actorEffort, cancellationToken);
+                        specificationMarkdown = aiResult.Content;
+                        spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
                         genSuccess = true;
                         
-                        accumulatedThinking.AppendLine($"=== Attempt {attempt} Generation Thinking ===");
-                        accumulatedThinking.AppendLine(thinkingText);
-                        accumulatedThinking.AppendLine();
+                        if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                        {
+                            accumulatedThinking.AppendLine($"=== Attempt {attempt} Generation Thinking ===");
+                            accumulatedThinking.AppendLine(aiResult.ThinkingText);
+                            accumulatedThinking.AppendLine();
+                        }
 
                         Log.Debug("[파이프라인] AI 명세서 생성 성공 - SP: {SpName}, 시도: {Attempt}, 응답 길이: {Length}자",
                             selectedOption, attempt, specificationMarkdown.Length);
@@ -569,11 +596,16 @@ namespace ReSet.Core.Services
                         string reSpec = string.Empty;
                         try
                         {
-                            var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, humanFeedbackLog, _actorEffort, cancellationToken), "Single Spec (Refinement)", cancellationToken);
-                            reSpec = specText;
-                            accumulatedThinking.AppendLine("=== Human Feedback Refinement Thinking ===");
-                            accumulatedThinking.AppendLine(thinkingText);
-                            accumulatedThinking.AppendLine();
+                            var aiResult = await _aiService.GenerateSpecificationAsync(spDef, instructions, humanFeedbackLog, _actorEffort, cancellationToken);
+                            reSpec = aiResult.Content;
+                            spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
+
+                            if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                            {
+                                accumulatedThinking.AppendLine("=== Human Feedback Refinement Thinking ===");
+                                accumulatedThinking.AppendLine(aiResult.ThinkingText);
+                                accumulatedThinking.AppendLine();
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -592,11 +624,16 @@ namespace ReSet.Core.Services
                             _userInteraction.NotifyStatus("피드백 적용본에서 정적 에러가 검출되어 AI 자가 수정 1회 더 진행합니다.");
                             try
                             {
-                                var (specText, thinkingText) = await ConsumeStreamAndLogAsync(_aiService.StreamSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, _actorEffort, cancellationToken), "Single Spec (Self-Correction)", cancellationToken);
-                                reSpec = specText;
-                                accumulatedThinking.AppendLine("=== Human Feedback Self-Correction Thinking ===");
-                                accumulatedThinking.AppendLine(thinkingText);
-                                accumulatedThinking.AppendLine();
+                                var aiResult = await _aiService.GenerateSpecificationAsync(spDef, instructions, l1Re.SuggestedPromptFix, _actorEffort, cancellationToken);
+                                reSpec = aiResult.Content;
+                                spDef.RawPromptContext = $"=== [System Prompt] ===\n{aiResult.SystemPrompt}\n\n=== [User Prompt] ===\n{aiResult.UserPrompt}";
+
+                                if (!string.IsNullOrWhiteSpace(aiResult.ThinkingText))
+                                {
+                                    accumulatedThinking.AppendLine("=== Human Feedback Self-Correction Thinking ===");
+                                    accumulatedThinking.AppendLine(aiResult.ThinkingText);
+                                    accumulatedThinking.AppendLine();
+                                }
                             }
                             catch { }
                         }
@@ -637,7 +674,8 @@ namespace ReSet.Core.Services
                         specsCopy.Add(("Feedback_Log.txt", $"[이전 시도에 대한 검토 피드백]:\n{feedbackLog}\n위 에러/피드백 사항을 전적으로 수용하여 통합 설계서를 완성해 주세요."));
                     }
 
-                    consolidatedPlan = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                    var aiResult = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                    consolidatedPlan = aiResult.Content;
                     genSuccess = true;
                 }
                 catch (Exception ex)
@@ -753,7 +791,8 @@ namespace ReSet.Core.Services
                     string rePlan = string.Empty;
                     try
                     {
-                        rePlan = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                        var aiResult = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsCopy, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                        rePlan = aiResult.Content;
                     }
                     catch (Exception ex)
                     {
@@ -774,7 +813,8 @@ namespace ReSet.Core.Services
                         {
                             var specsRe = new System.Collections.Generic.List<(string FileName, string Content)>(specsCopy);
                             specsRe.Add(("L1_Re_Fix.txt", l1Re.SuggestedPromptFix ?? string.Empty));
-                            rePlan = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsRe, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                            var aiResult = await _consolidatorService.GenerateConsolidatedBatchPlanAsync(specsRe, targetLanguage, jobName, _consolidatorEffort, cancellationToken);
+                            rePlan = aiResult.Content;
                         }
                         catch { }
                     }
@@ -913,51 +953,7 @@ namespace ReSet.Core.Services
             }
         }
 
-        private async Task<(string Content, string Thinking)> ConsumeStreamAndLogAsync(
-            IAsyncEnumerable<StreamingChunk> stream, 
-            string contextLabel, 
-            CancellationToken cancellationToken)
-        {
-            var fullContent = new StringBuilder();
-            var thinkingContent = new StringBuilder();
-            var currentLineBuffer = new StringBuilder();
 
-            await foreach (var chunk in stream.WithCancellation(cancellationToken))
-            {
-                if (chunk.Type == ChunkType.Text)
-                {
-                    fullContent.Append(chunk.Content);
-                }
-                else if (chunk.Type == ChunkType.Thinking)
-                {
-                    thinkingContent.Append(chunk.Content);
-                    currentLineBuffer.Append(chunk.Content);
-                    var contentStr = currentLineBuffer.ToString();
-                    if (contentStr.Contains("\n"))
-                    {
-                        var lines = contentStr.Split('\n');
-                        for (int i = 0; i < lines.Length - 1; i++)
-                        {
-                            var cleanLine = lines[i].TrimEnd('\r');
-                            if (!string.IsNullOrWhiteSpace(cleanLine))
-                            {
-                                Log.Verbose("[{Label} Thinking]: {Line}", contextLabel, cleanLine);
-                            }
-                        }
-                        currentLineBuffer.Clear();
-                        currentLineBuffer.Append(lines[lines.Length - 1]);
-                    }
-                }
-            }
-
-            var lastLine = currentLineBuffer.ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(lastLine))
-            {
-                Log.Verbose("[{Label} Thinking]: {Line}", contextLabel, lastLine);
-            }
-
-            return (fullContent.ToString(), thinkingContent.ToString());
-        }
 
         private string EscapeMarkup(string text)
         {

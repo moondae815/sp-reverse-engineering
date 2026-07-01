@@ -42,9 +42,26 @@ namespace ReSet.Core.Services
                 // 3. 프롬프트 컨텍스트 저장
                 if (saveContext)
                 {
-                    var contextPath = Path.Combine(baseOutputDir, $"{cleanSpName}_RawContext.txt");
+                    var contextPath = Path.Combine(baseOutputDir, $"{cleanSpName}_RawContext.md");
                     Log.Debug("Raw 프롬프트 컨텍스트 파일 작성 중: {ContextPath}", contextPath);
-                    await File.WriteAllTextAsync(contextPath, rawPromptContext, Encoding.UTF8);
+
+                    // 기존 .txt 파일이 있다면 삭제 처리
+                    var oldTxtFile = Path.Combine(baseOutputDir, $"{cleanSpName}_RawContext.txt");
+                    if (File.Exists(oldTxtFile))
+                    {
+                        try { File.Delete(oldTxtFile); } catch {}
+                    }
+
+                    var sb = new StringBuilder();
+                    sb.AppendLine("# AI 입력 프롬프트 원천 콘텍스트 (Raw Prompt Context)");
+                    sb.AppendLine();
+                    sb.AppendLine("본 문서는 저장 프로시저 역공학 분석을 위해 AI 모델에 실제 전송된 조립 완료 프롬프트 원문입니다.");
+                    sb.AppendLine();
+                    sb.AppendLine("---");
+                    sb.AppendLine();
+                    sb.AppendLine(rawPromptContext);
+
+                    await File.WriteAllTextAsync(contextPath, sb.ToString(), Encoding.UTF8);
                 }
 
                 // 4. 개별 파일/폴더 분산 저장
@@ -66,7 +83,7 @@ namespace ReSet.Core.Services
                     {
                         var depFileName = string.IsNullOrEmpty(dep.Database)
                             ? $"{dep.Schema}.{dep.Name}"
-                            : $"{dep.Database}_{dep.Schema}_{dep.Name}";
+                            : $"{dep.Database}.{dep.Schema}.{dep.Name}";
 
                         // 테이블 스키마 md 저장
                         if (dep.Columns.Count > 0)
@@ -367,8 +384,8 @@ namespace ReSet.Core.Services
                 sb.AppendLine($"* 테이블 설명: {dep.Description}");
             }
             sb.AppendLine();
-            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 | 설명 |");
-            sb.AppendLine("| :--- | :--- | :---: | :--- | :--- |");
+            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | Identity | 기본값 | 제약 조건 | 설명 |");
+            sb.AppendLine("| :--- | :--- | :---: | :---: | :--- | :--- | :--- |");
             
             foreach (var col in dep.Columns)
             {
@@ -378,8 +395,25 @@ namespace ReSet.Core.Services
                 
                 var constraintStr = string.Join(", ", constraints);
                 var nullableStr = col.IsNullable ? "Yes" : "No";
+                var identityStr = col.IsIdentity ? "Yes" : "No";
+                var defaultStr = col.DefaultValue ?? "";
                 
-                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} | {col.Description} |");
+                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {identityStr} | {defaultStr} | {constraintStr} | {col.Description} |");
+            }
+
+            if (dep.Indexes != null && dep.Indexes.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("## 인덱스 정보");
+                sb.AppendLine("| 인덱스명 | 타입 | Unique | PK 여부 | 구성 컬럼 |");
+                sb.AppendLine("| :--- | :--- | :---: | :---: | :--- |");
+                foreach (var idx in dep.Indexes)
+                {
+                    var uniqueStr = idx.IsUnique ? "Yes" : "No";
+                    var pkStr = idx.IsPrimaryKey ? "Yes" : "No";
+                    var colsStr = string.Join(", ", idx.Columns);
+                    sb.AppendLine($"| {idx.IndexName} | {idx.IndexType} | {uniqueStr} | {pkStr} | {colsStr} |");
+                }
             }
             return sb.ToString();
         }

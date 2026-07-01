@@ -9,5 +9,6 @@ namespace ReSet.Core.Models
         public string DdlText { get; set; } = string.Empty;
         public List<DependencyInfo> Dependencies { get; set; } = new();
         public List<string> Warnings { get; set; } = new();
+        public string? RawPromptContext { get; set; }
     }
 }

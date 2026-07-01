@@ -9,6 +9,7 @@ using ReSet.Validator.Core.Abstractions;
 using ReSet.Validator.Core.Models;
 using ReSet.Validator.Core.Plugins;
 using ReSet.Validator.Core.Services;
+using ReSet.Core.Models;
 using Xunit;
 
 namespace ReSet.Core.Tests
@@ -188,7 +189,7 @@ public class CustOrderHistBatch {
 }
 ```";
             mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult(jsonResponse));
+                .Returns(Task.FromResult(new AiResult { Content = jsonResponse }));
 
             var service = new ValidatorAiService(mockAiClient);
 
@@ -207,7 +208,7 @@ public class CustOrderHistBatch {
             // Arrange
             var mockAiClient = Substitute.For<IAiClient>();
             mockAiClient.ChatAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<float>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns(Task.FromResult("This is not a JSON response."));
+                .Returns(Task.FromResult(new AiResult { Content = "This is not a JSON response." }));
 
             var service = new ValidatorAiService(mockAiClient);
 

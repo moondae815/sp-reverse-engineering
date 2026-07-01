@@ -4,8 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using ReSet.Core.Models;
 using Serilog;
 
@@ -18,11 +16,8 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
-
         public string ProviderName => "Google";
         public string ModelName => _modelName;
-        public string? LastThinkingText => _lastThinkingText.Value;
 
         public GoogleClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -34,9 +29,8 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
                 throw new ArgumentException("Google API 키가 설정되지 않았습니다.");
@@ -48,17 +42,23 @@ namespace ReSet.Core.Services.Clients
                                     lowerModel.Contains("gemini-2.5") || 
                                     lowerModel.Contains("gemini-3");
 
-            bool enableThinking = supportsThinking && !string.IsNullOrWhiteSpace(effort);
+            bool enableThinking = supportsThinking;
             object generationConfig;
 
             if (enableThinking)
             {
                 object thinkingConfig;
                 bool isGemini3 = lowerModel.Contains("gemini-3");
+                
+                string apiEffort = "medium";
+                if (!string.IsNullOrWhiteSpace(effort))
+                {
+                    apiEffort = effort;
+                }
 
                 if (isGemini3)
                 {
-                    string thinkingLevel = effort!.ToLowerInvariant() switch
+                    string thinkingLevel = apiEffort.ToLowerInvariant() switch
                     {
                         "low" => "LOW",
                         "medium" => "MEDIUM",
@@ -74,7 +74,7 @@ namespace ReSet.Core.Services.Clients
                 }
                 else
                 {
-                    int thinkingBudget = effort!.ToLowerInvariant() switch
+                    int thinkingBudget = apiEffort.ToLowerInvariant() switch
                     {
                         "low" => 1024,
                         "medium" => 4096,
@@ -219,7 +219,6 @@ namespace ReSet.Core.Services.Clients
                 if (!string.IsNullOrWhiteSpace(thinkingText))
                 {
                     Log.Information("[Google Gemini Thinking Process]:\n{Thinking}", thinkingText);
-                    _lastThinkingText.Value = thinkingText;
                 }
 
                 var resultText = sbResult.ToString();
@@ -229,220 +228,11 @@ namespace ReSet.Core.Services.Clients
                     throw new InvalidOperationException("Google Gemini API 응답 parts 내에 실제 응답 텍스트(text)가 존재하지 않습니다.");
                 }
 
-                return resultText;
-            }
-        }
-
-        public async IAsyncEnumerable<StreamingChunk> StreamChatAsync(
-            string systemPrompt, 
-            string userPrompt, 
-            float temperature, 
-            string? effort = null, 
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(_apiKey))
-            {
-                throw new ArgumentException("Google API 키가 설정되지 않았습니다.");
-            }
-
-            var lowerModel = _modelName.ToLowerInvariant();
-            bool supportsThinking = lowerModel.Contains("thinking") || 
-                                    lowerModel.Contains("gemini-2.0") || 
-                                    lowerModel.Contains("gemini-2.5") || 
-                                    lowerModel.Contains("gemini-3");
-
-            bool enableThinking = supportsThinking && !string.IsNullOrWhiteSpace(effort);
-            object generationConfig;
-
-            if (enableThinking)
-            {
-                object thinkingConfig;
-                bool isGemini3 = lowerModel.Contains("gemini-3");
-
-                if (isGemini3)
+                return new AiResult
                 {
-                    string thinkingLevel = effort!.ToLowerInvariant() switch
-                    {
-                        "low" => "LOW",
-                        "medium" => "MEDIUM",
-                        "high" => "HIGH",
-                        "xhigh" => "HIGH",
-                        _ => "MEDIUM"
-                    };
-
-                    thinkingConfig = new
-                    {
-                        thinkingLevel = thinkingLevel
-                    };
-                }
-                else
-                {
-                    int thinkingBudget = effort!.ToLowerInvariant() switch
-                    {
-                        "low" => 1024,
-                        "medium" => 4096,
-                        "high" => 16384,
-                        "xhigh" => -1,
-                        _ => 4096
-                    };
-
-                    thinkingConfig = new
-                    {
-                        thinkingBudget = thinkingBudget
-                    };
-                }
-
-                generationConfig = new
-                {
-                    thinkingConfig = thinkingConfig
+                    Content = resultText,
+                    ThinkingText = thinkingText
                 };
-            }
-            else
-            {
-                generationConfig = new
-                {
-                    temperature = temperature
-                };
-            }
-
-            var requestBody = new
-            {
-                contents = new[]
-                {
-                    new
-                    {
-                        parts = new[]
-                        {
-                            new { text = userPrompt }
-                        }
-                    }
-                },
-                systemInstruction = new
-                {
-                    parts = new[]
-                    {
-                        new { text = systemPrompt }
-                    }
-                },
-                generationConfig = generationConfig
-            };
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            
-            var url = $"{_endpoint.TrimEnd('/')}/v1beta/models/{_modelName}:streamGenerateContent?key={_apiKey}";
-            var logUrl = $"{_endpoint.TrimEnd('/')}/v1beta/models/{_modelName}:streamGenerateContent?key=******";
-            Log.Debug("Google Gemini API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", logUrl, jsonPayload);
-            
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            HttpResponseMessage? response = null;
-            try
-            {
-                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Log.Error("Google Gemini API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
-                    throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
-                }
-
-                Log.Debug("Google Gemini API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
-
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
-                {
-                    string? line;
-                    while ((line = await reader.ReadLineAsync()) != null)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (string.IsNullOrWhiteSpace(line))
-                        {
-                            continue;
-                        }
-
-                        Log.Verbose("Google Gemini Streaming Line: {Line}", line);
-
-                        var data = line.Trim();
-                        if (data.StartsWith("[")) data = data.Substring(1).Trim();
-                        if (data.EndsWith("]")) data = data.Substring(0, data.Length - 1).Trim();
-                        if (data.StartsWith(",")) data = data.Substring(1).Trim();
-                        if (data.EndsWith(",")) data = data.Substring(0, data.Length - 1).Trim();
-
-                        if (string.IsNullOrWhiteSpace(data))
-                        {
-                            continue;
-                        }
-
-                        string? thinking = null;
-                        string? text = null;
-                        bool parsedSuccessfully = false;
-
-                        try
-                        {
-                            using (var doc = JsonDocument.Parse(data))
-                            {
-                                var root = doc.RootElement;
-                                if (root.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
-                                {
-                                    var firstCandidate = candidates[0];
-                                    if (firstCandidate.TryGetProperty("content", out var contentElement) &&
-                                        contentElement.TryGetProperty("parts", out var partsElement))
-                                    {
-                                        foreach (var part in partsElement.EnumerateArray())
-                                        {
-                                            bool isThought = false;
-                                            if (part.TryGetProperty("thought", out var thoughtElem))
-                                            {
-                                                isThought = thoughtElem.ValueKind == JsonValueKind.True || 
-                                                           (thoughtElem.ValueKind == JsonValueKind.False ? false : thoughtElem.GetBoolean());
-                                            }
-
-                                            if (part.TryGetProperty("text", out var textElem))
-                                            {
-                                                var textVal = textElem.GetString();
-                                                if (!string.IsNullOrEmpty(textVal))
-                                                {
-                                                    if (isThought)
-                                                    {
-                                                        thinking = textVal;
-                                                    }
-                                                    else
-                                                    {
-                                                        text = textVal;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            parsedSuccessfully = true;
-                        }
-                        catch (JsonException)
-                        {
-                            // JSON 파싱 에러 무시
-                        }
-
-                        if (parsedSuccessfully)
-                        {
-                            if (!string.IsNullOrEmpty(thinking))
-                            {
-                                yield return new StreamingChunk(ChunkType.Thinking, thinking);
-                            }
-                            if (!string.IsNullOrEmpty(text))
-                            {
-                                yield return new StreamingChunk(ChunkType.Text, text);
-                            }
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                response?.Dispose();
             }
         }
     }

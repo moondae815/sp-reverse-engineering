@@ -101,7 +101,8 @@ namespace ReSet.Core.Services
             };
             var profilingDataJson = JsonSerializer.Serialize(profilingResults, options);
 
-            var rulebook = await _aiService.GenerateSettlementPolicyRulebookAsync(spDefs, profilingDataJson, cancellationToken);
+            var aiResult = await _aiService.GenerateSettlementPolicyRulebookAsync(spDefs, profilingDataJson, cancellationToken);
+            var rulebook = aiResult.Content;
 
             // 4. 프로파일링 경고 수집 및 접두사 병합 (화면 고지 및 문서화 통합)
             var collectedDataWarnings = new List<string>();

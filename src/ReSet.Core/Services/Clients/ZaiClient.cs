@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using ReSet.Core.Models;
 using Serilog;
 
@@ -19,11 +18,8 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
-
         public string ProviderName => "Z.ai";
         public string ModelName => _modelName;
-        public string? LastThinkingText => _lastThinkingText.Value;
 
         public ZaiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -39,9 +35,8 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("z.ai"))
             {
                 throw new ArgumentException("Z.ai API 키가 설정되지 않았습니다.");
@@ -58,9 +53,11 @@ namespace ReSet.Core.Services.Clients
                 }
             };
 
-            if (!string.IsNullOrWhiteSpace(effort))
+            bool enableThinking = !string.IsNullOrWhiteSpace(effort) || _modelName.ToLowerInvariant().Contains("glm-5");
+
+            if (enableThinking)
             {
-                var apiEffort = effort.ToLowerInvariant() switch
+                var apiEffort = (effort ?? "medium").ToLowerInvariant() switch
                 {
                     "low" => "minimal",
                     "medium" => "high",
@@ -141,7 +138,6 @@ namespace ReSet.Core.Services.Clients
                 if (!string.IsNullOrWhiteSpace(reasoningContent))
                 {
                     Log.Information("[Z.ai Reasoning Process]:\n{Reasoning}", reasoningContent);
-                    _lastThinkingText.Value = reasoningContent;
                 }
 
                 if (!messageElement.TryGetProperty("content", out var contentElement))
@@ -150,160 +146,11 @@ namespace ReSet.Core.Services.Clients
                     throw new InvalidOperationException("Z.ai API 응답 message 내에 content 속성이 존재하지 않습니다.");
                 }
 
-                return contentElement.GetString() ?? string.Empty;
-            }
-        }
-
-        public async IAsyncEnumerable<StreamingChunk> StreamChatAsync(
-            string systemPrompt, 
-            string userPrompt, 
-            float temperature, 
-            string? effort = null, 
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("z.ai"))
-            {
-                throw new ArgumentException("Z.ai API 키가 설정되지 않았습니다.");
-            }
-
-            var requestBody = new Dictionary<string, object>
-            {
-                { "model", _modelName },
-                { "messages", new[]
-                    {
-                        new { role = "system", content = systemPrompt },
-                        new { role = "user", content = userPrompt }
-                    }
-                },
-                { "stream", true }
-            };
-
-            if (!string.IsNullOrWhiteSpace(effort))
-            {
-                var apiEffort = effort.ToLowerInvariant() switch
+                return new AiResult
                 {
-                    "low" => "minimal",
-                    "medium" => "high",
-                    "high" => "max",
-                    _ => "high"
+                    Content = contentElement.GetString() ?? string.Empty,
+                    ThinkingText = reasoningContent
                 };
-                requestBody.Add("reasoning_effort", apiEffort);
-                requestBody.Add("thinking", new { type = "enabled" });
-            }
-            else
-            {
-                requestBody.Add("temperature", temperature);
-            }
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var requestUri = $"{_endpoint.TrimEnd('/')}/paas/v4/chat/completions";
-
-            Log.Debug("Z.ai API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
-
-            var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-            }
-
-            HttpResponseMessage? response = null;
-            try
-            {
-                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Log.Error("Z.ai API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
-                    throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
-                }
-
-                Log.Debug("Z.ai API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
-
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
-                {
-                    string? line;
-                    while ((line = await reader.ReadLineAsync()) != null)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (string.IsNullOrWhiteSpace(line))
-                        {
-                            continue;
-                        }
-
-                        Log.Verbose("Z.ai Streaming Line: {Line}", line);
-
-                        if (line.StartsWith("data: "))
-                        {
-                            var data = line.Substring("data: ".Length).Trim();
-                            if (data == "[DONE]")
-                            {
-                                break;
-                            }
-
-                            string? reasoning = null;
-                            string? content = null;
-                            bool parsedSuccessfully = false;
-
-                            try
-                            {
-                                using (var doc = JsonDocument.Parse(data))
-                                {
-                                    var root = doc.RootElement;
-                                    if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                                    {
-                                        var firstChoice = choices[0];
-                                        if (firstChoice.TryGetProperty("delta", out var delta))
-                                        {
-                                            if (delta.TryGetProperty("reasoning_content", out var reasoningElem))
-                                            {
-                                                reasoning = reasoningElem.GetString();
-                                            }
-                                            else if (delta.TryGetProperty("reasoning", out var reasoningAltElem))
-                                            {
-                                                reasoning = reasoningAltElem.GetString();
-                                            }
-                                            else if (delta.TryGetProperty("thinking", out var thinkingAltElem))
-                                            {
-                                                reasoning = thinkingAltElem.GetString();
-                                            }
-
-                                            if (delta.TryGetProperty("content", out var contentElem))
-                                            {
-                                                content = contentElem.GetString();
-                                            }
-                                        }
-                                    }
-                                }
-                                parsedSuccessfully = true;
-                            }
-                            catch (JsonException)
-                            {
-                                // 일부 API 게이트웨이 파싱 실패 무시
-                            }
-
-                            if (parsedSuccessfully)
-                            {
-                                if (!string.IsNullOrEmpty(reasoning))
-                                {
-                                    yield return new StreamingChunk(ChunkType.Thinking, reasoning);
-                                }
-                                if (!string.IsNullOrEmpty(content))
-                                {
-                                    yield return new StreamingChunk(ChunkType.Text, content);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            finally
-            {
-                response?.Dispose();
             }
         }
     }

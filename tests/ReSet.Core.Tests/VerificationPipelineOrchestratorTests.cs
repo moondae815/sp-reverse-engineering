@@ -1,10 +1,12 @@
 using System;
-using System.Collections.Generic;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using NSubstitute;
+using Xunit;
 using ReSet.Core.Models;
 using ReSet.Core.Services;
-using Xunit;
 
 namespace ReSet.Core.Tests
 {
@@ -20,16 +22,10 @@ namespace ReSet.Core.Tests
         {
             _dbService = Substitute.For<IDbMetadataService>();
             _aiService = Substitute.For<IAiService>();
-            _validator = new MechanicalValidator(); // 검증 규칙은 실제 동작 검증에 필수
+            _validator = new MechanicalValidator();
             _userInteraction = Substitute.For<IVerificationUserInteraction>();
-            _userInteraction.ConfirmMetadataSyncAsync(Arg.Any<string>()).Returns(Task.FromResult(false));
-            _orchestrator = new VerificationPipelineOrchestrator(_dbService, _aiService, _validator, _userInteraction);
-        }
-
-        private static async IAsyncEnumerable<StreamingChunk> ToAsyncStream(string content)
-        {
-            yield return new StreamingChunk(ChunkType.Text, content);
-            await Task.CompletedTask;
+            _orchestrator = new VerificationPipelineOrchestrator(
+                _dbService, _aiService, _validator, _userInteraction, "1", "gpt-4");
         }
 
         [Fact]
@@ -42,8 +38,8 @@ namespace ReSet.Core.Tests
 
             // 올바른 마크다운 명세서 형식 (MechanicalValidator 검증 필수 헤더 포함)
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
-                .Returns(ToAsyncStream(specMarkdown));
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = specMarkdown }));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -71,8 +67,8 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(spDef));
 
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
-                .Returns(ToAsyncStream(specMarkdown));
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = specMarkdown }));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -101,10 +97,10 @@ namespace ReSet.Core.Tests
             // 2차 생성: 올바른 형식 -> L1 성공
             var goodSpec = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
 
-            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
                 .Returns(
-                    _ => ToAsyncStream(badSpec),   // 1차 호출
-                    _ => ToAsyncStream(goodSpec)  // 2차 호출
+                    _ => Task.FromResult(new AiResult { Content = badSpec }),   // 1차 호출
+                    _ => Task.FromResult(new AiResult { Content = goodSpec })  // 2차 호출
                 );
 
             var reviewResult = new ReviewResult { HasDefects = false };
@@ -131,8 +127,8 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromResult(spDef));
 
             var specMarkdown = "## 개요\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
-                .Returns(ToAsyncStream(specMarkdown));
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = specMarkdown }));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)
@@ -165,8 +161,8 @@ namespace ReSet.Core.Tests
             };
             var consolidatedPlan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
 
-            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
-                .Returns(Task.FromResult(consolidatedPlan));
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test", Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = consolidatedPlan }));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewConsolidatedPlanAsync(Arg.Any<List<(string, string)>>(), consolidatedPlan, "Job_Test")
@@ -192,10 +188,10 @@ namespace ReSet.Core.Tests
             var badPlan = "잘못된 문서";
             var goodPlan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
 
-            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test", Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
                 .Returns(
-                    _ => Task.FromResult(badPlan),
-                    _ => Task.FromResult(goodPlan)
+                    _ => Task.FromResult(new AiResult { Content = badPlan }),
+                    _ => Task.FromResult(new AiResult { Content = goodPlan })
                 );
 
             var reviewResult = new ReviewResult { HasDefects = false };
@@ -221,8 +217,8 @@ namespace ReSet.Core.Tests
             var specs = new List<(string, string)> { ("dbo.USP_Test1_Spec.md", "내용") };
             var plan = "## 통합 배치 아키텍처 개요\n## Mermaid 기반 통합 흐름도\n## 단계별 이행 상세 및 의사코드\n## 통합 데이터 정합성 검증 SQL 세트";
 
-            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test")
-                .Returns(Task.FromResult(plan));
+            _aiService.GenerateConsolidatedBatchPlanAsync(Arg.Any<List<(string, string)>>(), "C#", "Job_Test", Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = plan }));
 
             _aiService.ReviewConsolidatedPlanAsync(Arg.Any<List<(string, string)>>(), plan, "Job_Test")
                 .Returns(
@@ -252,8 +248,8 @@ namespace ReSet.Core.Tests
 
             // AI가 유추 주석 패턴을 포함한 명세서 반환
             var specMarkdown = "## 개요\n이것은 테스트입니다. [AI 추론 보완: dbo.Orders.TotAmt - 순 결제액]\n## 파라미터 목록\n## CRUD 분석\n## 로직 흐름 요약\n## 비즈니스 흐름 시각화\n```mermaid\ngraph TD\nA-->B\n```";
-            _aiService.StreamSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
-                .Returns(ToAsyncStream(specMarkdown));
+            _aiService.GenerateSpecificationAsync(spDef, Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<System.Threading.CancellationToken>())
+                .Returns(Task.FromResult(new AiResult { Content = specMarkdown }));
 
             var reviewResult = new ReviewResult { HasDefects = false };
             _aiService.ReviewSpecificationAsync(spDef, specMarkdown)

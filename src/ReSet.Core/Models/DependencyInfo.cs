@@ -12,5 +12,6 @@ namespace ReSet.Core.Models
         public List<ColumnInfo> Columns { get; set; } = new();
         public string? ReferencedDdlText { get; set; }
         public string Description { get; set; } = string.Empty;
+        public List<TableIndexInfo> Indexes { get; set; } = new();
     }
 }

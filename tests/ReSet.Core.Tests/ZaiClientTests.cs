@@ -16,13 +16,13 @@ namespace ReSet.Core.Tests
             var responseJson = "{\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"Test Response\"},\"finish_reason\":\"stop\"}]}";
             var spyHandler = new RequestSpyHttpMessageHandler(responseJson);
             var httpClient = new HttpClient(spyHandler);
-            var client = new ZaiClient(httpClient, "test_api_key", "https://api.z.ai/api", "glm-5.2");
+            var client = new ZaiClient(httpClient, "test_api_key", "https://api.z.ai/api", "glm-4");
 
             // Act
             var result = await client.ChatAsync("System prompt", "User prompt", 0.7f, effort: null);
 
             // Assert
-            Assert.Equal("Test Response", result);
+            Assert.Equal("Test Response", result.Content);
             Assert.NotNull(spyHandler.LastRequestContent);
 
             using (var doc = JsonDocument.Parse(spyHandler.LastRequestContent))

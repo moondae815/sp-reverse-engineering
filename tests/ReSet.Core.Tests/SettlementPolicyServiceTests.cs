@@ -55,7 +55,7 @@ namespace ReSet.Core.Tests
                 .Returns(previewData);
 
             aiService.GenerateSettlementPolicyRulebookAsync(Arg.Any<List<SpDefinition>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns("Generated Policy Document");
+                .Returns(Task.FromResult(new AiResult { Content = "Generated Policy Document" }));
 
             // Act
             var result = await service.GenerateSettlementPolicyRulebookAsync(connectionString, spList, maxDepth, CancellationToken.None);
@@ -106,7 +106,7 @@ namespace ReSet.Core.Tests
                 .Returns(Task.FromException<List<Dictionary<string, object>>>(new System.Exception("Table not found")));
 
             aiService.GenerateSettlementPolicyRulebookAsync(Arg.Any<List<SpDefinition>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns("Generated Policy Document");
+                .Returns(Task.FromResult(new AiResult { Content = "Generated Policy Document" }));
 
             // Act
             var result = await service.GenerateSettlementPolicyRulebookAsync(connectionString, spList, maxDepth, CancellationToken.None);
@@ -153,7 +153,7 @@ namespace ReSet.Core.Tests
                 .Returns(new List<Dictionary<string, object>>());
 
             aiService.GenerateSettlementPolicyRulebookAsync(Arg.Any<List<SpDefinition>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-                .Returns("Generated Policy Document");
+                .Returns(Task.FromResult(new AiResult { Content = "Generated Policy Document" }));
 
             // Act
             var result = await service.GenerateSettlementPolicyRulebookAsync(connectionString, spList, maxDepth, CancellationToken.None);

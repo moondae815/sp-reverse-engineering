@@ -16,7 +16,6 @@ namespace ReSet.Core.Services
 
         public string ProviderName => _aiClient.ProviderName;
         public string ModelName => _aiClient.ModelName;
-        public string? LastThinkingText => _aiClient.LastThinkingText;
 
         public AiService(IAiClient aiClient, float temperature)
         {
@@ -27,13 +26,17 @@ namespace ReSet.Core.Services
         private string FormatTableSchemaToMarkdown(DependencyInfo dep)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"### 테이블: {dep.Schema}.{dep.Name} ({dep.Type}) - 발견 깊이: {dep.DiscoveryDepth}단계");
+            var depFullName = string.IsNullOrEmpty(dep.Database)
+                ? $"{dep.Schema}.{dep.Name}"
+                : $"[{dep.Database}].[{dep.Schema}].[{dep.Name}]";
+            sb.AppendLine($"### 테이블: {depFullName} ({dep.Type}) - 발견 깊이: {dep.DiscoveryDepth}단계");
             if (!string.IsNullOrEmpty(dep.Description))
             {
                 sb.AppendLine($"* 테이블 설명: {dep.Description}");
             }
-            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | 제약 조건 | 설명 |");
-            sb.AppendLine("| :--- | :--- | :---: | :--- | :--- |");
+            sb.AppendLine();
+            sb.AppendLine("| 컬럼명 | 데이터 타입 | Null 허용 | Identity | 기본값 | 제약 조건 | 설명 |");
+            sb.AppendLine("| :--- | :--- | :---: | :---: | :--- | :--- | :--- |");
             
             foreach (var col in dep.Columns)
             {
@@ -43,9 +46,26 @@ namespace ReSet.Core.Services
                 
                 var constraintStr = string.Join(", ", constraints);
                 var nullableStr = col.IsNullable ? "Yes" : "No";
-                
+                var identityStr = col.IsIdentity ? "Yes" : "No";
+                var defaultStr = col.DefaultValue ?? "";
                 var descStr = string.IsNullOrWhiteSpace(col.Description) ? "[설명 누락]" : col.Description;
-                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {constraintStr} | {descStr} |");
+                
+                sb.AppendLine($"| {col.ColumnName} | {col.DataType} | {nullableStr} | {identityStr} | {defaultStr} | {constraintStr} | {descStr} |");
+            }
+
+            if (dep.Indexes != null && dep.Indexes.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("#### 인덱스 정보");
+                sb.AppendLine("| 인덱스명 | 타입 | Unique | PK 여부 | 구성 컬럼 |");
+                sb.AppendLine("| :--- | :--- | :---: | :---: | :--- |");
+                foreach (var idx in dep.Indexes)
+                {
+                    var uniqueStr = idx.IsUnique ? "Yes" : "No";
+                    var pkStr = idx.IsPrimaryKey ? "Yes" : "No";
+                    var colsStr = string.Join(", ", idx.Columns);
+                    sb.AppendLine($"| {idx.IndexName} | {idx.IndexType} | {uniqueStr} | {pkStr} | {colsStr} |");
+                }
             }
             
             return sb.ToString();
@@ -181,29 +201,25 @@ namespace ReSet.Core.Services
             }
         }
 
-        public async Task<string> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default)
         {
             var (systemPrompt, userPrompt) = BuildSpecificationPrompts(spDef, userInstructions, feedbackLog);
 
             Log.Information("AI 명세서 생성 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
 
-            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
+            if (aiResult == null)
+            {
+                aiResult = new AiResult();
+            }
+            aiResult.SystemPrompt = systemPrompt;
+            aiResult.UserPrompt = userPrompt;
 
-            Log.Information("AI 명세서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+            Log.Information("AI 명세서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, aiResult.Content.Length);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult.Content);
 
-            return response ?? string.Empty;
-        }
-
-        public IAsyncEnumerable<StreamingChunk> StreamSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default)
-        {
-            var (systemPrompt, userPrompt) = BuildSpecificationPrompts(spDef, userInstructions, feedbackLog);
-
-            Log.Information("AI 명세서 스트리밍 생성 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
-            Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
-
-            return _aiClient.StreamChatAsync(systemPrompt, userPrompt, _temperature, effort, cancellationToken);
+            return aiResult;
         }
 
         public async Task<ReviewResult> ReviewSpecificationAsync(SpDefinition spDef, string specMarkdown, string? effort = null, CancellationToken cancellationToken = default)
@@ -250,16 +266,16 @@ namespace ReSet.Core.Services
             Log.Information("AI 개별 명세서 리뷰 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
 
-            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort, cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort, cancellationToken);
 
-            Log.Information("AI 개별 명세서 리뷰 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, responseContent?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
-            var reviewResult = ParseReviewResult(responseContent, $"{spDef.Schema}.{spDef.Name}");
-            reviewResult.ThinkingText = _aiClient.LastThinkingText;
+            Log.Information("AI 개별 명세서 리뷰 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, aiResult?.Content?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult?.Content);
+            var reviewResult = ParseReviewResult(aiResult?.Content, $"{spDef.Schema}.{spDef.Name}");
+            reviewResult.ThinkingText = aiResult?.ThinkingText;
             return reviewResult;
         }
 
-        public async Task<string> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage, CancellationToken cancellationToken = default)
+        public async Task<AiResult> GenerateBatchMigrationPlanAsync(SpDefinition spDef, string targetLanguage, CancellationToken cancellationToken = default)
         {
             var systemPrompt = $@"당신은 SQL Server Agent의 스케줄러 배치 작업을 현대적인 애플리케이션 기반 배치 프레임워크로 전환하는 최적화 설계 전문가입니다.
 대상 Stored Procedure 소스 코드와 의존 테이블/UDF 구조를 분석하여, {targetLanguage} 기반의 현대적인 백그라운드 배치 컴포넌트로 포팅하기 위한 '배치 전환 계획 설계서'를 작성해 주십시오.
@@ -325,15 +341,21 @@ namespace ReSet.Core.Services
             Log.Information("AI 배치 전환 계획서 생성 요청 전송 - SP: {Schema}.{Name}, TargetLanguage: {TargetLanguage}", spDef.Schema, spDef.Name, targetLanguage);
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
 
-            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort: null, cancellationToken: cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, _temperature, effort: null, cancellationToken: cancellationToken);
+            if (aiResult == null)
+            {
+                aiResult = new AiResult();
+            }
+            aiResult.SystemPrompt = systemPrompt;
+            aiResult.UserPrompt = userPrompt;
 
-            Log.Information("AI 배치 전환 계획서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, response?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+            Log.Information("AI 배치 전환 계획서 생성 응답 수신 완료 - SP: {Schema}.{Name}, 응답 길이: {Length}", spDef.Schema, spDef.Name, aiResult.Content.Length);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult.Content);
 
-            return response ?? string.Empty;
+            return aiResult;
         }
 
-        public async Task<string> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> GenerateConsolidatedBatchPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string targetLanguage, string jobName, string? effort = null, CancellationToken cancellationToken = default)
         {
             var systemPrompt = $@"당신은 여러 개의 레거시 Stored Procedure 분석 명세서(마크다운)를 바탕으로, 이를 최신 {targetLanguage} 기반의 단일 배치 애플리케이션 및 스케줄러 전환 설계도(Consolidated Batch Modernization Plan)로 작성하는 전문 수석 배치 아키텍트입니다.
 제공된 개별 SP 분석서들의 비즈니스 요약과 테이블 CRUD 맵을 종합적으로 설계하여, '{jobName}'이라는 단일 통합 배치 Job으로 전환하는 계획서를 기안해 주십시오.
@@ -371,12 +393,18 @@ namespace ReSet.Core.Services
             Log.Information("AI 통합 배치 계획서 생성 요청 전송 - JobName: {JobName}, TargetLanguage: {TargetLanguage}, Effort: {Effort}", jobName, targetLanguage, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
 
-            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort, cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort, cancellationToken);
+            if (aiResult == null)
+            {
+                aiResult = new AiResult();
+            }
+            aiResult.SystemPrompt = systemPrompt;
+            aiResult.UserPrompt = userPrompt.ToString();
 
-            Log.Information("AI 통합 배치 계획서 생성 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, response?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+            Log.Information("AI 통합 배치 계획서 생성 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, aiResult.Content.Length);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult.Content);
 
-            return response ?? string.Empty;
+            return aiResult;
         }
 
         public async Task<ReviewResult> ReviewConsolidatedPlanAsync(System.Collections.Generic.List<(string FileName, string Content)> specs, string planMarkdown, string jobName, string? effort = null, CancellationToken cancellationToken = default)
@@ -429,12 +457,12 @@ namespace ReSet.Core.Services
             Log.Information("AI 통합 배치 계획서 리뷰 요청 전송 - JobName: {JobName}, Effort: {Effort}", jobName, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
 
-            var responseContent = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, effort, cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), 0.1f, effort, cancellationToken);
 
-            Log.Information("AI 통합 배치 계획서 리뷰 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, responseContent?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", responseContent);
-            var reviewResult = ParseReviewResult(responseContent, jobName);
-            reviewResult.ThinkingText = _aiClient.LastThinkingText;
+            Log.Information("AI 통합 배치 계획서 리뷰 응답 수신 완료 - JobName: {JobName}, 응답 길이: {Length}", jobName, aiResult?.Content?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult?.Content);
+            var reviewResult = ParseReviewResult(aiResult?.Content, jobName);
+            reviewResult.ThinkingText = aiResult?.ThinkingText;
             return reviewResult;
         }
 
@@ -482,7 +510,7 @@ namespace ReSet.Core.Services
             return content;
         }
 
-        public async Task<string> GenerateSettlementPolicyRulebookAsync(System.Collections.Generic.List<SpDefinition> spDefs, string profilingDataJson, CancellationToken cancellationToken = default)
+        public async Task<AiResult> GenerateSettlementPolicyRulebookAsync(System.Collections.Generic.List<SpDefinition> spDefs, string profilingDataJson, CancellationToken cancellationToken = default)
         {
             var systemPrompt = @"당신은 레거시 DB 내 Stored Procedure 코드(DDL) 및 실제 코드값/설정 데이터(Data Profiling)를 종합하여, 비즈니스 관점의 통합 '정산 정책 문서(Settlement Rulebook)'를 도출해내는 수석 정산 정책 분석가입니다.
 제시된 SP들의 SQL 조건문 분기, 매핑 관계와 실제 적재된 마스터 데이터(코드값 등)를 결합하여, 실무자가 바로 읽고 이해할 수 있는 자연어 정책 정의서를 작성하십시오.
@@ -532,12 +560,12 @@ namespace ReSet.Core.Services
             Log.Information("AI 정산 정책서 생성 요청 전송");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
 
-            var response = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort: null, cancellationToken: cancellationToken);
+            var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt.ToString(), _temperature, effort: null, cancellationToken: cancellationToken);
 
-            Log.Information("AI 정산 정책서 생성 완료 - 응답 길이: {Length}", response?.Length ?? 0);
-            Log.Debug("[AI 응답 내용]:\n{Response}", response);
+            Log.Information("AI 정산 정책서 생성 완료 - 응답 길이: {Length}", aiResult?.Content?.Length ?? 0);
+            Log.Debug("[AI 응답 내용]:\n{Response}", aiResult?.Content);
 
-            return response ?? string.Empty;
+            return aiResult ?? new AiResult();
         }
     }
 }

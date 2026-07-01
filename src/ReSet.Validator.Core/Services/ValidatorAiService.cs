@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using ReSet.Core.Models;
 using ReSet.Core.Services;
 using ReSet.Validator.Core.Models;
 using Serilog;
@@ -57,9 +58,9 @@ namespace ReSet.Validator.Core.Services
             {
                 Log.Debug("[ValidatorAI] 코드 검증 AI 요청 시작 - Language: {Language}, HasPreviousFeedback: {HasFeedback}",
                     targetLanguage, !string.IsNullOrEmpty(previousFeedback));
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort: null, cancellationToken: cancellationToken);
-                Log.Debug("[ValidatorAI] 코드 검증 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
-                return ParseGapReport(response);
+                var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.1f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 코드 검증 AI 응답 수신 - 응답 길이: {Length}자", aiResult.Content.Length);
+                return ParseGapReport(aiResult.Content);
             }
             catch (Exception ex)
             {
@@ -143,11 +144,11 @@ namespace ReSet.Validator.Core.Services
             try
             {
                 Log.Debug("[ValidatorAI] 테스트 파라미터 생성 AI 요청 시작 - ProcedureName: {ProcedureName}", procedureName);
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
-                Log.Debug("[ValidatorAI] 테스트 파라미터 생성 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
+                var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 테스트 파라미터 생성 AI 응답 수신 - 응답 길이: {Length}자", aiResult.Content.Length);
                 
                 // markdown json 블록 정제
-                var cleanJson = response.Trim();
+                var cleanJson = aiResult.Content.Trim();
                 if (cleanJson.StartsWith("```"))
                 {
                     var match = Regex.Match(cleanJson, @"```(?:json)?\s*([\s\S]+?)\s*```");
@@ -213,11 +214,11 @@ namespace ReSet.Validator.Core.Services
             try
             {
                 Log.Debug("[ValidatorAI] 모의 테이블 데이터 생성 AI 요청 시작");
-                var response = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
-                Log.Debug("[ValidatorAI] 모의 테이블 데이터 생성 AI 응답 수신 - 응답 길이: {Length}자", response.Length);
+                var aiResult = await _aiClient.ChatAsync(systemPrompt, userPrompt, 0.2f, effort: null, cancellationToken: cancellationToken);
+                Log.Debug("[ValidatorAI] 모의 테이블 데이터 생성 AI 응답 수신 - 응답 길이: {Length}자", aiResult.Content.Length);
                 
                 // markdown json 블록 정제
-                var cleanJson = response.Trim();
+                var cleanJson = aiResult.Content.Trim();
                 if (cleanJson.StartsWith("```"))
                 {
                     var match = Regex.Match(cleanJson, @"```(?:json)?\s*([\s\S]+?)\s*```");

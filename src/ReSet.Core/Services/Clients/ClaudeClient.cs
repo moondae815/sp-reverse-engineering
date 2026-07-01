@@ -4,8 +4,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using ReSet.Core.Models;
 using Serilog;
 
@@ -18,11 +16,8 @@ namespace ReSet.Core.Services.Clients
         private readonly string _endpoint;
         private readonly string _modelName;
 
-        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
-
         public string ProviderName => "Claude";
         public string ModelName => _modelName;
-        public string? LastThinkingText => _lastThinkingText.Value;
 
         public ClaudeClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -38,9 +33,8 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey))
             {
                 throw new ArgumentException("Claude API 키가 설정되지 않았습니다.");
@@ -48,34 +42,35 @@ namespace ReSet.Core.Services.Clients
 
             // Claude 모델별 최대 출력 토큰(max_tokens) 및 Thinking 설정 대응
             var lowerModel = _modelName.ToLowerInvariant();
+            double version = GetClaudeVersion(_modelName);
             int maxTokens = 4096; // 기본 안전 한도 (Claude 3 Opus 등)
 
-            if (lowerModel.Contains("4-") || lowerModel.Contains("4."))
+            bool is4thGenOrNewer = version >= 4.0;
+
+            if (is4thGenOrNewer)
             {
-                if (lowerModel.Contains("haiku-4-5"))
+                if (lowerModel.Contains("haiku-4-5") || lowerModel.Contains("haiku-5"))
                 {
-                    maxTokens = 64000; // Claude Haiku 4.5 한도
+                    maxTokens = 64000; // Claude Haiku 4.5/5 한도
                 }
                 else
                 {
-                    maxTokens = 128000; // Claude Opus 4.8, Sonnet 4.6 한도 (128k)
+                    maxTokens = 128000; // Claude 4th/5th Gen Opus/Sonnet 한도 (128k)
                 }
             }
-            else if (lowerModel.Contains("sonnet") || lowerModel.Contains("haiku") || lowerModel.Contains("3-5") || lowerModel.Contains("3-7") || lowerModel.Contains("3.5") || lowerModel.Contains("3.7"))
+            else if (version >= 3.5)
             {
                 maxTokens = 8192; // Claude 3.5 / 3.7 Sonnet 및 Haiku 등 최신 모델 한도
             }
 
-            bool is4thGen = lowerModel.Contains("4-") || lowerModel.Contains("4.");
-            bool is37Gen = lowerModel.Contains("3-7") || lowerModel.Contains("3.7");
-            bool enableThinking = (is4thGen || is37Gen) && (!string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6"));
+            bool enableThinking = version >= 3.7 && (!string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6") || version >= 5.0);
             object requestBody;
 
             if (enableThinking)
             {
-                if (is4thGen)
+                if (is4thGenOrNewer)
                 {
-                    string? apiEffort = null;
+                    string apiEffort = "medium";
                     if (!string.IsNullOrWhiteSpace(effort))
                     {
                         apiEffort = effort.ToLowerInvariant() switch
@@ -94,14 +89,9 @@ namespace ReSet.Core.Services.Clients
                         { "system", systemPrompt },
                         { "messages", new[] { new { role = "user", content = userPrompt } } },
                         { "max_tokens", maxTokens },
-                        { "temperature", 1.0 },
-                        { "thinking", new { type = "adaptive" } }
+                        { "thinking", new { type = "adaptive" } },
+                        { "output_config", new { effort = apiEffort } }
                     };
-
-                    if (apiEffort != null)
-                    {
-                        requestMap.Add("output_config", new { effort = apiEffort });
-                    }
 
                     requestBody = requestMap;
                 }
@@ -135,7 +125,6 @@ namespace ReSet.Core.Services.Clients
                             new { role = "user", content = userPrompt }
                         },
                         max_tokens = maxTokens,
-                        temperature = 1.0,
                         thinking = new
                         {
                             type = "enabled",
@@ -146,17 +135,33 @@ namespace ReSet.Core.Services.Clients
             }
             else
             {
-                requestBody = new
+                if (is4thGenOrNewer)
                 {
-                    model = _modelName,
-                    system = systemPrompt,
-                    messages = new[]
+                    requestBody = new
                     {
-                        new { role = "user", content = userPrompt }
-                    },
-                    max_tokens = maxTokens,
-                    temperature = temperature
-                };
+                        model = _modelName,
+                        system = systemPrompt,
+                        messages = new[]
+                        {
+                            new { role = "user", content = userPrompt }
+                        },
+                        max_tokens = maxTokens
+                    };
+                }
+                else
+                {
+                    requestBody = new
+                    {
+                        model = _modelName,
+                        system = systemPrompt,
+                        messages = new[]
+                        {
+                            new { role = "user", content = userPrompt }
+                        },
+                        max_tokens = maxTokens,
+                        temperature = temperature
+                    };
+                }
             }
 
             var jsonPayload = JsonSerializer.Serialize(requestBody);
@@ -224,7 +229,6 @@ namespace ReSet.Core.Services.Clients
                 if (!string.IsNullOrWhiteSpace(thinkingText))
                 {
                     Log.Information("[Claude Thinking Process]:\n{Thinking}", thinkingText);
-                    _lastThinkingText.Value = thinkingText;
                 }
 
                 if (resultText == null)
@@ -240,240 +244,61 @@ namespace ReSet.Core.Services.Clients
                     throw new InvalidOperationException("Claude API 응답 content 내에 text 속성이 존재하지 않습니다.");
                 }
 
-                return resultText ?? string.Empty;
+                return new AiResult
+                {
+                    Content = resultText,
+                    ThinkingText = thinkingText
+                };
             }
         }
 
-        public async IAsyncEnumerable<StreamingChunk> StreamChatAsync(
-            string systemPrompt, 
-            string userPrompt, 
-            float temperature, 
-            string? effort = null, 
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        private static double GetClaudeVersion(string modelName)
         {
-            if (string.IsNullOrWhiteSpace(_apiKey))
+            var lower = modelName.ToLowerInvariant();
+            
+            // 모델명에서 숫자가 들어간 부분을 추출하기 위해 대시(-)로 나눈 뒤 검사합니다.
+            var parts = lower.Split('-');
+            var numbers = new System.Collections.Generic.List<double>();
+            
+            foreach (var part in parts)
             {
-                throw new ArgumentException("Claude API 키가 설정되지 않았습니다.");
-            }
-
-            var lowerModel = _modelName.ToLowerInvariant();
-            int maxTokens = 4096;
-
-            if (lowerModel.Contains("4-") || lowerModel.Contains("4."))
-            {
-                if (lowerModel.Contains("haiku-4-5"))
+                if (double.TryParse(part, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var num))
                 {
-                    maxTokens = 64000;
+                    numbers.Add(num);
                 }
                 else
                 {
-                    maxTokens = 128000;
-                }
-            }
-            else if (lowerModel.Contains("sonnet") || lowerModel.Contains("haiku") || lowerModel.Contains("3-5") || lowerModel.Contains("3-7") || lowerModel.Contains("3.5") || lowerModel.Contains("3.7"))
-            {
-                maxTokens = 8192;
-            }
-
-            bool is4thGen = lowerModel.Contains("4-") || lowerModel.Contains("4.");
-            bool is37Gen = lowerModel.Contains("3-7") || lowerModel.Contains("3.7");
-            bool enableThinking = (is4thGen || is37Gen) && (!string.IsNullOrWhiteSpace(effort) || lowerModel.Contains("opus-4-8") || lowerModel.Contains("sonnet-4-6"));
-            object requestBody;
-
-            if (enableThinking)
-            {
-                if (is4thGen)
-                {
-                    string? apiEffort = null;
-                    if (!string.IsNullOrWhiteSpace(effort))
+                    var sb = new System.Text.StringBuilder();
+                    foreach (var c in part)
                     {
-                        apiEffort = effort.ToLowerInvariant() switch
+                        if (char.IsDigit(c) || c == '.')
                         {
-                            "low" => "low",
-                            "medium" => "medium",
-                            "high" => "high",
-                            "xhigh" => "max",
-                            _ => "medium"
-                        };
-                    }
-
-                    var requestMap = new System.Collections.Generic.Dictionary<string, object>
-                    {
-                        { "model", _modelName },
-                        { "system", systemPrompt },
-                        { "messages", new[] { new { role = "user", content = userPrompt } } },
-                        { "max_tokens", maxTokens },
-                        { "temperature", 1.0 },
-                        { "thinking", new { type = "adaptive" } },
-                        { "stream", true }
-                    };
-
-                    if (apiEffort != null)
-                    {
-                        requestMap.Add("output_config", new { effort = apiEffort });
-                    }
-
-                    requestBody = requestMap;
-                }
-                else
-                {
-                    int budgetTokens = 4000;
-                    if (!string.IsNullOrWhiteSpace(effort))
-                    {
-                        budgetTokens = effort.ToLowerInvariant() switch
-                        {
-                            "low" => 2000,
-                            "medium" => 4000,
-                            "high" => 16000,
-                            "xhigh" => 32000,
-                            _ => 4000
-                        };
-                    }
-
-                    if (budgetTokens >= maxTokens)
-                    {
-                        budgetTokens = maxTokens - 1000;
-                        if (budgetTokens < 1000) budgetTokens = 1000;
-                    }
-
-                    requestBody = new
-                    {
-                        model = _modelName,
-                        system = systemPrompt,
-                        messages = new[]
-                        {
-                            new { role = "user", content = userPrompt }
-                        },
-                        max_tokens = maxTokens,
-                        temperature = 1.0,
-                        thinking = new
-                        {
-                            type = "enabled",
-                            budget_tokens = budgetTokens
-                        },
-                        stream = true
-                    };
-                }
-            }
-            else
-            {
-                requestBody = new
-                {
-                    model = _modelName,
-                    system = systemPrompt,
-                    messages = new[]
-                    {
-                        new { role = "user", content = userPrompt }
-                    },
-                    max_tokens = maxTokens,
-                    temperature = temperature,
-                    stream = true
-                };
-            }
-
-            var jsonPayload = JsonSerializer.Serialize(requestBody);
-            var requestUri = $"{_endpoint.TrimEnd('/')}/v1/messages";
-
-            Log.Debug("Claude API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
-
-            var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-            {
-                Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-            };
-
-            request.Headers.Add("x-api-key", _apiKey);
-            request.Headers.Add("anthropic-version", "2023-06-01");
-
-            HttpResponseMessage? response = null;
-            try
-            {
-                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    Log.Error("Claude API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
-                    throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
-                }
-
-                Log.Debug("Claude API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
-
-                using (var stream = await response.Content.ReadAsStreamAsync())
-                using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
-                {
-                    string? line;
-                    while ((line = await reader.ReadLineAsync()) != null)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        if (string.IsNullOrWhiteSpace(line))
-                        {
-                            continue;
+                            sb.Append(c);
                         }
-
-                        Log.Verbose("Claude Streaming Line: {Line}", line);
-
-                        if (line.StartsWith("data: "))
+                    }
+                    var extracted = sb.ToString();
+                    if (double.TryParse(extracted, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var extractedNum))
+                    {
+                        if (extractedNum < 100) // 버전 번호 수준만 취합
                         {
-                            var data = line.Substring("data: ".Length).Trim();
-                            if (data == "[DONE]")
-                            {
-                                break;
-                            }
-
-                            string? thinking = null;
-                            string? text = null;
-                            bool parsedSuccessfully = false;
-
-                            try
-                            {
-                                using (var doc = JsonDocument.Parse(data))
-                                {
-                                    var root = doc.RootElement;
-                                    if (root.TryGetProperty("type", out var typeElem))
-                                    {
-                                        var typeStr = typeElem.GetString();
-                                        if (typeStr == "content_block_delta" && root.TryGetProperty("delta", out var delta))
-                                        {
-                                            if (delta.TryGetProperty("type", out var deltaTypeElem))
-                                            {
-                                                var deltaType = deltaTypeElem.GetString();
-                                                if (deltaType == "thinking_delta" && delta.TryGetProperty("thinking", out var thinkingElem))
-                                                {
-                                                    thinking = thinkingElem.GetString();
-                                                }
-                                                else if (deltaType == "text_delta" && delta.TryGetProperty("text", out var textElem))
-                                                {
-                                                    text = textElem.GetString();
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                parsedSuccessfully = true;
-                            }
-                            catch (JsonException)
-                            {
-                                // JSON 파싱 에러 무시
-                            }
-
-                            if (parsedSuccessfully)
-                            {
-                                if (!string.IsNullOrEmpty(thinking))
-                                {
-                                    yield return new StreamingChunk(ChunkType.Thinking, thinking);
-                                }
-                                if (!string.IsNullOrEmpty(text))
-                                {
-                                    yield return new StreamingChunk(ChunkType.Text, text);
-                                }
-                            }
+                            numbers.Add(extractedNum);
                         }
                     }
                 }
             }
-            finally
+            
+            if (numbers.Count == 0)
             {
-                response?.Dispose();
+                return 3.0; // 기본값
             }
+            
+            // claude-3-5-sonnet, claude-sonnet-4-6 등 두 자리 버전 번호가 순차 추출된 경우 (예: [3, 5], [4, 6])
+            if (numbers.Count >= 2 && numbers[0] < 10 && numbers[1] < 10)
+            {
+                return numbers[0] + (numbers[1] / 10.0);
+            }
+            
+            return numbers[0];
         }
     }
 }

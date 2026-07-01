@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using ReSet.Core.Models;
 using Serilog;
 
@@ -18,11 +17,9 @@ namespace ReSet.Core.Services.Clients
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
-        private readonly AsyncLocal<string?> _lastThinkingText = new AsyncLocal<string?>();
 
         public string ProviderName => "OpenAI";
         public string ModelName => _modelName;
-        public string? LastThinkingText => _lastThinkingText.Value;
 
         public OpenAiClient(HttpClient httpClient, string apiKey, string endpoint, string modelName)
         {
@@ -38,9 +35,8 @@ namespace ReSet.Core.Services.Clients
             _endpoint = ep;
         }
 
-        public async Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
+        public async Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
         {
-            _lastThinkingText.Value = null;
             if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
             {
                 throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
@@ -150,10 +146,13 @@ namespace ReSet.Core.Services.Clients
                         if (!string.IsNullOrWhiteSpace(reasoningText))
                         {
                             Log.Information("[OpenAI Responses API Reasoning Summary]:\n{Reasoning}", reasoningText);
-                            _lastThinkingText.Value = reasoningText;
                         }
 
-                        return resultText ?? string.Empty;
+                        return new AiResult
+                        {
+                            Content = resultText ?? string.Empty,
+                            ThinkingText = reasoningText
+                        };
                     }
                     else
                     {
@@ -188,9 +187,10 @@ namespace ReSet.Core.Services.Clients
 
                 if (isReasoningEnforcedModel)
                 {
+                    var apiEffort = "medium";
                     if (!string.IsNullOrWhiteSpace(effort))
                     {
-                        var apiEffort = effort.ToLowerInvariant() switch
+                        apiEffort = effort.ToLowerInvariant() switch
                         {
                             "low" => "low",
                             "medium" => "medium",
@@ -198,8 +198,8 @@ namespace ReSet.Core.Services.Clients
                             "xhigh" => "high",
                             _ => "medium"
                         };
-                        requestBody.Add("reasoning_effort", apiEffort);
                     }
+                    requestBody.Add("reasoning_effort", apiEffort);
                 }
                 else
                 {
@@ -273,7 +273,6 @@ namespace ReSet.Core.Services.Clients
                     if (!string.IsNullOrWhiteSpace(reasoningContent))
                     {
                         Log.Information("[OpenAI Reasoning Process]:\n{Reasoning}", reasoningContent);
-                        _lastThinkingText.Value = reasoningContent;
                     }
 
                     if (!messageElement.TryGetProperty("content", out var contentElement))
@@ -282,328 +281,11 @@ namespace ReSet.Core.Services.Clients
                         throw new InvalidOperationException("OpenAI API 응답 message 내에 content 속성이 존재하지 않습니다.");
                     }
 
-                    return contentElement.GetString() ?? string.Empty;
-                }
-            }
-        }
-
-        public async IAsyncEnumerable<StreamingChunk> StreamChatAsync(
-            string systemPrompt, 
-            string userPrompt, 
-            float temperature, 
-            string? effort = null, 
-            [EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(_apiKey) && _endpoint.Contains("openai.com"))
-            {
-                throw new ArgumentException("OpenAI API 키가 설정되지 않았습니다.");
-            }
-
-            var lowerModel = _modelName.ToLowerInvariant();
-            bool isResponsesApi = lowerModel.Contains("gpt-5");
-
-            if (isResponsesApi)
-            {
-                var requestBody = new Dictionary<string, object>
-                {
-                    { "model", _modelName },
-                    { "input", new[]
-                        {
-                            new { role = "system", content = systemPrompt },
-                            new { role = "user", content = userPrompt }
-                        }
-                    },
-                    { "reasoning", new { effort = effort?.ToLowerInvariant() switch
-                        {
-                            "low" => "low",
-                            "medium" => "medium",
-                            "high" => "high",
-                            "xhigh" => "high",
-                            _ => "medium"
-                        },
-                        summary = "auto"
-                      }
-                    },
-                    { "stream", true }
-                };
-
-                var jsonPayload = JsonSerializer.Serialize(requestBody);
-                var requestUri = $"{_endpoint.TrimEnd('/')}/responses";
-
-                Log.Debug("OpenAI Responses API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
-
-                var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-                {
-                    Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-                };
-
-                if (!string.IsNullOrWhiteSpace(_apiKey))
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-                }
-
-                HttpResponseMessage? response = null;
-                try
-                {
-                    response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                    if (!response.IsSuccessStatusCode)
+                    return new AiResult
                     {
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        Log.Error("OpenAI Responses API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
-                        throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
-                    }
-
-                    Log.Debug("OpenAI Responses API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
-                    {
-                        string? line;
-                        while ((line = await reader.ReadLineAsync()) != null)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            if (string.IsNullOrWhiteSpace(line))
-                            {
-                                continue;
-                            }
-
-                            Log.Verbose("OpenAI Responses Streaming Line: {Line}", line);
-
-                            if (line.StartsWith("data: "))
-                            {
-                                var data = line.Substring("data: ".Length).Trim();
-                                if (data == "[DONE]")
-                                {
-                                    break;
-                                }
-
-                                string? reasoning = null;
-                                string? content = null;
-                                bool parsedSuccessfully = false;
-
-                                try
-                                {
-                                    using (var doc = JsonDocument.Parse(data))
-                                    {
-                                        var root = doc.RootElement;
-                                        if (root.TryGetProperty("type", out var typeElem))
-                                        {
-                                            var typeStr = typeElem.GetString() ?? string.Empty;
-
-                                            // 1) 추론 델타/요약 파싱
-                                            // 일반적인 스트리밍 델타 형태 (예: response.reasoning.delta, response.reasoning_text.delta 등)
-                                            if (typeStr.Contains("reasoning") && typeStr.Contains("delta") && root.TryGetProperty("delta", out var reasoningDeltaElem))
-                                            {
-                                                reasoning = reasoningDeltaElem.GetString();
-                                            }
-                                            // 혹시 다른 이름의 추론 델타가 오는 경우를 위한 폴백
-                                            else if (typeStr.Contains("thinking") && typeStr.Contains("delta") && root.TryGetProperty("delta", out var thinkingDeltaElem))
-                                            {
-                                                reasoning = thinkingDeltaElem.GetString();
-                                            }
-                                            // 기존 완결형 summary 배열이 오는 경우 대응
-                                            else if (typeStr == "reasoning" && root.TryGetProperty("summary", out var summaryElem) && summaryElem.ValueKind == JsonValueKind.Array)
-                                            {
-                                                var sb = new StringBuilder();
-                                                foreach (var sumItem in summaryElem.EnumerateArray())
-                                                {
-                                                    if (sumItem.TryGetProperty("type", out var sumType) && sumType.GetString() == "summary_text" && sumItem.TryGetProperty("text", out var textElem))
-                                                    {
-                                                        sb.Append(textElem.GetString());
-                                                    }
-                                                }
-                                                reasoning = sb.ToString();
-                                            }
-
-                                            // 2) 최종 명세서 출력 텍스트 파싱
-                                            if (typeStr.Contains("output_text.delta") && root.TryGetProperty("delta", out var deltaElem))
-                                            {
-                                                content = deltaElem.GetString();
-                                            }
-                                        }
-                                    }
-                                    parsedSuccessfully = true;
-                                }
-                                catch (JsonException)
-                                {
-                                    // 일부 API 게이트웨이 파싱 실패 무시
-                                }
-
-                                if (parsedSuccessfully)
-                                {
-                                    if (!string.IsNullOrEmpty(reasoning))
-                                    {
-                                        yield return new StreamingChunk(ChunkType.Thinking, reasoning);
-                                    }
-                                    if (!string.IsNullOrEmpty(content))
-                                    {
-                                        yield return new StreamingChunk(ChunkType.Text, content);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                finally
-                {
-                    response?.Dispose();
-                }
-            }
-            else
-            {
-                float targetTemp = temperature;
-
-                // o1, o3 모델은 temperature = 1.0f 필수 제약 적용
-                bool isReasoningEnforcedModel = 
-                    lowerModel.StartsWith("o1") || 
-                    lowerModel.StartsWith("o3");
-
-                if (isReasoningEnforcedModel)
-                {
-                    targetTemp = 1.0f;
-                }
-
-                var requestBody = new System.Collections.Generic.Dictionary<string, object>
-                {
-                    { "model", _modelName },
-                    { "messages", new[]
-                        {
-                            new { role = "system", content = systemPrompt },
-                            new { role = "user", content = userPrompt }
-                        }
-                    },
-                    { "stream", true }
-                };
-
-                if (isReasoningEnforcedModel)
-                {
-                    if (!string.IsNullOrWhiteSpace(effort))
-                    {
-                        var apiEffort = effort.ToLowerInvariant() switch
-                        {
-                            "low" => "low",
-                            "medium" => "medium",
-                            "high" => "high",
-                            "xhigh" => "high",
-                            _ => "medium"
-                        };
-                        requestBody.Add("reasoning_effort", apiEffort);
-                    }
-                }
-                else
-                {
-                    requestBody.Add("temperature", targetTemp);
-                }
-
-                var jsonPayload = JsonSerializer.Serialize(requestBody);
-                var requestUri = $"{_endpoint.TrimEnd('/')}/chat/completions";
-
-                Log.Debug("OpenAI API 스트리밍 요청 전송 준비 - URI: {Uri}\n[Payload JSON]:\n{Payload}", requestUri, jsonPayload);
-
-                var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-                {
-                    Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
-                };
-
-                if (!string.IsNullOrWhiteSpace(_apiKey))
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
-                }
-
-                HttpResponseMessage? response = null;
-                try
-                {
-                    response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        Log.Error("OpenAI API 스트리밍 HTTP 요청 실패 - StatusCode: {StatusCode} ({ReasonPhrase})\n[Error Response Content]:\n{ErrorContent}", (int)response.StatusCode, response.ReasonPhrase, errorContent);
-                        throw new HttpRequestException($"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}).\n상세 에러 내용: {errorContent}");
-                    }
-
-                    Log.Debug("OpenAI API 스트리밍 응답 수신 시작 - StatusCode: {StatusCode}", (int)response.StatusCode);
-
-                    using (var stream = await response.Content.ReadAsStreamAsync())
-                    using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
-                    {
-                        string? line;
-                        while ((line = await reader.ReadLineAsync()) != null)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            if (string.IsNullOrWhiteSpace(line))
-                            {
-                                continue;
-                            }
-
-                            Log.Verbose("OpenAI Streaming Line: {Line}", line);
-
-                            if (line.StartsWith("data: "))
-                            {
-                                var data = line.Substring("data: ".Length).Trim();
-                                if (data == "[DONE]")
-                                {
-                                    break;
-                                }
-
-                                string? reasoning = null;
-                                string? content = null;
-                                bool parsedSuccessfully = false;
-
-                                try
-                                {
-                                    using (var doc = JsonDocument.Parse(data))
-                                    {
-                                        var root = doc.RootElement;
-                                        if (root.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0)
-                                        {
-                                            var firstChoice = choices[0];
-                                            if (firstChoice.TryGetProperty("delta", out var delta))
-                                            {
-                                                if (delta.TryGetProperty("reasoning_content", out var reasoningElem))
-                                                {
-                                                    reasoning = reasoningElem.GetString();
-                                                }
-                                                else if (delta.TryGetProperty("reasoning", out var reasoningAltElem))
-                                                {
-                                                    reasoning = reasoningAltElem.GetString();
-                                                }
-                                                else if (delta.TryGetProperty("thinking", out var thinkingAltElem))
-                                                {
-                                                    reasoning = thinkingAltElem.GetString();
-                                                }
-
-                                                if (delta.TryGetProperty("content", out var contentElem))
-                                                {
-                                                    content = contentElem.GetString();
-                                                }
-                                            }
-                                        }
-                                    }
-                                    parsedSuccessfully = true;
-                                }
-                                catch (JsonException)
-                                {
-                                    // 일부 API 게이트웨이 파싱 실패 무시
-                                }
-
-                                if (parsedSuccessfully)
-                                {
-                                    if (!string.IsNullOrEmpty(reasoning))
-                                    {
-                                        yield return new StreamingChunk(ChunkType.Thinking, reasoning);
-                                    }
-                                    if (!string.IsNullOrEmpty(content))
-                                    {
-                                        yield return new StreamingChunk(ChunkType.Text, content);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                finally
-                {
-                    response?.Dispose();
+                        Content = contentElement.GetString() ?? string.Empty,
+                        ThinkingText = reasoningContent
+                    };
                 }
             }
         }

@@ -80,6 +80,8 @@ namespace ReSet.Cli
 
         static async Task Main(string[] args)
         {
+            try
+            {
             // 0. Ctrl+C 이벤트 바인딩 (활성화된 CancellationTokenSource를 취소하도록 함)
             Console.CancelKeyPress += (sender, e) =>
             {
@@ -440,7 +442,8 @@ namespace ReSet.Cli
 
                         var rulebookName = string.IsNullOrEmpty(cliArgs.JobName) ? "Settlement_Policy_Rulebook.md" : $"{cliArgs.JobName}_Settlement_Policy_Rulebook.md";
                         var rulebookPath = Path.Combine(outputDir, rulebookName);
-                        var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                        var effortSuffix = string.IsNullOrWhiteSpace(actorEffort) ? "" : $", Effort: {actorEffort}";
+                        var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n\n";
 
                         await File.WriteAllTextAsync(rulebookPath, metadataHeader + rulebook);
                         AnsiConsole.MarkupLine($"[green]성공: 정산 정책 문서 생성 완료![/] {Markup.Escape(rulebookPath)}");
@@ -528,7 +531,12 @@ namespace ReSet.Cli
                         if (migrationEnabled && spDef != null)
                         {
                             AnsiConsole.MarkupLine($"[yellow]{schema}.{name}[/] - 배치 전환 계획 설계서 작성 중 ({targetLanguage})...");
-                            migrationPlan = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage, globalCts.Token);
+                            var migrationResult = await aiService.GenerateBatchMigrationPlanAsync(spDef, targetLanguage, globalCts.Token);
+                            migrationPlan = migrationResult.Content;
+                            if (!string.IsNullOrWhiteSpace(migrationResult.ThinkingText))
+                            {
+                                thinkingText = (thinkingText ?? "") + "\n=== Batch Migration Plan Thinking ===\n" + migrationResult.ThinkingText + "\n";
+                            }
                         }
 
                         if (!Directory.Exists(outputDir))
@@ -539,7 +547,7 @@ namespace ReSet.Cli
                         await SaveOutputsAsync(
                             spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                             metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                            schema, name, provider, modelName, reviewResult, thinkingText);
+                            schema, name, provider, modelName, reviewResult, thinkingText, actorEffort, configuration);
 
                         AnsiConsole.MarkupLine($"[green]성공:[/] {selectedOption} 분석 완료 및 저장!");
                     }
@@ -573,7 +581,8 @@ namespace ReSet.Cli
                         else
                         {
                             var planFileName = Path.Combine(outputDir, $"{cliArgs.JobName}_BatchMigrationPlan.md");
-                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                            var effortSuffix = string.IsNullOrWhiteSpace(consolidatorEffort) ? "" : $", Effort: {consolidatorEffort}";
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n\n";
                             await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
                             AnsiConsole.MarkupLine($"[green]성공: 통합 배치 설계서 생성 완료![/] {Markup.Escape(planFileName)}");
 
@@ -682,7 +691,7 @@ namespace ReSet.Cli
                             await SaveOutputsAsync(
                                 spDef, specMarkdown, migrationPlan, outputDir, instructionsFile,
                                 metadataExporter, saveRawJson, saveRawContext, saveRawFiles,
-                                schema, name, provider, modelName, reviewResult, thinkingText);
+                                schema, name, provider, modelName, reviewResult, thinkingText, actorEffort, configuration);
 
                             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
                             AnsiConsole.Write(new Panel(new Markup($"[green]성공적으로 파일이 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(outputFileName)}"))
@@ -835,7 +844,8 @@ namespace ReSet.Cli
                             }
 
                             var planFileName = Path.Combine(outputDir, $"{jobName}_BatchMigrationPlan.md");
-                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                            var effortSuffix = string.IsNullOrWhiteSpace(consolidatorEffort) ? "" : $", Effort: {consolidatorEffort}";
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n\n";
                             await File.WriteAllTextAsync(planFileName, metadataHeader + consolidatedPlan);
                             AnsiConsole.Write(new Panel(new Markup($"[green]통합 배치 설계서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(planFileName)}"))
                             {
@@ -1017,7 +1027,8 @@ namespace ReSet.Cli
 
                             var rulebookName = $"{jobName}_Settlement_Policy_Rulebook.md";
                             var rulebookPath = Path.Combine(outputDir, rulebookName);
-                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n\n";
+                            var effortSuffix = string.IsNullOrWhiteSpace(actorEffort) ? "" : $", Effort: {actorEffort}";
+                            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n\n";
 
                             await File.WriteAllTextAsync(rulebookPath, metadataHeader + rulebook);
                             AnsiConsole.Write(new Panel(new Markup($"[green]정산 정책 문서가 성공적으로 생성되었습니다![/]\n[bold]저장 경로:[/] {Markup.Escape(rulebookPath)}"))
@@ -1049,6 +1060,11 @@ namespace ReSet.Cli
                     }
                 }
             }
+            }
+            finally
+            {
+                Serilog.Log.CloseAndFlush();
+            }
         }
 
 
@@ -1067,7 +1083,9 @@ namespace ReSet.Cli
             string provider,
             string modelName,
             ReviewResult? review,
-            string? thinkingText = null)
+            string? thinkingText = null,
+            string? effort = null,
+            IConfiguration? configuration = null)
         {
             if (spDef != null)
             {
@@ -1125,7 +1143,7 @@ namespace ReSet.Cli
 ";
                     await metadataExporter.ExportRawMetadataAsync(
                         spDef,
-                        rawPromptContext,
+                        spDef.RawPromptContext ?? rawPromptContext,
                         outputDir,
                         saveRawJson,
                         saveRawContext,
@@ -1154,7 +1172,8 @@ ExceptionScore: {review.ScoreException}/10
                 scoreHeader = $"> **AI 최종 신뢰도**: {review.NormalizedScore}/100점 (정합성: {review.ScoreAccuracy}, CRUD: {review.ScoreCrud}, 가독성: {review.ScoreReadability}, 예외: {review.ScoreException})\n";
             }
 
-            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName})\n" + scoreHeader + "\n";
+            var effortSuffix = string.IsNullOrWhiteSpace(effort) ? "" : $", Effort: {effort}";
+            var metadataHeader = $"> [!NOTE]\n> **문서 작성일시**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\n> **분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n" + scoreHeader + "\n";
 
             var outputFileName = Path.Combine(outputDir, $"{schema}.{name}_Spec.md");
             await File.WriteAllTextAsync(outputFileName, yamlFrontMatter + metadataHeader + specMarkdown);
@@ -1188,7 +1207,9 @@ ExceptionScore: {review.ScoreException}/10
                 try
                 {
                     var thinkingFileName = Path.Combine(outputDir, $"{schema}.{name}_Thinking.txt");
-                    await File.WriteAllTextAsync(thinkingFileName, thinkingText);
+                    var thinkingHeader = $"**분석 AI 정보**: {provider} ({modelName}{effortSuffix})\n" +
+                                         "==========================================================================\n\n";
+                    await File.WriteAllTextAsync(thinkingFileName, thinkingHeader + thinkingText);
                 }
                 catch (Exception ex)
                 {
@@ -1196,8 +1217,6 @@ ExceptionScore: {review.ScoreException}/10
                 }
             }
 
-            // 로거 버퍼 플러시 및 정리
-            Serilog.Log.CloseAndFlush();
         }
 
         private static async Task RunCodegenEngineAsync(
@@ -1260,7 +1279,8 @@ ExceptionScore: {review.ScoreException}/10
 
         private static void ConfigureLogging(IConfiguration configuration)
         {
-            var logDirectory = configuration["LoggingSettings:LogDirectory"] ?? "./output/logs";
+            var rawLogDirectory = configuration["LoggingSettings:LogDirectory"] ?? "./output/logs";
+            var logDirectory = Path.GetFullPath(rawLogDirectory);
             var minLevelStr = configuration["LoggingSettings:MinimumLevel"] ?? "Information";
             var retainedFileCountLimitStr = configuration["LoggingSettings:RetainedFileCountLimit"] ?? "31";
 

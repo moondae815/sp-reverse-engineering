@@ -123,10 +123,10 @@ namespace ReSet.Core.Tests
             await exporter.ExportRawMetadataAsync(spDef, rawContext, testOutputDir, false, true, false);
 
             // Assert
-            var expectedContextPath = Path.Combine(testOutputDir, "dbo.USP_TestExporterContext_RawContext.txt");
+            var expectedContextPath = Path.Combine(testOutputDir, "dbo.USP_TestExporterContext_RawContext.md");
             Assert.True(File.Exists(expectedContextPath));
             var savedContext = await File.ReadAllTextAsync(expectedContextPath);
-            Assert.Equal(rawContext, savedContext);
+            Assert.Contains(rawContext, savedContext);
 
             // Clean up
             if (Directory.Exists(testOutputDir))

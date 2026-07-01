@@ -9,6 +9,8 @@ namespace ReSet.Core.Models
         public bool IsForeignKey { get; set; }
         public string Description { get; set; } = string.Empty;
         public bool IsDescriptionMissing { get; set; }
+        public bool IsIdentity { get; set; }
+        public string? DefaultValue { get; set; }
     }
 }
 

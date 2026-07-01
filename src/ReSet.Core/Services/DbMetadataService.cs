@@ -121,6 +121,7 @@ namespace ReSet.Core.Services
             using (var conn = new SqlConnection(connectionString))
             {
                 await conn.OpenAsync(cancellationToken);
+                var currentDb = conn.Database;
                 using (var cmd = new SqlCommand(query, conn))
                 {
                     cmd.Parameters.AddWithValue("@ObjectName", objectName);
@@ -129,9 +130,15 @@ namespace ReSet.Core.Services
                     {
                         while (await reader.ReadAsync(cancellationToken))
                         {
+                            var rawDb = reader.IsDBNull(0) ? null : reader.GetString(0);
+                            if (rawDb != null && string.Equals(rawDb, currentDb, StringComparison.OrdinalIgnoreCase))
+                            {
+                                rawDb = null;
+                            }
+
                             rawDeps.Add(new DependencyInfo
                             {
-                                Database = reader.IsDBNull(0) ? null : reader.GetString(0),
+                                Database = rawDb,
                                 Schema = reader.GetString(1),
                                 Name = reader.GetString(2),
                                 Type = reader.GetString(3)
@@ -236,10 +243,11 @@ namespace ReSet.Core.Services
                     {
                         depInfo.Columns = await GetTableColumnsAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
                         depInfo.Description = await GetTableDescriptionAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
+                        depInfo.Indexes = await GetTableIndexesAsync(connectionString, rawDep.Database, rawDep.Schema, rawDep.Name, cancellationToken);
                     }
                     catch (Exception ex)
                     {
-                        warnings.Add($"[{depFullName}] 테이블 스키마 및 코멘트 정보 수집 실패: {ex.Message}");
+                        warnings.Add($"[{depFullName}] 테이블 스키마, 코멘트 및 인덱스 정보 수집 실패: {ex.Message}");
                     }
                 }
                 // 코드 수집 및 하위 재귀 분기 (UDF, SP)
@@ -301,11 +309,14 @@ namespace ReSet.Core.Services
                         SELECT CAST(value AS NVARCHAR(1000))
                         FROM {cleanDb}sys.extended_properties ep
                         WHERE ep.major_id = o.object_id AND ep.minor_id = c.column_id AND ep.class = 1 AND ep.name = 'MS_Description'
-                    ), '') AS Description
+                    ), '') AS Description,
+                    CAST(c.is_identity AS INT) AS IsIdentity,
+                    ISNULL(dc.definition, '') AS DefaultValue
                 FROM {cleanDb}sys.columns c
                 INNER JOIN {cleanDb}sys.objects o ON c.object_id = o.object_id
                 INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
                 INNER JOIN {cleanDb}sys.types t ON c.user_type_id = t.user_type_id
+                LEFT JOIN {cleanDb}sys.default_constraints dc ON c.default_object_id = dc.object_id AND c.object_id = dc.parent_object_id
                 WHERE s.name = @Schema AND o.name = @TableName
                 ORDER BY c.column_id;";
 
@@ -329,13 +340,72 @@ namespace ReSet.Core.Services
                                 IsPrimaryKey = reader.GetInt32(3) == 1,
                                 IsForeignKey = reader.GetInt32(4) == 1,
                                 Description = desc,
-                                IsDescriptionMissing = string.IsNullOrWhiteSpace(desc)
+                                IsDescriptionMissing = string.IsNullOrWhiteSpace(desc),
+                                IsIdentity = reader.GetInt32(6) == 1,
+                                DefaultValue = reader.IsDBNull(7) ? null : (string.IsNullOrWhiteSpace(reader.GetString(7)) ? null : reader.GetString(7))
                             });
                         }
                     }
                 }
             }
             return columns;
+        }
+
+        public async Task<List<TableIndexInfo>> GetTableIndexesAsync(string connectionString, string? database, string schema, string tableName, CancellationToken cancellationToken = default)
+        {
+            var indexes = new Dictionary<string, TableIndexInfo>(StringComparer.OrdinalIgnoreCase);
+            var cleanDb = string.IsNullOrEmpty(database) ? "" : $"[{database.Replace("]", "]]")}].";
+            var query = $@"
+                SELECT 
+                    i.name AS IndexName,
+                    i.type_desc AS IndexType,
+                    CAST(i.is_unique AS INT) AS IsUnique,
+                    CAST(i.is_primary_key AS INT) AS IsPrimaryKey,
+                    c.name AS ColumnName
+                FROM {cleanDb}sys.indexes i
+                INNER JOIN {cleanDb}sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                INNER JOIN {cleanDb}sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
+                INNER JOIN {cleanDb}sys.objects o ON i.object_id = o.object_id
+                INNER JOIN {cleanDb}sys.schemas s ON o.schema_id = s.schema_id
+                WHERE s.name = @Schema AND o.name = @TableName AND i.name IS NOT NULL
+                ORDER BY i.name, ic.key_ordinal;";
+
+            try
+            {
+                using (var conn = new SqlConnection(connectionString))
+                {
+                    await conn.OpenAsync(cancellationToken);
+                    using (var cmd = new SqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@Schema", schema);
+                        cmd.Parameters.AddWithValue("@TableName", tableName);
+                        using (var reader = await cmd.ExecuteReaderAsync(cancellationToken))
+                        {
+                            while (await reader.ReadAsync(cancellationToken))
+                            {
+                                var idxName = reader.GetString(0);
+                                if (!indexes.TryGetValue(idxName, out var idxInfo))
+                                {
+                                    idxInfo = new TableIndexInfo
+                                    {
+                                        IndexName = idxName,
+                                        IndexType = reader.GetString(1),
+                                        IsUnique = reader.GetInt32(2) == 1,
+                                        IsPrimaryKey = reader.GetInt32(3) == 1
+                                    };
+                                    indexes[idxName] = idxInfo;
+                                }
+                                idxInfo.Columns.Add(reader.GetString(4));
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[DbMetadata] 인덱스 정보 수집 실패 (Soft Fail) - Table: {Schema}.{Table}", schema, tableName);
+            }
+            return new List<TableIndexInfo>(indexes.Values);
         }
 
         private async Task<string> GetTableDescriptionAsync(string connectionString, string? database, string schema, string tableName, CancellationToken cancellationToken)
@@ -521,6 +591,14 @@ namespace ReSet.Core.Services
                     using (var conn = new SqlConnection(connectionString))
                     {
                         await conn.OpenAsync(cancellationToken);
+                        var currentDb = conn.Database;
+                        if (depDb != null && string.Equals(depDb, currentDb, StringComparison.OrdinalIgnoreCase))
+                        {
+                            depDb = null;
+                            cleanDb = "";
+                            depFullName = $"{schema}.{name}";
+                        }
+
                         using (var cmd = new SqlCommand(checkQuery, conn))
                         {
                             cmd.Parameters.AddWithValue("@ObjectName", name);
@@ -556,6 +634,7 @@ namespace ReSet.Core.Services
                     {
                         depInfo.Columns = await GetTableColumnsAsync(connectionString, depDb, schema, name, cancellationToken);
                         depInfo.Description = await GetTableDescriptionAsync(connectionString, depDb, schema, name, cancellationToken);
+                        depInfo.Indexes = await GetTableIndexesAsync(connectionString, depDb, schema, name, cancellationToken);
                         if (string.IsNullOrEmpty(depInfo.Description))
                         {
                             depInfo.Description = "Dynamic SQL에 의해 동적 감지된 테이블";

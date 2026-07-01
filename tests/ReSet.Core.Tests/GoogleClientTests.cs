@@ -16,13 +16,13 @@ namespace ReSet.Core.Tests
             // Arrange
             var spyHandler = new RequestSpyHttpMessageHandler("{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Response\"}]}}]}");
             var httpClient = new HttpClient(spyHandler);
-            var client = new GoogleClient(httpClient, "test_api_key", "https://generativelanguage.googleapis.com", "gemini-2.5-flash");
+            var client = new GoogleClient(httpClient, "test_api_key", "https://generativelanguage.googleapis.com", "gemini-1.5-flash");
 
             // Act
             var result = await client.ChatAsync("System prompt", "User prompt", 0.7f, effort: null);
 
             // Assert
-            Assert.Equal("Response", result);
+            Assert.Equal("Response", result.Content);
             Assert.NotNull(spyHandler.LastRequestContent);
 
             using (var doc = JsonDocument.Parse(spyHandler.LastRequestContent))

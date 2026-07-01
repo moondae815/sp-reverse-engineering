@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using ReSet.Core.Models;
 
 namespace ReSet.Core.Services
@@ -9,8 +6,6 @@ namespace ReSet.Core.Services
     {
         string ProviderName { get; }
         string ModelName { get; }
-        string? LastThinkingText { get; }
-        Task<string> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default);
-        IAsyncEnumerable<StreamingChunk> StreamChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default);
+        Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default);
     }
 }

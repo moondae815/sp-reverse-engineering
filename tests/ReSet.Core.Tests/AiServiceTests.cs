@@ -101,7 +101,7 @@ namespace ReSet.Core.Tests
             var result = await service.GenerateSpecificationAsync(spDef, "지침");
 
             // Assert
-            Assert.Equal("## 생성된 명세서", result);
+            Assert.Equal("## 생성된 명세서", result.Content);
         }
 
         [Fact]
