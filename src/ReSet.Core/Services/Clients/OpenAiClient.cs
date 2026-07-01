@@ -17,6 +17,7 @@ namespace ReSet.Core.Services.Clients
         private readonly string _apiKey;
         private readonly string _endpoint;
         private readonly string _modelName;
+        private readonly bool _isOllama;
 
         public string ProviderName => "OpenAI";
         public string ModelName => _modelName;
@@ -33,6 +34,9 @@ namespace ReSet.Core.Services.Clients
                 ep = ep.Substring(0, ep.Length - "/chat/completions".Length).TrimEnd('/');
             }
             _endpoint = ep;
+
+            // 로컬 Ollama 포트(11434) 포함 여부, API Key 공백 여부, 혹은 gemma4 등 로컬 모델 명칭을 기준으로 Ollama 여부 감지
+            _isOllama = ep.Contains("11434") || string.IsNullOrWhiteSpace(apiKey) || modelName.ToLowerInvariant().Contains("gemma4") || modelName.ToLowerInvariant().Contains("ollama");
         }
 
         public async Task<AiResult> ChatAsync(string systemPrompt, string userPrompt, float temperature, string? effort = null, CancellationToken cancellationToken = default)
@@ -184,6 +188,20 @@ namespace ReSet.Core.Services.Clients
                         }
                     }
                 };
+
+                if (_isOllama)
+                {
+                    object thinkValue = true;
+                    if (!string.IsNullOrWhiteSpace(effort))
+                    {
+                        var lowerEffort = effort.ToLowerInvariant();
+                        if (lowerEffort == "low" || lowerEffort == "medium" || lowerEffort == "high" || lowerEffort == "max")
+                        {
+                            thinkValue = lowerEffort;
+                        }
+                    }
+                    requestBody.Add("think", thinkValue);
+                }
 
                 if (isReasoningEnforcedModel)
                 {

@@ -81,8 +81,8 @@ namespace ReSet.Core.Services
 3. SP에서 호출하는 사용자 정의 함수(UDF)의 정의(소스코드)가 제공된 경우에 한해 연산 알고리즘을 분석하여 포함시키십시오. 만약 UDF 소스코드 DDL이 제공되지 않았다면, 임의로 내부 알고리즘을 추정하여 단정하지 말고 'UDF 정의 미제공으로 상세 로직 분석 제외' 및 '호출 위치 및 매개변수 사용 목적'만을 사실에 기반하여 기록하십시오.
 4. 비즈니스 흐름을 직관적으로 이해할 수 있는 Mermaid Flowchart 다이어그램을 필수로 포함해 마크다운으로 구성해 주십시오. 
    - 노드 정의 시 특수문자나 괄호가 들어가 린팅 에러가 발생하지 않도록 텍스트 전체를 반드시 이중 큰따옴표로 감싸십시오. (예: id1[""사용자 조회 (ID 체크)""] --> id2[""결과 반환""])
-   - 괄호만으로 노드를 구성하거나 Mermaid 예약어(graph, flowchart, subgraph 등)를 노드 ID로 사용해서는 안 됩니다.
-   - 연결선(화살표) 위에 조건 텍스트를 적을 때(예: -->|텍스트|), 텍스트 부분에 절대 큰따옴표 기호(쌍따옴표)나 괄호, 특수기호를 사용하지 마십시오. (예: 화살표 중간에 '존재' 또는 '(성공)'을 표시하려면, 기호 없이 반드시 -->|존재| 또는 -->|성공| 과 같이 순수 텍스트만 적어야 합니다.)
+   - 노드 ID는 반드시 영문자/숫자 조합의 고유 식별자(예: Node1, Node2)로 정의하고, 보여줄 한글 텍스트는 이중 큰따옴표 안에 기술하십시오. 괄호만으로 노드를 구성하거나 Mermaid 예약어(graph, flowchart, subgraph, end 등)를 노드 ID로 사용해서는 안 됩니다.
+   - 연결선(화살표) 위에 조건 텍스트를 적을 때(예: -->|텍스트|), 텍스트 부분에 절대 큰따옴표 기호(쌍따옴표)나 괄호, 특수기호를 사용하지 마십시오. (예: 화살표 중간에 '존재' 또는 '성공'을 표시하려면, 기호 없이 반드시 -->|존재| 또는 -->|성공| 과 같이 순수 텍스트만 적어야 합니다.)
    - 노드 내부 텍스트에는 골뱅이(@)나 달러($) 같은 특수 변수명을 직접 사용할 때 이스케이프 처리가 복잡해지므로, 다이어그램 내부에서는 변수 기호를 빼고 일반 명칭으로 적으십시오. (예: 변수명 po_intRetVal 대신 '출력값 리턴' 또는 'po_intRetVal'로 기술)
 5. SP 내에 동적 SQL(예: EXEC, EXECUTE, sp_executesql을 통한 문자열 쿼리 실행)이 존재하는 경우, 동적으로 구성되어 실행되는 SQL의 목적과 대상 테이블을 코드 흐름 상에서 최대한 식별하여 CRUD 분석 및 비즈니스 로직 요약에 누락 없이 반영하십시오.
 6. SP 내에서 Linked Server를 통한 원격 참조(4파트 식별자: Server.Database.Schema.Table 형식을 사용하는 참조)가 발견되면, 해당 외부 DB/테이블 의존성과 데이터 연동 목적을 명확히 분석하여 포함하십시오.
@@ -92,7 +92,11 @@ namespace ReSet.Core.Services
 10. 테이블 컬럼의 상태값(예: OutState 등)이나 비즈니스 코드의 구체적인 의미가 메타데이터나 주석에 명시적으로 주어지지 않았다면, 임의로 업무 명칭(예: '지급완료' 등)을 단정하여 해석하지 말고 코드에 작성된 값 조건(예: 'OutState가 1, 5인 경우') 그대로 사실 기반으로 서술하십시오.
 11. 저장 프로시저의 최종 반환값이나 출력 파라미터가 소스코드 내에서 명시적으로 제어되지 않거나 초기값에 의존하는 경우, 호출부의 초기화 책임이나 전제 조건을 설계 주석으로 정확하게 명세화하십시오.
 12. 제공된 스키마 정보에서 `[설명 누락]`으로 표시된 컬럼이 있는 경우, SP 소스코드 내에서 사용되는 연산식 및 대입 방식을 분석하여 의미를 유추하십시오. 그리고 작성할 기능 명세서 본문에 해당 컬럼이 언급될 때 반드시 `[AI 추론 보완: {{Schema}}.{{Table}}.{{Column}} - {{유추된설명}}]` 형태로 그 결과를 누락 없이 함께 표기하십시오. (예: `[AI 추론 보완: dbo.Orders.TotAmt - 주문 건의 할인 적용 후 최종 결제 금액]`)
-13. SP 소스코드 내부의 자연어 개발 주석과 실제 쿼리 실행 연산식 사이에 모순(불일치)이 감지되면, 실제 쿼리 코드를 최우선 기준으로 판정해 명세서를 작성하고, `## 개요` 섹션 하단에 `[🚨 주석 불일치 경고] {{모순내용}}` 형식으로 구체적인 경고 문구를 포함시키십시오.
+13. SP 소스코드 내부의 자연어 개발 주석과 실제 쿼리 실행 연산식 사이에 모순(불일치)이 감지되면, 실제 쿼리 코드를 최우선 기준으로 판정해 명세서를 작성하고, `## 개요` 섹션 하단에 `[🚨 주석 불일치 경고] {{모순내용}}` 형식으로 구체적인 경고 문구를 포함시키십시오. (예: 개발 주석에는 '정상거래만 조회'로 적혀있으나 실제 쿼리 WHERE 조건절에서는 취소거래 조건(OutState = 9)도 배제하지 않고 함께 조회하는 모순이 있는 경우, 이를 지적하고 실제 쿼리 기준으로 로직을 분석 및 기록해야 합니다.)
+14. 명세서에 CRUD 분석 및 데이터 컬럼 매핑 표를 작성할 때, '외 다수' 또는 '등'과 같이 컬럼 목록이나 매핑 관계를 임의로 축약하거나 생략하지 마십시오. 실제 쿼리에서 INSERT/UPDATE/SELECT의 대상이 되는 모든 물리 컬럼과 이에 매핑되는 원천값(SELECT 소스 컬럼, 하드코딩 상수, 함수 연산식 등)을 누락 없이 정확한 개수로 1:1 대조 표에 완전하게 기술하십시오.
+15. 프로시저 파라미터나 컬럼 제약 조건에 대해 임의로 'NOT NULL' 또는 'NULL 미허용'과 같은 주관적 단정을 짓지 마십시오. 오직 DDL 소스코드에 명시되어 있는 타입 제약 및 기본값 정의를 기반으로만 사실적으로 기술하십시오.
+16. 레거시 쿼리 내에서 `WITH(NOLOCK)` 또는 `NOLOCK` 등의 테이블 읽기 힌트가 사용된 경우, 그에 따른 더티 리드(Dirty Read) 가능성과 같은 데이터 격리 및 정합성 특성을 명세서 내 예외 처리/제약 사항 또는 트랜잭션 설명부에 반드시 반영하십시오.
+17. `NOT IN`, `ISNULL` 등이 결합된 복합 필터/분기 조건(예: `ISNULL(Col, 4) NOT IN (0,1,2,3)`)을 해석할 때 논리적 환각을 철저히 배제하고 정확하게 기술하십시오. (예: '특정 값만 포함'이 아니라 '제외된 값 외의 모든 값 및 NULL 치환값 포함'으로 정확히 서술)
 
 [사용자 지침]
 {userInstructions}";
@@ -204,6 +208,13 @@ namespace ReSet.Core.Services
         public async Task<AiResult> GenerateSpecificationAsync(SpDefinition spDef, string userInstructions, string? feedbackLog = null, string? effort = null, CancellationToken cancellationToken = default)
         {
             var (systemPrompt, userPrompt) = BuildSpecificationPrompts(spDef, userInstructions, feedbackLog);
+
+            if (string.Equals(ProviderName, "Ollama", StringComparison.OrdinalIgnoreCase))
+            {
+                // Gemma 4 계열 모델의 추론(Thinking)을 강제 활성화하기 위해 시스템 프롬프트 첫 부분에 제어 토큰 삽입
+                systemPrompt = "<|think|>" + systemPrompt;
+                systemPrompt += "\n\n[Ollama 추론 유도 규칙]\n- 최종 답변을 작성하기 전에, 반드시 분석 단계와 생각 흐름을 <think>와 </think> 태그 또는 Gemma 4 표준 출력 포맷으로 상세히 기술하십시오. 최종 분석 명세서는 반드시 해당 태그 바깥에 작성해야 합니다.";
+            }
 
             Log.Information("AI 명세서 생성 요청 전송 - SP: {Schema}.{Name}, Effort: {Effort}", spDef.Schema, spDef.Name, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
@@ -338,6 +349,12 @@ namespace ReSet.Core.Services
 위 레거시 배치 SP 정보를 바탕으로 {targetLanguage} 기준의 '배치 전환 계획 설계서'를 작성해 주십시오.
 ";
 
+            if (string.Equals(ProviderName, "Ollama", StringComparison.OrdinalIgnoreCase))
+            {
+                systemPrompt = "<|think|>" + systemPrompt;
+                systemPrompt += "\n\n[Ollama 추론 유도 규칙]\n- 최종 답변을 작성하기 전에, 반드시 분석 단계와 생각 흐름을 <think>와 </think> 태그 또는 Gemma 4 표준 출력 포맷으로 상세히 기술하십시오. 최종 분석 명세서는 반드시 해당 태그 바깥에 작성해야 합니다.";
+            }
+
             Log.Information("AI 배치 전환 계획서 생성 요청 전송 - SP: {Schema}.{Name}, TargetLanguage: {TargetLanguage}", spDef.Schema, spDef.Name, targetLanguage);
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt);
 
@@ -389,6 +406,12 @@ namespace ReSet.Core.Services
             }
 
             userPrompt.AppendLine("위 개별 명세서들의 정보를 완벽히 분석하여, 지침에 맞추어 단일 통합 배치 전환 계획서를 구성해 주십시오.");
+
+            if (string.Equals(ProviderName, "Ollama", StringComparison.OrdinalIgnoreCase))
+            {
+                systemPrompt = "<|think|>" + systemPrompt;
+                systemPrompt += "\n\n[Ollama 추론 유도 규칙]\n- 최종 답변을 작성하기 전에, 반드시 분석 단계와 생각 흐름을 <think>와 </think> 태그 또는 Gemma 4 표준 출력 포맷으로 상세히 기술하십시오. 최종 분석 명세서는 반드시 해당 태그 바깥에 작성해야 합니다.";
+            }
 
             Log.Information("AI 통합 배치 계획서 생성 요청 전송 - JobName: {JobName}, TargetLanguage: {TargetLanguage}, Effort: {Effort}", jobName, targetLanguage, effort ?? "Default");
             Log.Debug("[AI 요청 System Prompt]:\n{SystemPrompt}\n[AI 요청 User Prompt]:\n{UserPrompt}", systemPrompt, userPrompt.ToString());
