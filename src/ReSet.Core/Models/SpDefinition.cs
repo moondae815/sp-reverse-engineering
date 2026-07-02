@@ -10,5 +10,15 @@ namespace ReSet.Core.Models
         public List<DependencyInfo> Dependencies { get; set; } = new();
         public List<string> Warnings { get; set; } = new();
         public string? RawPromptContext { get; set; }
+        public SpStaticAnalysisResult StaticAnalysis { get; set; } = new();
+    }
+
+    public class SpStaticAnalysisResult
+    {
+        public bool IsParsedSuccessfully { get; set; }
+        public string? ParserWarningMessage { get; set; }
+        public List<string> ReferencedTables { get; set; } = new();
+        public List<string> CreatedTempTables { get; set; } = new();
+        public List<string> ControlFlowSummary { get; set; } = new();
     }
 }

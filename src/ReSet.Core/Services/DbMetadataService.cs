@@ -170,6 +170,22 @@ namespace ReSet.Core.Services
                 throw;
             }
 
+            // T-SQL 정적 분석 구동 (AST 기반 메타데이터 추출)
+            try
+            {
+                var staticParser = new SqlStaticParser();
+                spDef.StaticAnalysis = staticParser.Analyze(spDef.DdlText);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[DbMetadata] SQL 정적 분석 구동 중 예외 발생 (Soft Fail)");
+                spDef.StaticAnalysis = new SpStaticAnalysisResult
+                {
+                    IsParsedSuccessfully = false,
+                    ParserWarningMessage = $"정적 분석기 기동 예외: {ex.Message}"
+                };
+            }
+
             // 2. 중복 방지 방문 해시셋 및 재귀 리스트 생성
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { spFullName };
 

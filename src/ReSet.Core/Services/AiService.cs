@@ -131,6 +131,30 @@ namespace ReSet.Core.Services
                 }
             }
 
+            var staticAnalysisText = new StringBuilder();
+            if (spDef.StaticAnalysis != null)
+            {
+                if (spDef.StaticAnalysis.IsParsedSuccessfully)
+                {
+                    staticAnalysisText.AppendLine("[Stored Procedure AST 정적 분석 정보 (AST Analysis Guidance)]");
+                    staticAnalysisText.AppendLine($"- 식별된 참조 물리 테이블: {(spDef.StaticAnalysis.ReferencedTables.Count > 0 ? string.Join(", ", spDef.StaticAnalysis.ReferencedTables) : "없음")}");
+                    staticAnalysisText.AppendLine($"- 식별된 생성/사용 임시 테이블: {(spDef.StaticAnalysis.CreatedTempTables.Count > 0 ? string.Join(", ", spDef.StaticAnalysis.CreatedTempTables) : "없음")}");
+                    if (spDef.StaticAnalysis.ControlFlowSummary.Count > 0)
+                    {
+                        staticAnalysisText.AppendLine("- 식별된 제어 흐름 구조 요약 (IF/WHILE):");
+                        foreach (var cf in spDef.StaticAnalysis.ControlFlowSummary)
+                        {
+                            staticAnalysisText.AppendLine($"  * {cf}");
+                        }
+                    }
+                }
+                else if (!string.IsNullOrEmpty(spDef.StaticAnalysis.ParserWarningMessage))
+                {
+                    staticAnalysisText.AppendLine("[Stored Procedure AST 정적 분석 정보 (AST Analysis Guidance)]");
+                    staticAnalysisText.AppendLine($"- 정적 구문 분석 실패/경고:\n{spDef.StaticAnalysis.ParserWarningMessage}");
+                }
+            }
+
             var userPrompt = $@"
 분석 대상 Stored Procedure 정보:
 - Schema: {spDef.Schema}
@@ -144,6 +168,8 @@ namespace ReSet.Core.Services
 
 [의존하는 참조 함수 및 Stored Procedure 정의 DDL 코드 목록]
 {referenceDdlsText}
+
+{staticAnalysisText}
 
 [Stored Procedure DDL SQL 원본]
 ```sql
