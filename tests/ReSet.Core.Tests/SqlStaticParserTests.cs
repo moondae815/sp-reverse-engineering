@@ -220,5 +220,42 @@ END;
             Assert.Contains("MyServer.RemoteDb.dbo.Orders", result.LinkedServerReferences);
             Assert.Contains(result.ControlFlowSummary, s => s.Contains("Linked Server 원격 테이블 참조 감지됨") && s.Contains("MyServer.RemoteDb.dbo.Orders"));
         }
+
+        [Fact]
+        public void Analyze_WithMultiLevelNestedControlFlow_ShouldApplyCorrectIndenting()
+        {
+            // Arrange
+            var ddlText = @"
+CREATE PROCEDURE dbo.ComplexControl
+AS
+BEGIN
+    IF (1 = 1)
+    BEGIN
+        WHILE (2 = 2)
+        BEGIN
+            IF (3 = 3)
+            BEGIN
+                SELECT 1;
+            END
+        END
+    END
+END;
+";
+            var parser = new SqlStaticParser();
+
+            // Act
+            var result = parser.Analyze(ddlText);
+
+            // Assert
+            Assert.True(result.IsParsedSuccessfully);
+            Assert.Equal(3, result.ControlFlowSummary.Count);
+
+            // 들여쓰기 깊이 검증 (0칸, 2칸, 4칸)
+            Assert.Contains("IF", result.ControlFlowSummary[0]);
+            Assert.StartsWith("  ", result.ControlFlowSummary[1]); // 2칸 들여쓰기
+            Assert.Contains("WHILE", result.ControlFlowSummary[1]);
+            Assert.StartsWith("    ", result.ControlFlowSummary[2]); // 4칸 들여쓰기
+            Assert.Contains("IF", result.ControlFlowSummary[2]);
+        }
     }
 }
