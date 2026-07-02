@@ -26,14 +26,22 @@ BEGIN
 
     IF @Year >= 2026
     BEGIN
-        INSERT INTO #TempBonus (EmpID, BonusAmount)
-        SELECT e.EmployeeID, 1000.00
-        FROM dbo.Employees e
-        JOIN dbo.Departments d ON e.DeptID = d.ID
-        WHERE e.EmployeeID = @EmployeeID;
+        INSERT INTO dbo.AuditLog (LogDate, Details) VALUES (GETDATE(), 'Year check passed');
+
+        -- Nested IF (중첩 조건)
+        IF @EmployeeID > 100
+        BEGIN
+            INSERT INTO #TempBonus (EmpID, BonusAmount)
+            SELECT e.EmployeeID, 1000.00
+            FROM dbo.Employees e
+            JOIN dbo.Departments d ON e.DeptID = d.ID
+            WHERE e.EmployeeID = @EmployeeID;
+        end
     END
     ELSE
     BEGIN
+        DELETE FROM dbo.ArchiveLog WHERE TargetYear < @Year;
+
         INSERT INTO #TempBonus (EmpID, BonusAmount)
         SELECT EmployeeID, 500.00
         FROM dbo.Employees
@@ -68,14 +76,26 @@ END;
             Assert.Contains("dbo.Employees", result.ReferencedTables);
             Assert.Contains("dbo.Departments", result.ReferencedTables);
             Assert.Contains("dbo.AuditLog", result.ReferencedTables);
+            Assert.Contains("dbo.ArchiveLog", result.ReferencedTables);
+
+            // CRUD 분류 검증
+            Assert.Contains("dbo.Employees", result.SelectTables);
+            Assert.Contains("dbo.Departments", result.SelectTables);
+            Assert.Contains("dbo.AuditLog", result.InsertTables);
+            Assert.Contains("dbo.AuditLog", result.UpdateTables);
+            Assert.Contains("dbo.ArchiveLog", result.DeleteTables);
 
             // 임시 테이블 검증
             Assert.Contains("#TempBonus", result.CreatedTempTables);
 
-            // 제어 흐름 검증
+            // 제어 흐름 및 중첩 들여쓰기 검증
             Assert.NotEmpty(result.ControlFlowSummary);
-            Assert.Contains(result.ControlFlowSummary, s => s.Contains("IF") && s.Contains("@Year >= 2026"));
-            Assert.Contains(result.ControlFlowSummary, s => s.Contains("WHILE") && s.Contains("@Counter < 5"));
+            // Outer IF (들여쓰기 없음)
+            Assert.Contains(result.ControlFlowSummary, s => s.StartsWith("Line") && s.Contains("IF") && s.Contains("@Year >= 2026"));
+            // Inner IF (공백 2칸 들여쓰기 존재)
+            Assert.Contains(result.ControlFlowSummary, s => s.StartsWith("  Line") && s.Contains("IF") && s.Contains("@EmployeeID > 100"));
+            // WHILE (들여쓰기 없음)
+            Assert.Contains(result.ControlFlowSummary, s => s.StartsWith("Line") && s.Contains("WHILE") && s.Contains("@Counter < 5"));
         }
 
         [Fact]

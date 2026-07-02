@@ -20,5 +20,9 @@ namespace ReSet.Core.Models
         public List<string> ReferencedTables { get; set; } = new();
         public List<string> CreatedTempTables { get; set; } = new();
         public List<string> ControlFlowSummary { get; set; } = new();
+        public List<string> SelectTables { get; set; } = new();
+        public List<string> InsertTables { get; set; } = new();
+        public List<string> UpdateTables { get; set; } = new();
+        public List<string> DeleteTables { get; set; } = new();
     }
 }
