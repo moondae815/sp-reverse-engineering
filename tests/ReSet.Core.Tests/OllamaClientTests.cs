@@ -1,0 +1,63 @@
+using System;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Xunit;
+using ReSet.Core.Services.Clients;
+
+namespace ReSet.Core.Tests
+{
+    public class OllamaClientTests
+    {
+        [Fact]
+        public async Task ChatAsync_WithGemma4ChannelThought_ShouldExtractThinkingAndCleanContent()
+        {
+            // Arrange
+            var responseJson = @"{
+                ""choices"": [
+                    {
+                        ""message"": {
+                            ""role"": ""assistant"",
+                            ""content"": ""Before thought\n<|channel>thought\nThis is Gemma 4 thinking\n<channel|>\nAfter thought""
+                        }
+                    }
+                ]
+            }";
+            var spyHandler = new OpenAiRequestSpyHandler(responseJson); // OpenAiClientTests.cs에 선언된 Handler 재사용
+            var httpClient = new HttpClient(spyHandler);
+            var client = new OllamaClient(httpClient, "http://localhost:11434", "gemma4");
+
+            // Act
+            var result = await client.ChatAsync("System", "User", 0.7f);
+
+            // Assert
+            Assert.Equal("Before thought\n\nAfter thought", result.Content);
+            Assert.Equal("This is Gemma 4 thinking", result.ThinkingText);
+        }
+
+        [Fact]
+        public async Task ChatAsync_WithStandardThinkTag_ShouldExtractThinkingAndCleanContent()
+        {
+            // Arrange
+            var responseJson = @"{
+                ""choices"": [
+                    {
+                        ""message"": {
+                            ""role"": ""assistant"",
+                            ""content"": ""<think>Standard think process</think>Actual response content""
+                        }
+                    }
+                ]
+            }";
+            var spyHandler = new OpenAiRequestSpyHandler(responseJson);
+            var httpClient = new HttpClient(spyHandler);
+            var client = new OllamaClient(httpClient, "http://localhost:11434", "deepseek-r1");
+
+            // Act
+            var result = await client.ChatAsync("System", "User", 0.7f);
+
+            // Assert
+            Assert.Equal("Actual response content", result.Content);
+            Assert.Equal("Standard think process", result.ThinkingText);
+        }
+    }
+}
