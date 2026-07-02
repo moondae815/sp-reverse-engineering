@@ -69,6 +69,14 @@
 *   [Program.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/Program.cs): 검증기 CLI 진입점.
 *   [ConsoleUserInteraction.cs](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Cli/ConsoleUserInteraction.cs): TUI 경로 입력 대화창 및 결과 패널 렌더링.
 
+### 5. 단위 테스트 프로젝트: [ReSet.Core.Tests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests)
+*   **핵심 기능 및 연동 검증 테스트 ([Tests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests))**
+    *   [SqlStaticParserTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/SqlStaticParserTests.cs): ScriptDom 파서 동작 및 CRUD 분류, 다단계 들여쓰기 린팅, 동적 SQL, UDF/Linked Server 감지 검증.
+    *   [ClaudeClientTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/ClaudeClientTests.cs), [OpenAiClientTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/OpenAiClientTests.cs), [OllamaClientTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/OllamaClientTests.cs): AI 클라이언트별 API 전송 구조 및 페이로드 널 가드/TryGetProperty 구문 안전성 검증.
+    *   [JavaProcessRunnerTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/JavaProcessRunnerTests.cs): Java 프로세스 타임아웃(30초) 및 stdin/stdout 스트림 격리 실행 검증.
+    *   [SandboxSeedingServiceTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/SandboxSeedingServiceTests.cs): 모의 데이터 샌드박스 DB 적재 및 라이프사이클 소거 검증.
+    *   [CodeVerificationOrchestratorTests.cs](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/CodeVerificationOrchestratorTests.cs): L1/L2/L3 오케스트레이션 및 자가 보완 루프 검증.
+
 ---
 
 ## 🚨 에이전트 핵심 준수 규칙 (Development Rules)

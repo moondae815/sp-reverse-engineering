@@ -63,6 +63,11 @@
 | | [SpExecutionService](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SpExecutionService.cs) | 테스트 케이스 파라미터를 활용해 Legacy DB에서 Stored Procedure를 실행하고 결과를 다중 ResultSet 구조 JSON으로 수집. |
 | | [SandboxSeedingService](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/SandboxSeedingService.cs) | 모의 데이터를 샌드박스 DB에 자동 적재(Seed)하고 검증 완료 후 강제 제거(Cleanup)하는 라이프사이클 관리. |
 | | [DataComparisonService](file:///home/moondae/git-root/ReSet/src/ReSet.Validator.Core/Services/DataComparisonService.cs) | 레거시 vs 타겟 결과 JSON 데이터를 행 수, 컬럼 타입, 값 단위로 1:1 대조하여 비교 보고서 마크다운 생성. |
+| **ReSet.Core.Tests**<br/>(테스트 레이어) | [SqlStaticParserTests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/SqlStaticParserTests.cs) | T-SQL AST 정적 분석기의 테이블 CRUD 분류, 다단계 중첩 인덴트, sp_executesql/EXEC 동적 SQL, UDF/Linked Server 감지 기능을 종합 검증. |
+| | [Clients (Claude, OpenAi, Ollama) Tests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/) | AI 클라이언트별 페이로드 직렬화, API 전송 스펙 및 응답 널 가드(TryGetProperty) 무결성 검증. |
+| | [JavaProcessRunnerTests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/JavaProcessRunnerTests.cs) | 자바 외부 프로세스 러너 구동 시 stdin/stdout JSON 스트림의 정상 전달 및 30초 타임아웃 제한 격리 검증. |
+| | [SandboxSeedingServiceTests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/SandboxSeedingServiceTests.cs) | 샌드박스 DB에 모의 테이블 데이터(Mock Data)의 적재(Seed) 및 테스트 직후 자동 소거(Clean-up) 사이클 검증. |
+| | [CodeVerificationOrchestratorTests](file:///home/moondae/git-root/ReSet/tests/ReSet.Core.Tests/CodeVerificationOrchestratorTests.cs) | L1(정적) -> L2(AI 논리 Gap검사) -> L3(사용자 승인) 흐름 제어 및 자가 수정 오케스트레이션 검증. |
 
 ---
 
