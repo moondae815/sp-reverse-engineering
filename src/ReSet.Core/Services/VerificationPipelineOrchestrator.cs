@@ -134,8 +134,9 @@ namespace ReSet.Core.Services
                                 HasDefects = false,
                                 ScoreAccuracy = 10,
                                 ScoreCrud = 10,
-                                ScoreReadability = 10,
-                                ScoreException = 10
+                                ScoreInterface = 10,
+                                ScoreException = 10,
+                                ScoreReadability = 10
                             };
                             return (cachedSpec, spDef, mockReview, null);
                         }
@@ -298,7 +299,7 @@ namespace ReSet.Core.Services
                 if (reviews != null && reviews.Length >= 3 && reviews[0] != null && reviews[1] != null && reviews[2] != null)
                 {
                     _userInteraction.NotifyStatus($"[green]{selectedOption}[/] - Effort별 Spec 검토 완료:");
-                    _userInteraction.NotifyStatus($"  - Low Spec: [bold]{reviews[0]!.NormalizedScore}[/]점 (정합성:{reviews[0]!.ScoreAccuracy}, CRUD:{reviews[0]!.ScoreCrud}, 시각화:{reviews[0]!.ScoreReadability}, 예외:{reviews[0]!.ScoreException})");
+                    _userInteraction.NotifyStatus($"  - Low Spec: [bold]{reviews[0]!.NormalizedScore}[/]점 (정합성:{reviews[0]!.ScoreAccuracy}, CRUD:{reviews[0]!.ScoreCrud}, 연동:{reviews[0]!.ScoreInterface}, 예외:{reviews[0]!.ScoreException}, 시각화:{reviews[0]!.ScoreReadability})");
                     if (!string.IsNullOrWhiteSpace(reviews[0]!.FeedbackComment))
                     {
                         var commentLines = reviews[0]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -307,7 +308,7 @@ namespace ReSet.Core.Services
                             _userInteraction.NotifyStatus($"    [grey]* Low Spec Critic 피드백: {EscapeMarkup(line)}[/]");
                         }
                     }
-                    _userInteraction.NotifyStatus($"  - Medium Spec: [bold]{reviews[1]!.NormalizedScore}[/]점 (정합성:{reviews[1]!.ScoreAccuracy}, CRUD:{reviews[1]!.ScoreCrud}, 시각화:{reviews[1]!.ScoreReadability}, 예외:{reviews[1]!.ScoreException})");
+                    _userInteraction.NotifyStatus($"  - Medium Spec: [bold]{reviews[1]!.NormalizedScore}[/]점 (정합성:{reviews[1]!.ScoreAccuracy}, CRUD:{reviews[1]!.ScoreCrud}, 연동:{reviews[1]!.ScoreInterface}, 예외:{reviews[1]!.ScoreException}, 시각화:{reviews[1]!.ScoreReadability})");
                     if (!string.IsNullOrWhiteSpace(reviews[1]!.FeedbackComment))
                     {
                         var commentLines = reviews[1]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -316,7 +317,7 @@ namespace ReSet.Core.Services
                             _userInteraction.NotifyStatus($"    [grey]* Medium Spec Critic 피드백: {EscapeMarkup(line)}[/]");
                         }
                     }
-                    _userInteraction.NotifyStatus($"  - High Spec: [bold]{reviews[2]!.NormalizedScore}[/]점 (정합성:{reviews[2]!.ScoreAccuracy}, CRUD:{reviews[2]!.ScoreCrud}, 시각화:{reviews[2]!.ScoreReadability}, 예외:{reviews[2]!.ScoreException})");
+                    _userInteraction.NotifyStatus($"  - High Spec: [bold]{reviews[2]!.NormalizedScore}[/]점 (정합성:{reviews[2]!.ScoreAccuracy}, CRUD:{reviews[2]!.ScoreCrud}, 연동:{reviews[2]!.ScoreInterface}, 예외:{reviews[2]!.ScoreException}, 시각화:{reviews[2]!.ScoreReadability})");
                     if (!string.IsNullOrWhiteSpace(reviews[2]!.FeedbackComment))
                     {
                         var commentLines = reviews[2]!.FeedbackComment!.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
@@ -374,11 +375,12 @@ namespace ReSet.Core.Services
                         var rev = reviews![i];
                         if (rev == null) continue;
                         sbConsolidation.AppendLine($"--- [후보 {i+1}] ---");
-                        sbConsolidation.AppendLine($"- 종합 평가 점수: {rev.NormalizedScore}점 / 100점 (40점 만점 기준 {rev.TotalScore}점)");
-                        sbConsolidation.AppendLine($"  * 비즈니스 정합성 (ScoreAccuracy): {rev.ScoreAccuracy}/10점");
-                        sbConsolidation.AppendLine($"  * CRUD 및 데이터 매핑 (ScoreCrud): {rev.ScoreCrud}/10점");
-                        sbConsolidation.AppendLine($"  * Mermaid 다이어그램 완성도 (ScoreReadability): {rev.ScoreReadability}/10점");
-                        sbConsolidation.AppendLine($"  * 예외 처리 및 트랜잭션 (ScoreException): {rev.ScoreException}/10점");
+                        sbConsolidation.AppendLine($"- 종합 평가 점수: {rev.NormalizedScore}점 / 100점 (50점 만점 기준 {rev.TotalScore}점)");
+                        sbConsolidation.AppendLine($"  * 비즈니스 로직 및 제어 흐름 정합성 (ScoreAccuracy): {rev.ScoreAccuracy}/10점");
+                        sbConsolidation.AppendLine($"  * 데이터 모델 및 CRUD 완전성 (ScoreCrud): {rev.ScoreCrud}/10점");
+                        sbConsolidation.AppendLine($"  * 연동 인터페이스 구체성 (ScoreInterface): {rev.ScoreInterface}/10점");
+                        sbConsolidation.AppendLine($"  * 예외 및 트랜잭션/격리성 정책 (ScoreException): {rev.ScoreException}/10점");
+                        sbConsolidation.AppendLine($"  * 다이어그램 및 시각화 가독성 (ScoreReadability): {rev.ScoreReadability}/10점");
                         sbConsolidation.AppendLine($"- Critic 결함 피드백: {rev.FeedbackComment ?? "결함 없음"}");
                         sbConsolidation.AppendLine();
                         sbConsolidation.AppendLine("[본문 내용]");

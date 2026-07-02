@@ -214,8 +214,9 @@ namespace ReSet.Core.Services
 
                     var scoreAccuracy = resultRoot.TryGetProperty("ScoreAccuracy", out var accProp) ? accProp.GetInt32() : 0;
                     var scoreCrud = resultRoot.TryGetProperty("ScoreCrud", out var crudProp) ? crudProp.GetInt32() : 0;
-                    var scoreReadability = resultRoot.TryGetProperty("ScoreReadability", out var readProp) ? readProp.GetInt32() : 0;
+                    var scoreInterface = resultRoot.TryGetProperty("ScoreInterface", out var intfProp) ? intfProp.GetInt32() : 0;
                     var scoreException = resultRoot.TryGetProperty("ScoreException", out var exProp) ? exProp.GetInt32() : 0;
+                    var scoreReadability = resultRoot.TryGetProperty("ScoreReadability", out var readProp) ? readProp.GetInt32() : 0;
 
                     return new ReviewResult
                     {
@@ -223,8 +224,9 @@ namespace ReSet.Core.Services
                         FeedbackComment = feedbackComment,
                         ScoreAccuracy = scoreAccuracy,
                         ScoreCrud = scoreCrud,
-                        ScoreReadability = scoreReadability,
-                        ScoreException = scoreException
+                        ScoreInterface = scoreInterface,
+                        ScoreException = scoreException,
+                        ScoreReadability = scoreReadability
                     };
                 }
             }
@@ -237,8 +239,9 @@ namespace ReSet.Core.Services
                     FeedbackComment = $"JSON 검토 보고서 파싱 실패: {ex.Message}",
                     ScoreAccuracy = 0,
                     ScoreCrud = 0,
-                    ScoreReadability = 0,
-                    ScoreException = 0
+                    ScoreInterface = 0,
+                    ScoreException = 0,
+                    ScoreReadability = 0
                 };
             }
         }
@@ -277,17 +280,19 @@ namespace ReSet.Core.Services
 제시된 기능 명세서(Markdown)가 제공된 Stored Procedure 원본 및 메타데이터 정보를 충실히 반영하여 왜곡 없이 잘 작성되었는지 엄격하게 검증하고 채점하십시오.
 
 [검토 및 채점 기준 (각 항목 0~10점 정수 채점)]
-1. 비즈니스 정합성 및 로직 흐름 (ScoreAccuracy):
-   - 원본 DDL 소스코드와 명세서의 비즈니스 로직(분기 조건, 중요 연산 수식, 트랜잭션 정책 등)이 환각(왜곡) 없이 완벽히 일치하는가?
-2. CRUD 및 데이터 매핑 정확성 (ScoreCrud):
-   - SP가 참조하는 테이블/컬럼들과 명세서 내 CRUD 분석 표가 누락 및 오차 없이 정확하게 매핑되어 기술되었는가?
-3. Mermaid 다이어그램 완성도 (ScoreReadability):
-   - 비즈니스 흐름을 설명하는 Mermaid flowchart가 문법 오류 없이 올바르게 작성되었고 가독성이 우수한가?
-4. 예외 처리 및 트랜잭션 격리 (ScoreException):
-   - 오류 처리 패턴(TRY-CATCH) 및 DB 트랜잭션 제어 방식이 명세서에 완전하게 도출되어 있는가?
+1. 비즈니스 로직 및 제어 흐름 정합성 (ScoreAccuracy):
+   - 원본 DDL 소스코드와 명세서의 비즈니스 로직(분기 조건, 중요 연산 수식 등)이 환각(왜곡) 없이 완벽히 일치하는가?
+2. 데이터 모델 및 CRUD 완전성 (ScoreCrud):
+   - SP가 참조하는 테이블/컬럼들과 명세서 내 CRUD 분석 표가 누락 없이 매핑되었으며, 수집된 임시 테이블(#TempTable) 사용처 및 UDF 함수 호출 목록이 정확하게 반영되었는가?
+3. 연동 인터페이스 구체성 (ScoreInterface):
+   - 입출력 파라미터와 반환 스키마 테이블의 컬럼명, 데이터 타입, 제약 조건이 임의 축약(예: '외 다수') 없이 완전하고 사실적으로 기술되었는가?
+4. 예외 및 트랜잭션/격리성 정책 (ScoreException):
+   - 오류 처리(TRY-CATCH), 트랜잭션 범위와 함께 DDL 내 NOLOCK 힌트 사용에 따른 데이터 격리성 영향이 예외 및 제약 설명에 잘 기술되었는가?
+5. 다이어그램 및 시각화 가독성 (ScoreReadability):
+   - 비즈니스 흐름을 묘사하는 Mermaid flowchart가 문법 오류 없이 작성되었으며 흐름이 명료하고 직관적인가?
 
 [결함(Defect) 판단 조건]
-- 4대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 명세서 5대 필수 대분류 헤더(## 개요, ## 파라미터 목록, ## CRUD 분석, ## 로직 흐름 요약, ## 비즈니스 흐름 시각화) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
+- 5대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 명세서 5대 필수 대분류 헤더(## 개요, ## 파라미터 목록, ## CRUD 분석, ## 로직 흐름 요약, ## 비즈니스 흐름 시각화) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
 
 [답변 작성 형식]
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. 다른 텍스트나 설명, 마크다운 백틱 코드 블록(```json ... ```)을 절대 포함하지 마십시오. 오직 순수 JSON만 반환해야 합니다:
@@ -296,8 +301,9 @@ namespace ReSet.Core.Services
   ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)"",
   ""ScoreAccuracy"": 10,
   ""ScoreCrud"": 10,
-  ""ScoreReadability"": 10,
-  ""ScoreException"": 10
+  ""ScoreInterface"": 10,
+  ""ScoreException"": 10,
+  ""ScoreReadability"": 10
 }";
 
             var userPrompt = $@"
@@ -474,17 +480,19 @@ namespace ReSet.Core.Services
 제시된 통합 계획서가 제공된 레거시 명세서들의 기능 설명 및 요구사항을 왜곡 없이 잘 반영하였는지, 배치 아키텍처로서의 기술적 타당성을 갖추었는지 엄격하게 검증하고 채점하십시오.
 
 [검토 및 채점 기준 (각 항목 0~10점 정수 채점)]
-1. 비즈니스 정합성 및 로직 흐름 (ScoreAccuracy):
+1. 비즈니스 로직 및 제어 흐름 정합성 (ScoreAccuracy):
    - 개별 SP 분석서의 비즈니스 로직 및 정산 규칙이 통합 배치 흐름 내에서 누락, 왜곡, 환각 없이 충실히 설계에 반영되었는가?
-2. CRUD 및 데이터 매핑 정확성 (ScoreCrud):
+2. 데이터 모델 및 CRUD 완전성 (ScoreCrud):
    - 각 SP가 참조하던 테이블의 CRUD 작업이 통합 데이터 파이프라인에서 적합한 순서 및 배치 청크(Paging) 매핑으로 올바르게 설계되었는가?
-3. Mermaid 다이어그램 완성도 (ScoreReadability):
-   - 통합 배치 흐름도를 묘사하는 Mermaid flowchart가 문법 오류 없이 완전하고, 시각적 가독성이 우수한가?
-4. 예외 처리 및 트랜잭션 격리 (ScoreException):
+3. 연동 인터페이스 구체성 (ScoreInterface):
+   - 배치 컴포넌트 간의 입출력 데이터 규격, 파라미터 매핑 및 API 연동 정의가 축약 없이 상세하고 완전하게 도출되어 있는가?
+4. 예외 및 트랜잭션/격리성 정책 (ScoreException):
    - 통합 배치 수준에서의 실패 지점 재시작(Restartability), 벌크 트랜잭션 격리, 복구 전략이 견고하게 정의되어 있는가?
+5. 다이어그램 및 시각화 가독성 (ScoreReadability):
+   - 통합 배치 흐름도를 묘사하는 Mermaid flowchart가 문법 오류 없이 완전하고, 시각적 가독성이 우수한가?
 
 [결함(Defect) 판단 조건]
-- 4대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 계획서 필수 4대 헤더(## 통합 배치 아키텍처 개요, ## Mermaid 기반 통합 흐름도, ## 단계별 이행 상세 및 의사코드, ## 통합 데이터 정합성 검증 SQL 세트) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
+- 5대 평가 기준 중 단 하나라도 8점 미만인 항목이 존재하거나, 계획서 필수 4대 헤더(## 통합 배치 아키텍처 개요, ## Mermaid 기반 통합 흐름도, ## 단계별 이행 상세 및 의사코드, ## 통합 데이터 정합성 검증 SQL 세트) 중 누락된 섹션이 있는 경우 HasDefects를 true로 판단하십시오.
 
 [답변 작성 형식]
 반드시 아래 JSON 형식으로만 최종 답변을 출력해야 합니다. 다른 텍스트나 설명, 마크다운 백틱 코드 블록(```json ... ```)을 절대 포함하지 마십시오. 오직 순수 JSON만 반환해야 합니다:
@@ -493,8 +501,9 @@ namespace ReSet.Core.Services
   ""FeedbackComment"": ""결함이 있는 경우 무엇이 누락되었거나 어떻게 수정해야 하는지 구체적인 피드백 내용 기술 (HasDefects가 false인 경우 반드시 빈 문자열 반환)"",
   ""ScoreAccuracy"": 10,
   ""ScoreCrud"": 10,
-  ""ScoreReadability"": 10,
-  ""ScoreException"": 10
+  ""ScoreInterface"": 10,
+  ""ScoreException"": 10,
+  ""ScoreReadability"": 10
 }";
 
             var userPrompt = new StringBuilder();
