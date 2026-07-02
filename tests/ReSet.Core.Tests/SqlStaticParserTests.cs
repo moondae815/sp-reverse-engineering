@@ -135,5 +135,33 @@ END;
             Assert.False(result.IsParsedSuccessfully);
             Assert.Equal("DDL 텍스트가 비어 있습니다.", result.ParserWarningMessage);
         }
+
+        [Fact]
+        public void Analyze_WithDynamicSql_ShouldDetectAndReportWarnings()
+        {
+            // Arrange
+            var ddlText = @"
+CREATE PROCEDURE dbo.ExecuteDynamic
+    @Query NVARCHAR(MAX)
+AS
+BEGIN
+    -- 1. sp_executesql 감지
+    EXEC sp_executesql @Query;
+
+    -- 2. EXEC (@Query) 감지
+    EXEC (@Query);
+END;
+";
+            var parser = new SqlStaticParser();
+
+            // Act
+            var result = parser.Analyze(ddlText);
+
+            // Assert
+            Assert.True(result.IsParsedSuccessfully);
+            Assert.NotEmpty(result.ControlFlowSummary);
+            Assert.Contains(result.ControlFlowSummary, s => s.Contains("sp_executesql 동적 SQL 실행 감지됨"));
+            Assert.Contains(result.ControlFlowSummary, s => s.Contains("EXEC (@SQL) 동적 SQL 문자열 실행 감지됨"));
+        }
     }
 }

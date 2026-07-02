@@ -147,6 +147,33 @@ namespace ReSet.Core.Services
             _statementContext.Pop();
         }
 
+        // 동적 SQL 실행 노드 감지 및 경고 추가 (ExecuteStatement)
+        public override void ExplicitVisit(ExecuteStatement node)
+        {
+            var line = node.StartLine;
+            var indent = new string(' ', _indentLevel * 2);
+            if (node.ExecuteSpecification != null && node.ExecuteSpecification.ExecutableEntity != null)
+            {
+                var entity = node.ExecuteSpecification.ExecutableEntity;
+                if (entity is ExecutableProcedureReference procRef)
+                {
+                    if (procRef.ProcedureReference != null && procRef.ProcedureReference.ProcedureReference != null)
+                    {
+                        var procName = GetSchemaObjectString(procRef.ProcedureReference.ProcedureReference.Name);
+                        if (string.Equals(procName, "sp_executesql", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ControlFlowSummary.Add($"{indent}Line {line}: [🚨 경고: sp_executesql 동적 SQL 실행 감지됨]");
+                        }
+                    }
+                }
+                else if (entity is ExecutableStringList)
+                {
+                    ControlFlowSummary.Add($"{indent}Line {line}: [🚨 경고: EXEC (@SQL) 동적 SQL 문자열 실행 감지됨]");
+                }
+            }
+            base.ExplicitVisit(node);
+        }
+
         // 1. 참조하는 테이블명 방문 수집 (NamedTableReference - ExplicitVisit 적용)
         public override void ExplicitVisit(NamedTableReference node)
         {
