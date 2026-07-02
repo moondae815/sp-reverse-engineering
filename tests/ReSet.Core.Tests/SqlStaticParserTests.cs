@@ -163,5 +163,28 @@ END;
             Assert.Contains(result.ControlFlowSummary, s => s.Contains("sp_executesql 동적 SQL 실행 감지됨"));
             Assert.Contains(result.ControlFlowSummary, s => s.Contains("EXEC (@SQL) 동적 SQL 문자열 실행 감지됨"));
         }
+
+        [Fact]
+        public void Analyze_WithDifferentCompatibilityLevels_ShouldGenerateParserCorrectly()
+        {
+            // Arrange
+            var ddlText = @"
+CREATE PROCEDURE dbo.SimpleProc
+AS
+BEGIN
+    SELECT 1;
+END;
+";
+            var parser = new SqlStaticParser();
+
+            // Act & Assert
+            // 1. 구버전 호환성 수준 (Version110 - SQL Server 2012)
+            var result110 = parser.Analyze(ddlText, 110);
+            Assert.True(result110.IsParsedSuccessfully);
+
+            // 2. 신버전 호환성 수준 (Version160 - SQL Server 2022)
+            var result160 = parser.Analyze(ddlText, 160);
+            Assert.True(result160.IsParsedSuccessfully);
+        }
     }
 }

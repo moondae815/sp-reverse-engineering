@@ -151,6 +151,31 @@ namespace ReSet.Core.Services
             return rawDeps;
         }
 
+        private async Task<int> GetDatabaseCompatibilityLevelAsync(string connectionString, CancellationToken cancellationToken)
+        {
+            try
+            {
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connectionString))
+                {
+                    await conn.OpenAsync(cancellationToken);
+                    var sql = "SELECT compatibility_level FROM sys.databases WHERE name = DB_NAME();";
+                    using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
+                    {
+                        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                        if (result != null && result != DBNull.Value)
+                        {
+                            return Convert.ToInt32(result);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[DbMetadata] 데이터베이스 호환성 수준 조회 실패 (Soft Fail) - 기본값 160으로 폴백합니다.");
+            }
+            return 160;
+        }
+
         // 메인 재귀 탐색 진입점
         public async Task<SpDefinition> GetSpDetailsAsync(string connectionString, string schema, string spName, int maxDepth, CancellationToken cancellationToken = default)
         {
@@ -170,11 +195,12 @@ namespace ReSet.Core.Services
                 throw;
             }
 
-            // T-SQL 정적 분석 구동 (AST 기반 메타데이터 추출)
+            // T-SQL 정적 분석 구동 (AST 기반 메타데이터 추출, 호환성 수준 적용)
             try
             {
+                int compatLevel = await GetDatabaseCompatibilityLevelAsync(connectionString, cancellationToken);
                 var staticParser = new SqlStaticParser();
-                spDef.StaticAnalysis = staticParser.Analyze(spDef.DdlText);
+                spDef.StaticAnalysis = staticParser.Analyze(spDef.DdlText, compatLevel);
             }
             catch (Exception ex)
             {

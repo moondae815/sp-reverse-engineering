@@ -10,7 +10,7 @@ namespace ReSet.Core.Services
 {
     public class SqlStaticParser
     {
-        public SpStaticAnalysisResult Analyze(string ddlText)
+        public SpStaticAnalysisResult Analyze(string ddlText, int compatibilityLevel = 160)
         {
             var result = new SpStaticAnalysisResult();
             if (string.IsNullOrWhiteSpace(ddlText))
@@ -22,7 +22,7 @@ namespace ReSet.Core.Services
 
             try
             {
-                var parser = new TSql160Parser(true);
+                var parser = CreateParser(compatibilityLevel);
                 using (var reader = new StringReader(ddlText))
                 {
                     var fragment = parser.Parse(reader, out var errors);
@@ -30,7 +30,7 @@ namespace ReSet.Core.Services
                     {
                         result.IsParsedSuccessfully = false;
                         var sb = new StringBuilder();
-                        sb.AppendLine("T-SQL 구문 오류 감지 (Soft Fail 적용):");
+                        sb.AppendLine($"T-SQL 구문 오류 감지 (호환성 수준 {compatibilityLevel}, Soft Fail 적용):");
                         foreach (var err in errors)
                         {
                             sb.AppendLine($"- Line {err.Line}, Col {err.Column}: {err.Message}");
@@ -64,6 +64,17 @@ namespace ReSet.Core.Services
             }
 
             return result;
+        }
+
+        private TSqlParser CreateParser(int compatibilityLevel)
+        {
+            if (compatibilityLevel >= 160) return new TSql160Parser(true);
+            if (compatibilityLevel >= 150) return new TSql150Parser(true);
+            if (compatibilityLevel >= 140) return new TSql140Parser(true);
+            if (compatibilityLevel >= 130) return new TSql130Parser(true);
+            if (compatibilityLevel >= 120) return new TSql120Parser(true);
+            if (compatibilityLevel >= 110) return new TSql110Parser(true);
+            return new TSql100Parser(true);
         }
     }
 
