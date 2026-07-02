@@ -143,6 +143,14 @@ namespace ReSet.Core.Services
                     staticAnalysisText.AppendLine($"  * UPDATE 대상 테이블: {(spDef.StaticAnalysis.UpdateTables.Count > 0 ? string.Join(", ", spDef.StaticAnalysis.UpdateTables) : "없음")}");
                     staticAnalysisText.AppendLine($"  * DELETE 대상 테이블: {(spDef.StaticAnalysis.DeleteTables.Count > 0 ? string.Join(", ", spDef.StaticAnalysis.DeleteTables) : "없음")}");
                     staticAnalysisText.AppendLine($"- 식별된 생성/사용 임시 테이블: {(spDef.StaticAnalysis.CreatedTempTables.Count > 0 ? string.Join(", ", spDef.StaticAnalysis.CreatedTempTables) : "없음")}");
+                    if (spDef.StaticAnalysis.LinkedServerReferences.Count > 0)
+                    {
+                        staticAnalysisText.AppendLine($"- 식별된 Linked Server 원격 참조 목록: {string.Join(", ", spDef.StaticAnalysis.LinkedServerReferences)}");
+                    }
+                    if (spDef.StaticAnalysis.ReferencedFunctions.Count > 0)
+                    {
+                        staticAnalysisText.AppendLine($"- 식별된 UDF 사용자 정의 함수 호출 목록: {string.Join(", ", spDef.StaticAnalysis.ReferencedFunctions)}");
+                    }
                     if (spDef.StaticAnalysis.ControlFlowSummary.Count > 0)
                     {
                         staticAnalysisText.AppendLine("- 식별된 제어 흐름 구조 요약 (IF/WHILE):");

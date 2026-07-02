@@ -24,5 +24,7 @@ namespace ReSet.Core.Models
         public List<string> InsertTables { get; set; } = new();
         public List<string> UpdateTables { get; set; } = new();
         public List<string> DeleteTables { get; set; } = new();
+        public List<string> LinkedServerReferences { get; set; } = new();
+        public List<string> ReferencedFunctions { get; set; } = new();
     }
 }

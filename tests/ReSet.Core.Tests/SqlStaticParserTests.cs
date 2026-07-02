@@ -186,5 +186,39 @@ END;
             var result160 = parser.Analyze(ddlText, 160);
             Assert.True(result160.IsParsedSuccessfully);
         }
+
+        [Fact]
+        public void Analyze_WithLinkedServerAndUdf_ShouldDetectThemCorrectly()
+        {
+            // Arrange
+            var ddlText = @"
+CREATE PROCEDURE dbo.ProcessRemoteOrder
+AS
+BEGIN
+    -- 1. UDF 함수 호출 (dbo.fn_CalculateTax)
+    DECLARE @Tax DECIMAL(18,2);
+    SET @Tax = dbo.fn_CalculateTax(100);
+
+    -- 2. Linked Server 원격 참조 테이블 액세스 (MyServer.RemoteDb.dbo.Orders)
+    SELECT * 
+    FROM MyServer.RemoteDb.dbo.Orders 
+    WHERE OrderID = 1001;
+END;
+";
+            var parser = new SqlStaticParser();
+
+            // Act
+            var result = parser.Analyze(ddlText);
+
+            // Assert
+            Assert.True(result.IsParsedSuccessfully);
+            
+            // UDF 감지 검증
+            Assert.Contains("dbo.fn_CalculateTax", result.ReferencedFunctions);
+            
+            // Linked Server 감지 검증
+            Assert.Contains("MyServer.RemoteDb.dbo.Orders", result.LinkedServerReferences);
+            Assert.Contains(result.ControlFlowSummary, s => s.Contains("Linked Server 원격 테이블 참조 감지됨") && s.Contains("MyServer.RemoteDb.dbo.Orders"));
+        }
     }
 }

@@ -53,6 +53,8 @@ namespace ReSet.Core.Services
                         result.InsertTables = visitor.InsertTables;
                         result.UpdateTables = visitor.UpdateTables;
                         result.DeleteTables = visitor.DeleteTables;
+                        result.LinkedServerReferences = visitor.LinkedServerReferences;
+                        result.ReferencedFunctions = visitor.ReferencedFunctions;
                     }
                 }
             }
@@ -89,6 +91,9 @@ namespace ReSet.Core.Services
         public List<string> UpdateTables { get; } = new();
         public List<string> DeleteTables { get; } = new();
 
+        public List<string> LinkedServerReferences { get; } = new();
+        public List<string> ReferencedFunctions { get; } = new();
+
         private readonly HashSet<string> _foundTables = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _foundTemps = new(StringComparer.OrdinalIgnoreCase);
 
@@ -96,6 +101,9 @@ namespace ReSet.Core.Services
         private readonly HashSet<string> _foundInsert = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _foundUpdate = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _foundDelete = new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly HashSet<string> _foundLinked = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _foundFuncs = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Stack<string> _statementContext = new();
         private int _indentLevel = 0;
@@ -194,6 +202,19 @@ namespace ReSet.Core.Services
                 var tableName = GetSchemaObjectString(node.SchemaObject);
                 if (!string.IsNullOrWhiteSpace(tableName))
                 {
+                    // Linked Server 감지 (ServerIdentifier가 있는 4파트 명칭 구조)
+                    if (node.SchemaObject.ServerIdentifier != null)
+                    {
+                        var linkedName = GetSchemaObjectString(node.SchemaObject);
+                        if (_foundLinked.Add(linkedName))
+                        {
+                            LinkedServerReferences.Add(linkedName);
+                            var line = node.StartLine;
+                            var indent = new string(' ', _indentLevel * 2);
+                            ControlFlowSummary.Add($"{indent}Line {line}: [🚨 경고: Linked Server 원격 테이블 참조 감지됨 - {linkedName}]");
+                        }
+                    }
+
                     if (tableName.StartsWith("#"))
                     {
                         if (_foundTemps.Add(tableName))
@@ -230,7 +251,43 @@ namespace ReSet.Core.Services
             }
         }
 
-        // 2. IF 조건 분기 구조 방문 수집 (ExplicitVisit 및 들여쓰기 적용)
+        // 2. 함수 호출 감지 (FunctionCall - ExplicitVisit 적용)
+        public override void ExplicitVisit(FunctionCall node)
+        {
+            base.ExplicitVisit(node);
+            if (node.FunctionName != null)
+            {
+                // CallTarget이 존재하는 경우 (예: dbo.fn_GetBonus 에서 dbo 에 해당)
+                if (node.CallTarget != null)
+                {
+                    var targetStr = GetCallTargetString(node.CallTarget);
+                    if (!string.IsNullOrWhiteSpace(targetStr))
+                    {
+                        var funcName = targetStr + "." + node.FunctionName.Value;
+                        if (_foundFuncs.Add(funcName))
+                        {
+                            ReferencedFunctions.Add(funcName);
+                        }
+                    }
+                }
+            }
+        }
+
+        private string GetCallTargetString(CallTarget callTarget)
+        {
+            if (callTarget is MultiPartIdentifierCallTarget mpTarget && mpTarget.MultiPartIdentifier != null)
+            {
+                var parts = new List<string>();
+                foreach (var id in mpTarget.MultiPartIdentifier.Identifiers)
+                {
+                    parts.Add(id.Value);
+                }
+                return string.Join(".", parts);
+            }
+            return callTarget.ToString() ?? "";
+        }
+
+        // 3. IF 조건 분기 구조 방문 수집 (ExplicitVisit 및 들여쓰기 적용)
         public override void ExplicitVisit(IfStatement node)
         {
             var indent = new string(' ', _indentLevel * 2);
@@ -243,7 +300,7 @@ namespace ReSet.Core.Services
             _indentLevel--;
         }
 
-        // 3. WHILE 루프 분기 구조 방문 수집 (ExplicitVisit 및 들여쓰기 적용)
+        // 4. WHILE 루프 분기 구조 방문 수집 (ExplicitVisit 및 들여쓰기 적용)
         public override void ExplicitVisit(WhileStatement node)
         {
             var indent = new string(' ', _indentLevel * 2);
